@@ -9,4 +9,12 @@ export class AppController {
   getHello(): string {
     return this.appService.getHello();
   }
+
+  @Get('sms')
+  getSmsToSend() {
+    return {
+      to: '+33758439121',
+      message: 'Hello from api',
+    };
+  }
 }
