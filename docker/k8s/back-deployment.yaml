@@ -27,4 +27,29 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: BACK_PORT 
+            - name: TYPEORM_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: TYPEORM_HOST
+            - name: TYPEORM_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: TYPEORM_PORT
+            - name: TYPEORM_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: TYPEORM_USERNAME
+            - name: TYPEORM_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: TYPEORM_PASSWORD 
+            - name: TYPEORM_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: TYPEORM_DATABASE
             

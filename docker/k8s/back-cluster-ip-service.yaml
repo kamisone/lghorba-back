@@ -1,13 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: back-node-port-service
+  name: back-cluster-ip-service
+
 spec:
-  type: NodePort
+  type: ClusterIP
   selector:
     component: back
   ports:
     - port: 3000
       targetPort: 3000
-      nodePort: 30505
-      
