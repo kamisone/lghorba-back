@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AppService } from './app.service';
 import { SmsService } from './sms/sms.service';
+import { SmsType } from './sms/sms-message.entity';
 
 @Controller()
 export class AppController {
@@ -15,8 +16,12 @@ export class AppController {
   }
 
   @Get('sms')
-  getSmsToSend() {
-    return this.smsService.pollNext();
+  getSmsToSend(@Query('type') type: SmsType = SmsType.OUTBOUND, @Query('to') to?: string) {
+    return this.smsService.pollNext(type, to);
+  }
+  @Get('sms-all')
+  getAllSms() {
+    return this.smsService.pollAll();
   }
 
   @Post('sms')
@@ -24,10 +29,8 @@ export class AppController {
     return this.smsService.addMessage(body.to, body.message);
   }
 
-  @Post('push')
-  pushSms(@Body() body: { to: string; message: string }, @Req() req) {
-    console.log('METHOD:', req.method);
-    console.log('URL:', req.url);
-    return this.smsService.addMessage(body.to, body.message);
+  @Post('receive')
+  receiveSms(@Body() body: { to: string; message: string }) {
+    return this.smsService.addMessage(body.to, body.message, SmsType.INBOUND);
   }
 }
