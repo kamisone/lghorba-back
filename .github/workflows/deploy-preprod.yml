@@ -64,6 +64,9 @@ jobs:
             --from-literal TYPEORM_PORT=${{ secrets.TYPEORM_PORT }} \
             --from-literal TYPEORM_USERNAME=${{ secrets.TYPEORM_USERNAME }} \
             --from-literal TYPEORM_PASSWORD=${{ secrets.TYPEORM_PASSWORD }} \
-            --from-literal TYPEORM_DATABASE=${{ secrets.TYPEORM_DATABASE }}
+            --from-literal TYPEORM_DATABASE=${{ secrets.TYPEORM_DATABASE }} \
+            --from-literal JWT_SECRET=${{ secrets.JWT_SECRET }} \
+            --from-literal ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }} \
+            --from-literal ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
             kubectl apply -f /srv/k8s/back
             echo ${{ secrets.SERVER_SECOND_USER_PASSWORD }} | sudo -S systemctl restart nginx
