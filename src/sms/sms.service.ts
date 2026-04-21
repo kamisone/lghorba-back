@@ -10,13 +10,17 @@ export class SmsService {
     private readonly repo: Repository<SmsMessage>,
   ) {}
 
-  async pollNext(type: SmsType = SmsType.OUTBOUND, to?: string): Promise<SmsMessage | { error: string }> {
+  async pollNext(
+    type: SmsType = SmsType.OUTBOUND,
+    to?: string,
+  ): Promise<SmsMessage | { error: string }> {
     const [sms] = await this.repo.find({
       where: { type, consumed: false, ...(to ? { to } : {}) },
       order: { createdAt: 'ASC' },
       take: 1,
     });
     if (!sms) return { error: 'empty' };
+    await this.repo.delete({ to, consumed: true });
     await this.repo.update(sms.id, { consumed: true });
     return { ...sms, consumed: true };
   }
@@ -25,7 +29,11 @@ export class SmsService {
     return sms;
   }
 
-  async addMessage(to: string, message: string, type: SmsType = SmsType.OUTBOUND): Promise<SmsMessage> {
+  async addMessage(
+    to: string,
+    message: string,
+    type: SmsType = SmsType.OUTBOUND,
+  ): Promise<SmsMessage> {
     if (!to || !message) {
       throw new HttpException('body params invalid', 400);
     }

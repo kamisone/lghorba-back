@@ -25,12 +25,12 @@ export class AppController {
   }
 
   @Post('sms')
-  addSms(@Body() body: { to: string; message: string }) {
+  receiveSmsFromBrowser(@Body() body: { to: string; message: string }) {
     return this.smsService.addMessage(body.to, body.message);
   }
 
   @Post('receive')
-  receiveSms(@Body() body: { to: string; message: string }) {
+  receiveSmsFromAndroid(@Body() body: { to: string; message: string }) {
     return this.smsService.addMessage(body.to, body.message, SmsType.INBOUND);
   }
 }
