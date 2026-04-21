@@ -31,6 +31,7 @@ export class AppController {
     return this.smsService.getLastConsumed(to);
   }
 
+  @Public()
   @Post('sms')
   receiveSmsFromBrowser(@Body() body: { to: string; message: string }) {
     return this.smsService.addMessage(body.to, body.message);

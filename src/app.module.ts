@@ -7,6 +7,9 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { CarsModule } from './cars/cars.module';
 import { Car } from './cars/car.entity';
+import { RentPosition } from './rent-sessions/rent-position.entity';
+import { RentSession } from './rent-sessions/rent-session.entity';
+import { RentSessionsModule } from './rent-sessions/rent-sessions.module';
 import { SmsMessage } from './sms/sms-message.entity';
 import { SmsService } from './sms/sms.service';
 
@@ -25,13 +28,14 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car],
+      entities: [SmsMessage, Car, RentSession, RentPosition],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
     TypeOrmModule.forFeature([SmsMessage]),
     AuthModule,
     CarsModule,
+    RentSessionsModule,
   ],
   controllers: [AppController],
   providers: [
