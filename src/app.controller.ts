@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AppService } from './app.service';
 import { SmsService } from './sms/sms.service';
 import { SmsType } from './sms/sms-message.entity';
+import { Public } from './auth/public.decorator';
 
 @Controller()
 export class AppController {
@@ -15,6 +16,7 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  @Public()
   @Get('sms')
   getSmsToSend(@Query('type') type: SmsType = SmsType.OUTBOUND, @Query('to') to?: string) {
     return this.smsService.pollNext(type, to);
@@ -25,7 +27,7 @@ export class AppController {
   }
 
   @Get('sms/last-consumed')
-  getLastConsumedSms(@Query('to') to: string) {
+  getLastConsumedSmsFromBrowser(@Query('to') to: string) {
     return this.smsService.getLastConsumed(to);
   }
 
@@ -34,6 +36,7 @@ export class AppController {
     return this.smsService.addMessage(body.to, body.message);
   }
 
+  @Public()
   @Post('receive')
   receiveSmsFromAndroid(@Body() body: { to: string; message: string }) {
     return this.smsService.addMessage(body.to, body.message, SmsType.INBOUND);
