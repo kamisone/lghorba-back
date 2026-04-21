@@ -23,6 +23,9 @@ export class Car {
   @Column({ type: 'varchar', nullable: true })
   description: string | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  photo: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 
