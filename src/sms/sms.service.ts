@@ -20,9 +20,49 @@ export class SmsService {
       take: 1,
     });
     if (!sms) return { error: 'empty' };
-    await this.repo.delete({ to, consumed: true });
     await this.repo.update(sms.id, { consumed: true });
+    await this.pruneConsumedForNumber(sms.to);
     return { ...sms, consumed: true };
+  }
+
+  private async pruneConsumedForNumber(to: string): Promise<void> {
+    const keepIds: number[] = [];
+
+    for (const type of [SmsType.OUTBOUND, SmsType.INBOUND]) {
+      const [last] = await this.repo.find({
+        where: { consumed: true, type, to },
+        order: { createdAt: 'DESC' },
+        take: 1,
+      });
+      if (last) keepIds.push(last.id);
+    }
+
+    await this.repo
+      .createQueryBuilder()
+      .delete()
+      .where('consumed = true AND "to" = :to AND id NOT IN (:...keepIds)', { to, keepIds })
+      .execute();
+  }
+
+  async getLastConsumed(
+    to: string,
+  ): Promise<{ inbound: SmsMessage | null; outbound: SmsMessage | null }> {
+    const where = (type: SmsType) => ({
+      consumed: true,
+      type,
+      ...(to ? { to } : {}),
+    });
+
+    const [inbound, outbound] = await Promise.all([
+      this.repo
+        .find({ where: where(SmsType.INBOUND), order: { createdAt: 'DESC' }, take: 1 })
+        .then(([r]) => r ?? null),
+      this.repo
+        .find({ where: where(SmsType.OUTBOUND), order: { createdAt: 'DESC' }, take: 1 })
+        .then(([r]) => r ?? null),
+    ]);
+
+    return { inbound, outbound };
   }
   async pollAll(): Promise<SmsMessage[] | { error: string }> {
     const sms = this.repo.find();

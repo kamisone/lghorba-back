@@ -24,6 +24,11 @@ export class AppController {
     return this.smsService.pollAll();
   }
 
+  @Get('sms/last-consumed')
+  getLastConsumedSms(@Query('to') to: string) {
+    return this.smsService.getLastConsumed(to);
+  }
+
   @Post('sms')
   receiveSmsFromBrowser(@Body() body: { to: string; message: string }) {
     return this.smsService.addMessage(body.to, body.message);
