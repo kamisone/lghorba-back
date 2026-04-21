@@ -40,13 +40,26 @@ export class SmsService {
     await this.repo
       .createQueryBuilder()
       .delete()
-      .where('consumed = true AND "to" = :to AND id NOT IN (:...keepIds)', { to, keepIds })
+      .where('consumed = true AND "to" = :to AND id NOT IN (:...keepIds)', {
+        to,
+        keepIds,
+      })
       .execute();
   }
 
   async getLastConsumed(
     to: string,
   ): Promise<{ inbound: SmsMessage | null; outbound: SmsMessage | null }> {
+    const [sms] = await this.repo.find({
+      where: { type: SmsType.INBOUND, consumed: false, ...(to ? { to } : {}) },
+      order: { createdAt: 'ASC' },
+      take: 1,
+    });
+    if (sms) {
+      await this.repo.update(sms.id, { consumed: true });
+      await this.pruneConsumedForNumber(sms.to);
+    }
+
     const where = (type: SmsType) => ({
       consumed: true,
       type,
@@ -55,10 +68,18 @@ export class SmsService {
 
     const [inbound, outbound] = await Promise.all([
       this.repo
-        .find({ where: where(SmsType.INBOUND), order: { createdAt: 'DESC' }, take: 1 })
+        .find({
+          where: where(SmsType.INBOUND),
+          order: { createdAt: 'DESC' },
+          take: 1,
+        })
         .then(([r]) => r ?? null),
       this.repo
-        .find({ where: where(SmsType.OUTBOUND), order: { createdAt: 'DESC' }, take: 1 })
+        .find({
+          where: where(SmsType.OUTBOUND),
+          order: { createdAt: 'DESC' },
+          take: 1,
+        })
         .then(([r]) => r ?? null),
     ]);
 
@@ -74,11 +95,6 @@ export class SmsService {
     message: string,
     type: SmsType = SmsType.OUTBOUND,
   ): Promise<SmsMessage> {
-    if(type === SmsType.INBOUND) {
-      console.log('received from androind : ', message);
-    } else {
-      console.log('received from browser : ', message);
-    }
     if (!to || !message) {
       throw new HttpException('body params invalid', 400);
     }
