@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { DataSource } from 'typeorm';
+import { Car } from './cars/car.entity';
 import { SmsMessage } from './sms/sms-message.entity';
 
 import { config } from 'dotenv';
@@ -13,6 +14,6 @@ export const AppDataSource = new DataSource({
   username: process.env.TYPEORM_USERNAME || 'postgres',
   password: process.env.TYPEORM_PASSWORD || '',
   database: process.env.TYPEORM_DATABASE || 'lghorba',
-  entities: [SmsMessage],
+  entities: [SmsMessage, Car],
   migrations: ['src/migrations/*.ts'],
 });

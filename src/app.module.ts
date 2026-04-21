@@ -5,6 +5,8 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { CarsModule } from './cars/cars.module';
+import { Car } from './cars/car.entity';
 import { SmsMessage } from './sms/sms-message.entity';
 import { SmsService } from './sms/sms.service';
 
@@ -23,12 +25,13 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage],
+      entities: [SmsMessage, Car],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
     TypeOrmModule.forFeature([SmsMessage]),
     AuthModule,
+    CarsModule,
   ],
   controllers: [AppController],
   providers: [
