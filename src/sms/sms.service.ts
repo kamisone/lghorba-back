@@ -74,6 +74,11 @@ export class SmsService {
     message: string,
     type: SmsType = SmsType.OUTBOUND,
   ): Promise<SmsMessage> {
+    if(type === SmsType.INBOUND) {
+      console.log('received from androind : ', message);
+    } else {
+      console.log('received from browser : ', message);
+    }
     if (!to || !message) {
       throw new HttpException('body params invalid', 400);
     }
