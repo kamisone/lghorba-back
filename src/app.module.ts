@@ -1,24 +1,23 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
-import { CarsModule } from './cars/cars.module';
 import { Car } from './cars/car.entity';
 import { RentSchedule } from './cars/rent-schedule.entity';
+import { CarsModule } from './cars/cars.module';
 import { RentPosition } from './rent-sessions/rent-position.entity';
 import { RentSession } from './rent-sessions/rent-session.entity';
 import { RentSessionsModule } from './rent-sessions/rent-sessions.module';
 import { SmsMessage } from './sms/sms-message.entity';
-import { SmsService } from './sms/sms.service';
+import { SmsModule } from './sms/sms.module';
 
 import { config } from 'dotenv';
 
 config();
-
-
 
 @Module({
   imports: [
@@ -33,7 +32,8 @@ config();
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
-    TypeOrmModule.forFeature([SmsMessage]),
+    ScheduleModule.forRoot(),
+    SmsModule,
     AuthModule,
     CarsModule,
     RentSessionsModule,
@@ -41,7 +41,6 @@ config();
   controllers: [AppController],
   providers: [
     AppService,
-    SmsService,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })

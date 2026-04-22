@@ -38,6 +38,9 @@ export class RentSession {
   @Column({ type: 'timestamp', nullable: true, default: null })
   lastLocationRequestedAt: Date | null;
 
+  @Column({ type: 'timestamp', nullable: true, default: null })
+  nextLocationAt: Date | null;
+
   @OneToMany(() => RentPosition, (pos) => pos.session)
   positions: RentPosition[];
 }

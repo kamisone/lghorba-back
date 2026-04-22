@@ -7,6 +7,12 @@ import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
+const LOCATION_INTERVAL_MS = 30 * 60 * 1000;
+
+export function addLocationInterval(from: Date): Date {
+  return new Date(from.getTime() + LOCATION_INTERVAL_MS);
+}
+
 @Injectable()
 export class RentSessionsService {
   constructor(
@@ -17,7 +23,10 @@ export class RentSessionsService {
   ) {}
 
   create(dto: CreateRentSessionDto): Promise<RentSession> {
-    return this.sessionRepo.save(this.sessionRepo.create({ carId: dto.carId }));
+    const now = new Date();
+    return this.sessionRepo.save(
+      this.sessionRepo.create({ carId: dto.carId, nextLocationAt: addLocationInterval(now) }),
+    );
   }
 
   findAllForCar(carId: string): Promise<RentSession[]> {
@@ -46,7 +55,9 @@ export class RentSessionsService {
       if (dto.status === RentSessionStatus.ENDED) update.endedAt = new Date();
     }
     if (dto.lastLocationRequestedAt) {
-      update.lastLocationRequestedAt = new Date(dto.lastLocationRequestedAt);
+      const ts = new Date(dto.lastLocationRequestedAt);
+      update.lastLocationRequestedAt = ts;
+      update.nextLocationAt = addLocationInterval(ts);
     }
     await this.sessionRepo.update(id, update);
     return this.findOne(id);
