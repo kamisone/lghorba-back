@@ -11,6 +11,7 @@ import { RentPosition } from './rent-position.entity';
 
 export enum RentSessionStatus {
   ACTIVE = 'active',
+  PENDING_STOP = 'pending_stop',
   ENDED = 'ended',
 }
 
@@ -33,6 +34,9 @@ export class RentSession {
 
   @Column({ type: 'timestamp', nullable: true })
   endedAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true, default: null })
+  lastLocationRequestedAt: Date | null;
 
   @OneToMany(() => RentPosition, (pos) => pos.session)
   positions: RentPosition[];

@@ -40,8 +40,14 @@ export class RentSessionsService {
 
   async patch(id: string, dto: PatchRentSessionDto): Promise<RentSession> {
     await this.findOne(id);
-    const update: Partial<RentSession> = { status: dto.status };
-    if (dto.status === RentSessionStatus.ENDED) update.endedAt = new Date();
+    const update: Partial<RentSession> = {};
+    if (dto.status) {
+      update.status = dto.status;
+      if (dto.status === RentSessionStatus.ENDED) update.endedAt = new Date();
+    }
+    if (dto.lastLocationRequestedAt) {
+      update.lastLocationRequestedAt = new Date(dto.lastLocationRequestedAt);
+    }
     await this.sessionRepo.update(id, update);
     return this.findOne(id);
   }
