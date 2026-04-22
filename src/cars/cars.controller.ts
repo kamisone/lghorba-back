@@ -18,11 +18,16 @@ import { Response } from 'express';
 import * as path from 'path';
 import { CarsService, UPLOADS_DIR } from './cars.service';
 import { CreateCarDto } from './dto/create-car.dto';
+import { CreateRentScheduleDto } from './dto/create-rent-schedule.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
+import { RentSchedulesService } from './rent-schedules.service';
 
 @Controller('api/cars')
 export class CarsController {
-  constructor(private readonly carsService: CarsService) {}
+  constructor(
+    private readonly carsService: CarsService,
+    private readonly rentSchedulesService: RentSchedulesService,
+  ) {}
 
   @Get()
   findAll() {
@@ -70,5 +75,21 @@ export class CarsController {
   @Delete(':id/photo')
   deletePhoto(@Param('id') id: string) {
     return this.carsService.removePhoto(id);
+  }
+
+  @Get(':carId/rent-schedules')
+  findSchedules(@Param('carId') carId: string) {
+    return this.rentSchedulesService.findAllForCar(carId);
+  }
+
+  @Post(':carId/rent-schedules')
+  createSchedule(@Param('carId') carId: string, @Body() dto: CreateRentScheduleDto) {
+    return this.rentSchedulesService.create(carId, dto);
+  }
+
+  @Delete(':carId/rent-schedules/:id')
+  @HttpCode(204)
+  removeSchedule(@Param('carId') carId: string, @Param('id') id: string) {
+    return this.rentSchedulesService.remove(id, carId);
   }
 }

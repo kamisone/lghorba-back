@@ -7,10 +7,12 @@ import { v4 as uuidv4 } from 'uuid';
 import { Car } from './car.entity';
 import { CarsController } from './cars.controller';
 import { CarsService, UPLOADS_DIR } from './cars.service';
+import { RentSchedule } from './rent-schedule.entity';
+import { RentSchedulesService } from './rent-schedules.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Car]),
+    TypeOrmModule.forFeature([Car, RentSchedule]),
     MulterModule.register({
       storage: diskStorage({
         destination: UPLOADS_DIR,
@@ -24,6 +26,6 @@ import { CarsService, UPLOADS_DIR } from './cars.service';
     }),
   ],
   controllers: [CarsController],
-  providers: [CarsService],
+  providers: [CarsService, RentSchedulesService],
 })
 export class CarsModule {}
