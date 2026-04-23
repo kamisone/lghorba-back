@@ -18,7 +18,12 @@ export class RentSchedulesService {
 
   create(carId: string, dto: CreateRentScheduleDto): Promise<RentSchedule> {
     return this.repo.save(
-      this.repo.create({ carId, fromDate: new Date(dto.fromDate), toDate: new Date(dto.toDate) }),
+      this.repo.create({
+        carId,
+        fromDate: new Date(dto.fromDate),
+        toDate: new Date(dto.toDate),
+        autoStartTracking: dto.autoStartTracking ?? false,
+      }),
     );
   }
 
@@ -32,6 +37,7 @@ export class RentSchedulesService {
     if (dto.guestNumber !== undefined) schedule.guestNumber = dto.guestNumber;
     if (dto.reservationNumber !== undefined) schedule.reservationNumber = dto.reservationNumber;
     if (dto.totalEarning !== undefined) schedule.totalEarning = dto.totalEarning !== null ? Number(dto.totalEarning) : null;
+    if (dto.autoStartTracking !== undefined) schedule.autoStartTracking = dto.autoStartTracking;
 
     return this.repo.save(schedule);
   }

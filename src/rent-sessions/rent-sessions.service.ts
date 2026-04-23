@@ -25,7 +25,11 @@ export class RentSessionsService {
   create(dto: CreateRentSessionDto): Promise<RentSession> {
     const now = new Date();
     return this.sessionRepo.save(
-      this.sessionRepo.create({ carId: dto.carId, nextLocationAt: addLocationInterval(now) }),
+      this.sessionRepo.create({
+        carId: dto.carId,
+        scheduleId: dto.scheduleId ?? null,
+        nextLocationAt: addLocationInterval(now),
+      }),
     );
   }
 

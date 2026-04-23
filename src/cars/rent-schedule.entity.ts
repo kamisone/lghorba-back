@@ -36,6 +36,9 @@ export class RentSchedule {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   totalEarning: number | null;
 
+  @Column({ type: 'boolean', default: false })
+  autoStartTracking: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 }
