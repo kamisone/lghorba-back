@@ -39,6 +39,9 @@ export class RentSchedule {
   @Column({ type: 'boolean', default: false })
   autoStartTracking: boolean;
 
+  @Column({ type: 'varchar', nullable: true })
+  color: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

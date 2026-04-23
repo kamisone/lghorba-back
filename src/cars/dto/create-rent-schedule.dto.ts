@@ -26,4 +26,8 @@ export class CreateRentScheduleDto {
   @IsOptional()
   @IsBoolean()
   autoStartTracking?: boolean;
+
+  @IsOptional()
+  @IsString()
+  color?: string | null;
 }

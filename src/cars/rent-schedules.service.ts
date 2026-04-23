@@ -23,6 +23,7 @@ export class RentSchedulesService {
         fromDate: new Date(dto.fromDate),
         toDate: new Date(dto.toDate),
         autoStartTracking: dto.autoStartTracking ?? false,
+        color: dto.color ?? null,
       }),
     );
   }
@@ -38,6 +39,7 @@ export class RentSchedulesService {
     if (dto.reservationNumber !== undefined) schedule.reservationNumber = dto.reservationNumber;
     if (dto.totalEarning !== undefined) schedule.totalEarning = dto.totalEarning !== null ? Number(dto.totalEarning) : null;
     if (dto.autoStartTracking !== undefined) schedule.autoStartTracking = dto.autoStartTracking;
+    if (dto.color !== undefined) schedule.color = dto.color ?? null;
 
     return this.repo.save(schedule);
   }
