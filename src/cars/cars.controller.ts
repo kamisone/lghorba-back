@@ -7,6 +7,7 @@ import {
   HttpCode,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Put,
   Res,
@@ -19,6 +20,7 @@ import * as path from 'path';
 import { CarsService, UPLOADS_DIR } from './cars.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { CreateRentScheduleDto } from './dto/create-rent-schedule.dto';
+import { UpdateRentScheduleDto } from './dto/update-rent-schedule.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
 import { RentSchedulesService } from './rent-schedules.service';
 
@@ -85,6 +87,15 @@ export class CarsController {
   @Post(':carId/rent-schedules')
   createSchedule(@Param('carId') carId: string, @Body() dto: CreateRentScheduleDto) {
     return this.rentSchedulesService.create(carId, dto);
+  }
+
+  @Patch(':id/rent-schedules/:scheduleId')
+  updateSchedule(
+    @Param('id') carId: string,
+    @Param('scheduleId') scheduleId: string,
+    @Body() dto: UpdateRentScheduleDto,
+  ) {
+    return this.rentSchedulesService.update(carId, scheduleId, dto);
   }
 
   @Delete(':carId/rent-schedules/:id')

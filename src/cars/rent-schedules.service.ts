@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateRentScheduleDto } from './dto/create-rent-schedule.dto';
+import { UpdateRentScheduleDto } from './dto/update-rent-schedule.dto';
 import { RentSchedule } from './rent-schedule.entity';
 
 @Injectable()
@@ -19,6 +20,20 @@ export class RentSchedulesService {
     return this.repo.save(
       this.repo.create({ carId, fromDate: new Date(dto.fromDate), toDate: new Date(dto.toDate) }),
     );
+  }
+
+  async update(carId: string, scheduleId: string, dto: UpdateRentScheduleDto): Promise<RentSchedule> {
+    const schedule = await this.repo.findOne({ where: { id: scheduleId, carId } });
+    if (!schedule) throw new NotFoundException(`RentSchedule ${scheduleId} not found`);
+
+    if (dto.fromDate !== undefined) schedule.fromDate = new Date(dto.fromDate);
+    if (dto.toDate !== undefined) schedule.toDate = new Date(dto.toDate);
+    if (dto.guestName !== undefined) schedule.guestName = dto.guestName;
+    if (dto.guestNumber !== undefined) schedule.guestNumber = dto.guestNumber;
+    if (dto.reservationNumber !== undefined) schedule.reservationNumber = dto.reservationNumber;
+    if (dto.totalEarning !== undefined) schedule.totalEarning = dto.totalEarning !== null ? Number(dto.totalEarning) : null;
+
+    return this.repo.save(schedule);
   }
 
   async remove(id: string, carId: string): Promise<void> {

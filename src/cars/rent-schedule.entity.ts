@@ -24,6 +24,18 @@ export class RentSchedule {
   @Column({ type: 'timestamp' })
   toDate: Date;
 
+  @Column({ type: 'varchar', nullable: true })
+  guestName: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  guestNumber: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  reservationNumber: string | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  totalEarning: number | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }
