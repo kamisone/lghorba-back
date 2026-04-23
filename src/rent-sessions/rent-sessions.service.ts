@@ -56,7 +56,14 @@ export class RentSessionsService {
     const update: Partial<RentSession> = {};
     if (dto.status) {
       update.status = dto.status;
-      if (dto.status === RentSessionStatus.ENDED) update.endedAt = new Date();
+      if (dto.status === RentSessionStatus.ENDED) {
+        update.endedAt = new Date();
+        update.nextLocationAt = null;
+      } else if (dto.status === RentSessionStatus.PAUSED) {
+        update.nextLocationAt = null;
+      } else if (dto.status === RentSessionStatus.ACTIVE) {
+        update.nextLocationAt = addLocationInterval(new Date());
+      }
     }
     if (dto.lastLocationRequestedAt) {
       const ts = new Date(dto.lastLocationRequestedAt);
