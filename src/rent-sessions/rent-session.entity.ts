@@ -27,7 +27,7 @@ export class RentSession {
   @Column({ type: 'uuid' })
   carId: string;
 
-  @ManyToOne(() => RentSchedule, { nullable: true, onDelete: 'SET NULL' })
+  @ManyToOne(() => RentSchedule, { nullable: true, onDelete: 'CASCADE' })
   schedule: RentSchedule | null;
 
   @Column({ type: 'uuid', nullable: true })
