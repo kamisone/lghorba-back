@@ -7,7 +7,7 @@ import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
-const LOCATION_INTERVAL_MS = 2 * 60 * 1000;
+const LOCATION_INTERVAL_MS = 15 * 60 * 1000;
 
 export function addLocationInterval(from: Date): Date {
   return new Date(from.getTime() + LOCATION_INTERVAL_MS);
