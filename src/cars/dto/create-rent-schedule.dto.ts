@@ -1,4 +1,4 @@
-import { IsBoolean, IsISO8601, IsNumberString, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsISO8601, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateRentScheduleDto {
   @IsISO8601()
@@ -20,8 +20,9 @@ export class CreateRentScheduleDto {
   reservationNumber?: string;
 
   @IsOptional()
-  @IsNumberString()
-  totalEarning?: string;
+  @IsNumber()
+  @Min(0)
+  totalEarning?: number | null;
 
   @IsOptional()
   @IsBoolean()
