@@ -16,8 +16,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
-import * as path from 'path';
-import { CarsService, UPLOADS_DIR } from './cars.service';
+import { CarsService } from './cars.service';
 import { CreateCarDto } from './dto/create-car.dto';
 import { CreateRentScheduleDto } from './dto/create-rent-schedule.dto';
 import { UpdateRentScheduleDto } from './dto/update-rent-schedule.dto';
@@ -64,14 +63,14 @@ export class CarsController {
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('photo field is required and must be an image');
-    return this.carsService.setPhoto(id, file.filename);
+    return this.carsService.setPhoto(id, file);
   }
 
   @Get(':id/photo')
   async getPhoto(@Param('id') id: string, @Res() res: Response) {
     const car = await this.carsService.findOne(id);
     if (!car.photo) throw new NotFoundException(`Car ${id} has no photo`);
-    res.sendFile(path.join(UPLOADS_DIR, car.photo));
+    res.redirect(302, await this.carsService.getPhotoUrl(car.photo));
   }
 
   @Delete(':id/photo')

@@ -67,4 +67,29 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: ADMIN_PASSWORD
+            - name: GCS_BUCKET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: GCS_BUCKET_NAME
+            - name: GCS_PROJECT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: GCS_PROJECT_ID
+            - name: GCS_CLIENT_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: GCS_CLIENT_EMAIL
+            - name: GCS_PRIVATE_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: GCS_PRIVATE_KEY_ID
+            - name: GCS_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: GCS_PRIVATE_KEY
             

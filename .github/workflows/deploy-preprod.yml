@@ -67,6 +67,11 @@ jobs:
             --from-literal TYPEORM_DATABASE=${{ secrets.TYPEORM_DATABASE }} \
             --from-literal JWT_SECRET=${{ secrets.JWT_SECRET }} \
             --from-literal ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }} \
-            --from-literal ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+            --from-literal ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }} \
+            --from-literal GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }} \
+            --from-literal GCS_PROJECT_ID=${{ secrets.GCS_PROJECT_ID }} \
+            --from-literal GCS_CLIENT_EMAIL=${{ secrets.GCS_CLIENT_EMAIL }} \
+            --from-literal GCS_PRIVATE_KEY_ID=${{ secrets.GCS_PRIVATE_KEY_ID }} \
+            --from-literal GCS_PRIVATE_KEY=${{ secrets.GCS_PRIVATE_KEY }}
             kubectl apply -f /srv/k8s/back
             echo ${{ secrets.SERVER_SECOND_USER_PASSWORD }} | sudo -S systemctl restart nginx

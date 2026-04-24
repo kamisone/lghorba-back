@@ -1,14 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import * as fs from 'fs';
-import * as path from 'path';
+import { extname } from 'path';
 import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import { GcsService } from '../gcs/gcs.service';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
 import { RentSchedule } from './rent-schedule.entity';
-
-export const UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'cars');
 
 type CarWithRentStatus = Car & { isCurrentlyRented: boolean };
 
@@ -19,6 +18,7 @@ export class CarsService {
     private readonly repo: Repository<Car>,
     @InjectRepository(RentSchedule)
     private readonly scheduleRepo: Repository<RentSchedule>,
+    private readonly gcsService: GcsService,
   ) {}
 
   async findAll(): Promise<CarWithRentStatus[]> {
@@ -58,23 +58,24 @@ export class CarsService {
     await this.repo.delete(id);
   }
 
-  async setPhoto(id: string, filename: string): Promise<CarWithRentStatus> {
+  async setPhoto(id: string, file: Express.Multer.File): Promise<CarWithRentStatus> {
     const car = await this.findOne(id);
-    if (car.photo) this.deletePhotoFile(car.photo);
-    await this.repo.update(id, { photo: filename });
+    if (car.photo) await this.gcsService.delete(car.photo);
+    const objectName = `cars/${uuidv4()}${extname(file.originalname)}`;
+    await this.gcsService.upload(file.buffer, objectName, file.mimetype);
+    await this.repo.update(id, { photo: objectName });
     return this.findOne(id);
+  }
+
+  getPhotoUrl(objectName: string): Promise<string> {
+    return this.gcsService.signedUrl(objectName);
   }
 
   async removePhoto(id: string): Promise<CarWithRentStatus> {
     const car = await this.findOne(id);
     if (!car.photo) throw new NotFoundException(`Car ${id} has no photo`);
-    this.deletePhotoFile(car.photo);
+    await this.gcsService.delete(car.photo);
     await this.repo.update(id, { photo: null });
     return this.findOne(id);
-  }
-
-  private deletePhotoFile(filename: string): void {
-    const filePath = path.join(UPLOADS_DIR, filename);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   }
 }
