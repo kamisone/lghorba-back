@@ -13,7 +13,6 @@ import { RentPosition } from './rent-position.entity';
 export enum RentSessionStatus {
   ACTIVE = 'active',
   PAUSED = 'paused',
-  PENDING_STOP = 'pending_stop',
   ENDED = 'ended',
 }
 

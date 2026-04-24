@@ -50,7 +50,7 @@ export class RentSessionsTasksService {
         const existing = await this.sessionRepo.findOne({
           where: {
             scheduleId: schedule.id,
-            status: In([RentSessionStatus.ACTIVE, RentSessionStatus.PAUSED, RentSessionStatus.PENDING_STOP]),
+            status: In([RentSessionStatus.ACTIVE, RentSessionStatus.PAUSED]),
           },
         });
         if (existing) return;
@@ -76,7 +76,7 @@ export class RentSessionsTasksService {
       .createQueryBuilder('session')
       .innerJoin('session.schedule', 'schedule')
       .where('session.status IN (:...statuses)', {
-        statuses: [RentSessionStatus.ACTIVE, RentSessionStatus.PAUSED, RentSessionStatus.PENDING_STOP],
+        statuses: [RentSessionStatus.ACTIVE, RentSessionStatus.PAUSED],
       })
       .andWhere('schedule.toDate < :now', { now })
       .getMany();
