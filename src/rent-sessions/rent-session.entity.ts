@@ -12,7 +12,6 @@ import { RentPosition } from './rent-position.entity';
 
 export enum RentSessionStatus {
   ACTIVE = 'active',
-  PAUSED = 'paused',
   ENDED = 'ended',
 }
 
@@ -35,6 +34,9 @@ export class RentSession {
 
   @Column({ type: 'enum', enum: RentSessionStatus, default: RentSessionStatus.ACTIVE })
   status: RentSessionStatus;
+
+  @Column({ type: 'boolean', default: false })
+  trackingPaused: boolean;
 
   @CreateDateColumn()
   startedAt: Date;

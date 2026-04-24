@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -34,6 +36,12 @@ export class RentSessionsController {
   @Patch(':id')
   patch(@Param('id') id: string, @Body() dto: PatchRentSessionDto) {
     return this.service.patch(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@Param('id') id: string) {
+    return this.service.remove(id);
   }
 
   @Post(':id/positions')

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, LessThanOrEqual, Repository } from 'typeorm';
+import { LessThanOrEqual, MoreThan, Repository } from 'typeorm';
 import { Car } from '../cars/car.entity';
 import { RentSchedule } from '../cars/rent-schedule.entity';
 import { SmsService } from '../sms/sms.service';
@@ -24,7 +24,7 @@ export class RentSessionsTasksService {
   async sendLocationRequests(): Promise<void> {
     const now = new Date();
     const sessions = await this.sessionRepo.find({
-      where: { status: RentSessionStatus.ACTIVE, nextLocationAt: LessThanOrEqual(now) },
+      where: { status: RentSessionStatus.ACTIVE, trackingPaused: false, nextLocationAt: LessThanOrEqual(now) },
       relations: { car: true },
     });
     await Promise.all(
@@ -43,15 +43,12 @@ export class RentSessionsTasksService {
   async activateScheduledSessions(): Promise<void> {
     const now = new Date();
     const schedules = await this.scheduleRepo.find({
-      where: { fromDate: LessThanOrEqual(now), autoStartTracking: true },
+      where: { fromDate: LessThanOrEqual(now), toDate: MoreThan(now) },
     });
     await Promise.all(
       schedules.map(async (schedule) => {
         const existing = await this.sessionRepo.findOne({
-          where: {
-            scheduleId: schedule.id,
-            status: In([RentSessionStatus.ACTIVE, RentSessionStatus.PAUSED]),
-          },
+          where: { scheduleId: schedule.id },
         });
         if (existing) return;
         const car = await this.carRepo.findOne({ where: { id: schedule.carId } });
@@ -61,7 +58,9 @@ export class RentSessionsTasksService {
           this.sessionRepo.create({
             carId: schedule.carId,
             scheduleId: schedule.id,
+            lastLocationRequestedAt: ts,
             nextLocationAt: addLocationInterval(ts),
+            trackingPaused: !schedule.autoStartTracking
           }),
         );
         await this.smsService.addMessage(car.phoneNumber, 'location');
@@ -75,9 +74,7 @@ export class RentSessionsTasksService {
     const sessions = await this.sessionRepo
       .createQueryBuilder('session')
       .innerJoin('session.schedule', 'schedule')
-      .where('session.status IN (:...statuses)', {
-        statuses: [RentSessionStatus.ACTIVE, RentSessionStatus.PAUSED],
-      })
+      .where('session.status = :status', { status: RentSessionStatus.ACTIVE })
       .andWhere('schedule.toDate < :now', { now })
       .getMany();
 

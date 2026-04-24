@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateRentPositionDto } from './dto/create-rent-position.dto';
@@ -28,6 +32,7 @@ export class RentSessionsService {
       this.sessionRepo.create({
         carId: dto.carId,
         scheduleId: dto.scheduleId ?? null,
+        trackingPaused: false,
         nextLocationAt: addLocationInterval(now),
       }),
     );
@@ -52,18 +57,24 @@ export class RentSessionsService {
   }
 
   async patch(id: string, dto: PatchRentSessionDto): Promise<RentSession> {
-    await this.findOne(id);
+    const session = await this.findOne(id);
+    if (session.status === RentSessionStatus.ENDED) {
+      throw new BadRequestException('Cannot update an ended session');
+    }
     const update: Partial<RentSession> = {};
     if (dto.status) {
       update.status = dto.status;
       if (dto.status === RentSessionStatus.ENDED) {
         update.endedAt = new Date();
         update.nextLocationAt = null;
-      } else if (dto.status === RentSessionStatus.PAUSED) {
-        update.nextLocationAt = null;
-      } else if (dto.status === RentSessionStatus.ACTIVE) {
-        update.nextLocationAt = addLocationInterval(new Date());
+        update.trackingPaused = false;
       }
+    }
+    if (dto.trackingPaused !== undefined) {
+      update.trackingPaused = dto.trackingPaused;
+      update.nextLocationAt = dto.trackingPaused
+        ? null
+        : addLocationInterval(new Date());
     }
     if (dto.lastLocationRequestedAt) {
       const ts = new Date(dto.lastLocationRequestedAt);
@@ -74,9 +85,22 @@ export class RentSessionsService {
     return this.findOne(id);
   }
 
-  async addPosition(id: string, dto: CreateRentPositionDto): Promise<RentPosition> {
+  async remove(id: string): Promise<void> {
+    const session = await this.findOne(id);
+    if (session.status !== RentSessionStatus.ENDED) {
+      throw new BadRequestException('Cannot delete an active session');
+    }
+    await this.sessionRepo.delete(id);
+  }
+
+  async addPosition(
+    id: string,
+    dto: CreateRentPositionDto,
+  ): Promise<RentPosition> {
     await this.findOne(id);
-    return this.positionRepo.save(this.positionRepo.create({ ...dto, sessionId: id }));
+    return this.positionRepo.save(
+      this.positionRepo.create({ ...dto, sessionId: id }),
+    );
   }
 
   async getPositions(id: string): Promise<RentPosition[]> {
