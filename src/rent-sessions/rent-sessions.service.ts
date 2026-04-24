@@ -132,6 +132,24 @@ export class RentSessionsService {
     const coords = extractLatLng(mapsUrl);
     if (!coords) return;
 
+    if (coords.lat === 0 || coords.lng === 0) {
+      const last = await this.positionRepo.findOne({
+        where: { sessionId: session.id },
+        order: { recordedAt: 'DESC' },
+      });
+      if (!last) return;
+      await this.positionRepo.save(
+        this.positionRepo.create({
+          sessionId: session.id,
+          lat: last.lat,
+          lng: last.lng,
+          rawMessage: message,
+          recordedAt: receivedAt,
+        }),
+      );
+      return;
+    }
+
     await this.addPosition(session.id, {
       lat: coords.lat,
       lng: coords.lng,
