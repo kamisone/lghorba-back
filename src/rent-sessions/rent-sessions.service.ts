@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
+import { extractLatLng, extractMapsUrl } from './map-utils';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
@@ -108,6 +109,34 @@ export class RentSessionsService {
     return this.positionRepo.find({
       where: { sessionId: id },
       order: { recordedAt: 'ASC' },
+    });
+  }
+
+  private findActiveSessionByCarPhone(phoneNumber: string): Promise<RentSession | null> {
+    return this.sessionRepo.findOne({
+      where: { status: RentSessionStatus.ACTIVE, car: { phoneNumber } },
+      relations: { car: true },
+    });
+  }
+
+  async processInboundSms(phoneNumber: string, message: string, receivedAt: Date): Promise<void> {
+    const session = await this.findActiveSessionByCarPhone(phoneNumber);
+    if (!session) return;
+    if (session.trackingPaused) return;
+    if (!session.lastLocationRequestedAt) return;
+    if (receivedAt <= session.lastLocationRequestedAt) return;
+
+    const mapsUrl = extractMapsUrl(message);
+    if (!mapsUrl) return;
+
+    const coords = extractLatLng(mapsUrl);
+    if (!coords) return;
+
+    await this.addPosition(session.id, {
+      lat: coords.lat,
+      lng: coords.lng,
+      rawMessage: message,
+      recordedAt: receivedAt,
     });
   }
 }

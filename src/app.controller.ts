@@ -1,7 +1,8 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AppService } from './app.service';
-import { SmsService } from './sms/sms.service';
+import { RentSessionsService } from './rent-sessions/rent-sessions.service';
 import { SmsType } from './sms/sms-message.entity';
+import { SmsService } from './sms/sms.service';
 import { Public } from './auth/public.decorator';
 
 @Controller()
@@ -9,6 +10,7 @@ export class AppController {
   constructor(
     private readonly appService: AppService,
     private readonly smsService: SmsService,
+    private readonly rentSessionsService: RentSessionsService,
   ) {}
 
   @Get()
@@ -39,7 +41,10 @@ export class AppController {
 
   @Public()
   @Post('receive')
-  receiveSmsFromAndroid(@Body() body: { to: string; message: string }) {
-    return this.smsService.addMessage(body.to, body.message, SmsType.INBOUND);
+  async receiveSmsFromAndroid(@Body() body: { to: string; message: string }) {
+    const receivedAt = new Date();
+    const result = await this.smsService.addMessage(body.to, body.message, SmsType.INBOUND);
+    await this.rentSessionsService.processInboundSms(body.to, body.message, receivedAt);
+    return result;
   }
 }

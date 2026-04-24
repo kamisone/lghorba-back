@@ -16,5 +16,6 @@ import { RentSessionsService } from './rent-sessions.service';
   ],
   controllers: [RentSessionsController],
   providers: [RentSessionsService, RentSessionsTasksService],
+  exports: [RentSessionsService],
 })
 export class RentSessionsModule {}
