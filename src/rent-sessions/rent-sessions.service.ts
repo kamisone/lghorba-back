@@ -132,7 +132,7 @@ export class RentSessionsService {
     const coords = extractLatLng(mapsUrl);
     if (!coords) return;
 
-    if (coords.lat === 0 || coords.lng === 0) {
+    if (coords.lat % 1 === 0 || coords.lng % 1 === 0) {
       const last = await this.positionRepo.findOne({
         where: { sessionId: session.id },
         order: { recordedAt: 'DESC' },

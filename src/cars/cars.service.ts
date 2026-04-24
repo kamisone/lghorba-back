@@ -54,7 +54,8 @@ export class CarsService {
   }
 
   async remove(id: string): Promise<void> {
-    await this.findOne(id);
+    const car = await this.findOne(id);
+    if (car.photo) await this.gcsService.delete(car.photo);
     await this.repo.delete(id);
   }
 
