@@ -6,6 +6,7 @@ import { GcsModule } from '../gcs/gcs.module';
 import { Car } from './car.entity';
 import { CarsController } from './cars.controller';
 import { CarsService } from './cars.service';
+import { PublicCarsController } from './public-cars.controller';
 import { RentSchedule } from './rent-schedule.entity';
 import { RentSchedulesService } from './rent-schedules.service';
 
@@ -20,7 +21,7 @@ import { RentSchedulesService } from './rent-schedules.service';
     }),
     GcsModule,
   ],
-  controllers: [CarsController],
+  controllers: [CarsController, PublicCarsController],
   providers: [CarsService, RentSchedulesService],
 })
 export class CarsModule {}

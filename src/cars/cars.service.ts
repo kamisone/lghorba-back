@@ -21,6 +21,17 @@ export class CarsService {
     private readonly gcsService: GcsService,
   ) {}
 
+  async findAllPublic(): Promise<{ id: string; name: string; description: string | null; hasPhoto: boolean; isAvailable: boolean }[]> {
+    const cars = await this.findAll();
+    return cars.map((car) => ({
+      id: car.id,
+      name: car.name,
+      description: car.description,
+      hasPhoto: car.photo !== null,
+      isAvailable: !car.isCurrentlyRented,
+    }));
+  }
+
   async findAll(): Promise<CarWithRentStatus[]> {
     const cars = await this.repo.find();
     if (cars.length === 0) return [];
