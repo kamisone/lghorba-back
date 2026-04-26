@@ -1,7 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { RentSchedule } from '../cars/rent-schedule.entity';
 import { RentSession } from '../rent-sessions/rent-session.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -12,8 +11,6 @@ export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly repo: Repository<User>,
-    @InjectRepository(RentSchedule)
-    private readonly scheduleRepo: Repository<RentSchedule>,
     @InjectRepository(RentSession)
     private readonly sessionRepo: Repository<RentSession>,
   ) {}
@@ -21,13 +18,22 @@ export class UsersService {
   async findAll(search?: string, limit = 20): Promise<(User & { rentCount: number })[]> {
     const qb = this.repo
       .createQueryBuilder('u')
-      .loadRelationCountAndMap('u.rentCount', 'u.rentSchedules')
+      .addSelect(`(
+        SELECT COUNT(DISTINCT sq.sid)::int FROM (
+          SELECT s.id AS sid FROM rent_sessions s WHERE s."userId" = u.id
+          UNION
+          SELECT s.id AS sid FROM rent_sessions s
+          JOIN rent_schedules sch ON s."scheduleId" = sch.id
+          WHERE sch."userId" = u.id
+        ) sq
+      )`, 'u_rentCount')
       .orderBy('u.createdAt', 'DESC')
       .take(limit);
     if (search) {
       qb.where('u.name ILIKE :s OR u.phone ILIKE :s', { s: `%${search}%` });
     }
-    return qb.getMany() as Promise<(User & { rentCount: number })[]>;
+    const { entities, raw } = await qb.getRawAndEntities();
+    return entities.map((u, i) => ({ ...u, rentCount: raw[i]?.u_rentCount ?? 0 })) as (User & { rentCount: number })[];
   }
 
   async create(dto: CreateUserDto): Promise<User> {
@@ -63,8 +69,7 @@ export class UsersService {
     const user = await this.repo.findOne({ where: { id } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
 
-    const [rentCount, sessionsBySchedule, sessionsDirect] = await Promise.all([
-      this.scheduleRepo.count({ where: { userId: id } }),
+    const [sessionsBySchedule, sessionsDirect] = await Promise.all([
       this.sessionRepo
         .createQueryBuilder('s')
         .innerJoinAndSelect('s.car', 'car')
@@ -97,7 +102,7 @@ export class UsersService {
       .filter((s) => { if (seenIds.has(s.id)) return false; seenIds.add(s.id); return true; })
       .map(toShape);
 
-    return { ...user, rentCount, rentSessions };
+    return { ...user, rentCount: rentSessions.length, rentSessions };
   }
 
   async patch(id: string, dto: UpdateUserDto): Promise<User> {
