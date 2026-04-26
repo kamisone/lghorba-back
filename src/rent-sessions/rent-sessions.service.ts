@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { RentSchedule } from '../cars/rent-schedule.entity';
 import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
@@ -25,6 +26,8 @@ export class RentSessionsService {
     private readonly sessionRepo: Repository<RentSession>,
     @InjectRepository(RentPosition)
     private readonly positionRepo: Repository<RentPosition>,
+    @InjectRepository(RentSchedule)
+    private readonly scheduleRepo: Repository<RentSchedule>,
   ) {}
 
   create(dto: CreateRentSessionDto): Promise<RentSession> {
@@ -107,7 +110,11 @@ export class RentSessionsService {
     if (session.status !== RentSessionStatus.ENDED) {
       throw new BadRequestException('Cannot delete an active session');
     }
-    await this.sessionRepo.delete(id);
+    if (session.scheduleId) {
+      await this.scheduleRepo.delete(session.scheduleId);
+    } else {
+      await this.sessionRepo.delete(id);
+    }
   }
 
   async addPosition(
