@@ -78,6 +78,37 @@ export class CarsController {
     return this.carsService.removePhoto(id);
   }
 
+  @Get(':id/photos')
+  listPhotos(@Param('id') id: string) {
+    return this.carsService.listPhotos(id);
+  }
+
+  @Post(':id/photos')
+  @UseInterceptors(FileInterceptor('photo'))
+  addPhoto(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) throw new BadRequestException('photo field is required and must be an image');
+    return this.carsService.addPhoto(id, file);
+  }
+
+  @Get(':id/photos/:photoId')
+  async getPhotoById(
+    @Param('id') id: string,
+    @Param('photoId') photoId: string,
+    @Res() res: Response,
+  ) {
+    const url = await this.carsService.getPhotoByIdUrl(id, photoId);
+    res.redirect(302, url);
+  }
+
+  @Delete(':id/photos/:photoId')
+  @HttpCode(204)
+  deletePhotoById(@Param('id') id: string, @Param('photoId') photoId: string) {
+    return this.carsService.deletePhotoById(id, photoId);
+  }
+
   @Get(':carId/rent-schedules')
   findSchedules(@Param('carId') carId: string) {
     return this.rentSchedulesService.findAllForCar(carId);

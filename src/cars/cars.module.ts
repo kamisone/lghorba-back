@@ -5,6 +5,7 @@ import { memoryStorage } from 'multer';
 import { GcsModule } from '../gcs/gcs.module';
 import { RentSession } from '../rent-sessions/rent-session.entity';
 import { UsersModule } from '../users/users.module';
+import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CarsController } from './cars.controller';
 import { CarsService } from './cars.service';
@@ -14,7 +15,7 @@ import { RentSchedulesService } from './rent-schedules.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Car, RentSchedule, RentSession]),
+    TypeOrmModule.forFeature([Car, CarPhoto, RentSchedule, RentSession]),
     MulterModule.register({
       storage: memoryStorage(),
       fileFilter: (_req, file, cb) => {

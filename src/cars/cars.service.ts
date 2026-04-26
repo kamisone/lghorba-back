@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { GcsService } from '../gcs/gcs.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
+import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
@@ -18,10 +19,12 @@ export class CarsService {
     private readonly repo: Repository<Car>,
     @InjectRepository(RentSession)
     private readonly sessionRepo: Repository<RentSession>,
+    @InjectRepository(CarPhoto)
+    private readonly photoRepo: Repository<CarPhoto>,
     private readonly gcsService: GcsService,
   ) {}
 
-  async findAllPublic(): Promise<{ id: string; name: string; description: string | null; hasPhoto: boolean; isAvailable: boolean }[]> {
+  async findAllPublic() {
     const cars = await this.findAll();
     return cars.map((car) => ({
       id: car.id,
@@ -29,7 +32,26 @@ export class CarsService {
       description: car.description,
       hasPhoto: car.photo !== null,
       isAvailable: !car.isCurrentlyRented,
+      brand: car.brand,
+      model: car.model,
+      finishing: car.finishing,
+      modelYear: car.modelYear,
+      vehicleType: car.vehicleType,
+      energy: car.energy,
+      gearbox: car.gearbox,
+      din: car.din,
+      mileage: car.mileage,
+      numberOfDoors: car.numberOfDoors,
+      numberOfSeats: car.numberOfSeats,
+      color: car.color,
+      vehicleCondition: car.vehicleCondition,
     }));
+  }
+
+  async findOnePublic(id: string) {
+    const car = await this.findOne(id);
+    const { immatriculation, phoneNumber, photo, ...rest } = car;
+    return { ...rest, hasPhoto: photo !== null };
   }
 
   async findAll(): Promise<CarWithRentStatus[]> {
@@ -78,6 +100,8 @@ export class CarsService {
   async remove(id: string): Promise<void> {
     const car = await this.findOne(id);
     if (car.photo) await this.gcsService.delete(car.photo);
+    const photos = await this.photoRepo.find({ where: { carId: id } });
+    await Promise.all(photos.map((p) => this.gcsService.delete(p.objectName)));
     await this.repo.delete(id);
   }
 
@@ -100,5 +124,30 @@ export class CarsService {
     await this.gcsService.delete(car.photo);
     await this.repo.update(id, { photo: null });
     return this.findOne(id);
+  }
+
+  listPhotos(carId: string): Promise<{ id: string }[]> {
+    return this.photoRepo.find({ where: { carId }, select: ['id'], order: { createdAt: 'ASC' } });
+  }
+
+  async addPhoto(carId: string, file: Express.Multer.File): Promise<{ id: string }> {
+    await this.findOne(carId);
+    const objectName = `cars/${carId}/${uuidv4()}${extname(file.originalname)}`;
+    await this.gcsService.upload(file.buffer, objectName, file.mimetype);
+    const saved = await this.photoRepo.save(this.photoRepo.create({ carId, objectName }));
+    return { id: saved.id };
+  }
+
+  async getPhotoByIdUrl(carId: string, photoId: string): Promise<string> {
+    const photo = await this.photoRepo.findOne({ where: { id: photoId, carId } });
+    if (!photo) throw new NotFoundException(`Photo ${photoId} not found`);
+    return this.gcsService.signedUrl(photo.objectName);
+  }
+
+  async deletePhotoById(carId: string, photoId: string): Promise<void> {
+    const photo = await this.photoRepo.findOne({ where: { id: photoId, carId } });
+    if (!photo) throw new NotFoundException(`Photo ${photoId} not found`);
+    await this.gcsService.delete(photo.objectName);
+    await this.photoRepo.delete(photoId);
   }
 }
