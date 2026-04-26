@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThan, MoreThan, Not, Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
 import { CreateRentScheduleDto } from './dto/create-rent-schedule.dto';
 import { UpdateRentScheduleDto } from './dto/update-rent-schedule.dto';
@@ -18,13 +18,28 @@ export class RentSchedulesService {
     return this.repo.find({ where: { carId }, relations: { user: true }, order: { fromDate: 'ASC' } });
   }
 
+  private async checkOverlap(carId: string, fromDate: Date, toDate: Date, excludeId?: string): Promise<void> {
+    const overlap = await this.repo.findOne({
+      where: {
+        carId,
+        fromDate: LessThan(toDate),
+        toDate: MoreThan(fromDate),
+        ...(excludeId ? { id: Not(excludeId) } : {}),
+      },
+    });
+    if (overlap) throw new ConflictException('Schedule dates overlap with an existing rent period');
+  }
+
   async create(carId: string, dto: CreateRentScheduleDto): Promise<RentSchedule> {
+    const fromDate = new Date(dto.fromDate);
+    const toDate = new Date(dto.toDate);
+    await this.checkOverlap(carId, fromDate, toDate);
     const userId = await this.resolveUser(dto);
     const saved = await this.repo.save(
       this.repo.create({
         carId,
-        fromDate: new Date(dto.fromDate),
-        toDate: new Date(dto.toDate),
+        fromDate,
+        toDate,
         userId,
         reservationNumber: dto.reservationNumber ?? null,
         totalEarning: dto.totalEarning !== undefined && dto.totalEarning !== null ? Number(dto.totalEarning) : null,
@@ -39,8 +54,13 @@ export class RentSchedulesService {
     const schedule = await this.repo.findOne({ where: { id: scheduleId, carId } });
     if (!schedule) throw new NotFoundException(`RentSchedule ${scheduleId} not found`);
 
-    if (dto.fromDate !== undefined) schedule.fromDate = new Date(dto.fromDate);
-    if (dto.toDate !== undefined) schedule.toDate = new Date(dto.toDate);
+    const newFromDate = dto.fromDate !== undefined ? new Date(dto.fromDate) : schedule.fromDate;
+    const newToDate = dto.toDate !== undefined ? new Date(dto.toDate) : schedule.toDate;
+    if (dto.fromDate !== undefined || dto.toDate !== undefined) {
+      await this.checkOverlap(carId, newFromDate, newToDate, scheduleId);
+    }
+    schedule.fromDate = newFromDate;
+    schedule.toDate = newToDate;
     if (dto.reservationNumber !== undefined) schedule.reservationNumber = dto.reservationNumber ?? null;
     if (dto.totalEarning !== undefined) schedule.totalEarning = dto.totalEarning !== null ? Number(dto.totalEarning) : null;
     if (dto.autoStartTracking !== undefined) schedule.autoStartTracking = dto.autoStartTracking;

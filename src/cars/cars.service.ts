@@ -1,23 +1,23 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { extname } from 'path';
-import { LessThanOrEqual, MoreThanOrEqual, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { GcsService } from '../gcs/gcs.service';
+import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
-import { RentSchedule } from './rent-schedule.entity';
 
-type CarWithRentStatus = Car & { isCurrentlyRented: boolean };
+type CarWithRentStatus = Car & { isCurrentlyRented: boolean; isTrackingActive: boolean };
 
 @Injectable()
 export class CarsService {
   constructor(
     @InjectRepository(Car)
     private readonly repo: Repository<Car>,
-    @InjectRepository(RentSchedule)
-    private readonly scheduleRepo: Repository<RentSchedule>,
+    @InjectRepository(RentSession)
+    private readonly sessionRepo: Repository<RentSession>,
     private readonly gcsService: GcsService,
   ) {}
 
@@ -35,23 +35,34 @@ export class CarsService {
   async findAll(): Promise<CarWithRentStatus[]> {
     const cars = await this.repo.find();
     if (cars.length === 0) return [];
-    const now = new Date();
-    const active = await this.scheduleRepo.find({
-      where: { fromDate: LessThanOrEqual(now), toDate: MoreThanOrEqual(now) },
-      select: ['carId'],
-    });
-    const rentedIds = new Set(active.map((s) => s.carId));
-    return cars.map((car) => Object.assign(car, { isCurrentlyRented: rentedIds.has(car.id) }));
+    const [activeSessions, trackingSessions] = await Promise.all([
+      this.sessionRepo.find({
+        where: { status: RentSessionStatus.ACTIVE },
+        select: ['carId'],
+      }),
+      this.sessionRepo.find({
+        where: { status: RentSessionStatus.ACTIVE, trackingPaused: false },
+        select: ['carId'],
+      }),
+    ]);
+    const rentedIds = new Set(activeSessions.map((s) => s.carId));
+    const trackingIds = new Set(trackingSessions.map((s) => s.carId));
+    return cars.map((car) =>
+      Object.assign(car, {
+        isCurrentlyRented: rentedIds.has(car.id),
+        isTrackingActive: trackingIds.has(car.id),
+      }),
+    );
   }
 
   async findOne(id: string): Promise<CarWithRentStatus> {
     const car = await this.repo.findOne({ where: { id } });
     if (!car) throw new NotFoundException(`Car ${id} not found`);
-    const now = new Date();
-    const count = await this.scheduleRepo.count({
-      where: { carId: id, fromDate: LessThanOrEqual(now), toDate: MoreThanOrEqual(now) },
-    });
-    return Object.assign(car, { isCurrentlyRented: count > 0 });
+    const [rentedCount, trackingCount] = await Promise.all([
+      this.sessionRepo.count({ where: { carId: id, status: RentSessionStatus.ACTIVE } }),
+      this.sessionRepo.count({ where: { carId: id, status: RentSessionStatus.ACTIVE, trackingPaused: false } }),
+    ]);
+    return Object.assign(car, { isCurrentlyRented: rentedCount > 0, isTrackingActive: trackingCount > 0 });
   }
 
   create(dto: CreateCarDto): Promise<Car> {

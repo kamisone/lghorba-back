@@ -3,6 +3,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { memoryStorage } from 'multer';
 import { GcsModule } from '../gcs/gcs.module';
+import { RentSession } from '../rent-sessions/rent-session.entity';
 import { UsersModule } from '../users/users.module';
 import { Car } from './car.entity';
 import { CarsController } from './cars.controller';
@@ -13,7 +14,7 @@ import { RentSchedulesService } from './rent-schedules.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Car, RentSchedule]),
+    TypeOrmModule.forFeature([Car, RentSchedule, RentSession]),
     MulterModule.register({
       storage: memoryStorage(),
       fileFilter: (_req, file, cb) => {
