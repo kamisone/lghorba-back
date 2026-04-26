@@ -45,7 +45,7 @@ export class RentSessionsService {
   findAllForCar(carId: string): Promise<RentSession[]> {
     return this.sessionRepo.find({
       where: { carId },
-      relations: { positions: true },
+      relations: { positions: true, schedule: { user: true } },
       order: { startedAt: 'DESC', positions: { recordedAt: 'ASC' } },
     });
   }
