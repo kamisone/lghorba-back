@@ -4,7 +4,9 @@ import {
   Entity,
   ManyToOne,
   PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
+import { User } from '../users/user.entity';
 import { Car } from './car.entity';
 
 @Entity('rent_schedules')
@@ -25,12 +27,6 @@ export class RentSchedule {
   toDate: Date;
 
   @Column({ type: 'varchar', nullable: true })
-  guestName: string | null;
-
-  @Column({ type: 'varchar', nullable: true })
-  guestNumber: string | null;
-
-  @Column({ type: 'varchar', nullable: true })
   reservationNumber: string | null;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
@@ -42,6 +38,15 @@ export class RentSchedule {
   @Column({ type: 'varchar', nullable: true })
   color: string | null;
 
+  @ManyToOne(() => User, (u) => u.rentSchedules, { nullable: true, onDelete: 'SET NULL' })
+  user: User | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Admin } from './admins/admin.entity';
+import { AdminsModule } from './admins/admins.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { Car } from './cars/car.entity';
@@ -13,6 +15,8 @@ import { RentSessionsModule } from './rent-sessions/rent-sessions.module';
 import { SmsMessage } from './sms/sms-message.entity';
 import { SmsController } from './sms/sms.controller';
 import { SmsModule } from './sms/sms.module';
+import { User } from './users/user.entity';
+import { UsersModule } from './users/users.module';
 
 import { config } from 'dotenv';
 
@@ -27,13 +31,15 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, RentSchedule, RentSession, RentPosition],
+      entities: [SmsMessage, Car, RentSchedule, RentSession, RentPosition, User, Admin],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
     ScheduleModule.forRoot(),
     SmsModule,
     AuthModule,
+    AdminsModule,
+    UsersModule,
     CarsModule,
     RentSessionsModule,
   ],

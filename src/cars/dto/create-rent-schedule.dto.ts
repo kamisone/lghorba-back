@@ -1,4 +1,4 @@
-import { IsBoolean, IsISO8601, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsDateString, IsEmail, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
 
 export class CreateRentScheduleDto {
   @IsISO8601()
@@ -31,4 +31,20 @@ export class CreateRentScheduleDto {
   @IsOptional()
   @IsString()
   color?: string | null;
+
+  @IsEmail()
+  @IsOptional()
+  guestEmail?: string | null;
+
+  @IsDateString()
+  @IsOptional()
+  turoJoinDate?: string | null;
+
+  @IsDateString()
+  @IsOptional()
+  getaroundJoinDate?: string | null;
+
+  @IsUUID()
+  @IsOptional()
+  userId?: string | null;
 }
