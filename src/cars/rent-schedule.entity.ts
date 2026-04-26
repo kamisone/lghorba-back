@@ -3,9 +3,11 @@ import {
   CreateDateColumn,
   Entity,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { RentSession } from '../rent-sessions/rent-session.entity';
 import { User } from '../users/user.entity';
 import { Car } from './car.entity';
 
@@ -43,6 +45,9 @@ export class RentSchedule {
 
   @Column({ type: 'uuid', nullable: true })
   userId: string | null;
+
+  @OneToOne(() => RentSession, (s) => s.schedule, { nullable: true, eager: false })
+  session?: RentSession | null;
 
   @CreateDateColumn()
   createdAt: Date;

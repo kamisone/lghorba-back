@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThan, Not, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { UsersService } from '../users/users.service';
 import { CreateRentScheduleDto } from './dto/create-rent-schedule.dto';
 import { UpdateRentScheduleDto } from './dto/update-rent-schedule.dto';
@@ -19,14 +19,20 @@ export class RentSchedulesService {
   }
 
   private async checkOverlap(carId: string, fromDate: Date, toDate: Date, excludeId?: string): Promise<void> {
-    const overlap = await this.repo.findOne({
-      where: {
-        carId,
-        fromDate: LessThan(toDate),
-        toDate: MoreThan(fromDate),
-        ...(excludeId ? { id: Not(excludeId) } : {}),
-      },
-    });
+    const qb = this.repo
+      .createQueryBuilder('rs')
+      .where('rs.carId = :carId', { carId })
+      .andWhere('rs.fromDate < :toDate', { toDate })
+      .andWhere('rs.toDate > :fromDate', { fromDate })
+      .andWhere(`NOT EXISTS (
+        SELECT 1 FROM rent_sessions s
+        WHERE s."scheduleId" = rs.id
+        AND s.status = 'ended'
+      )`);
+    if (excludeId) {
+      qb.andWhere('rs.id != :excludeId', { excludeId });
+    }
+    const overlap = await qb.getOne();
     if (overlap) throw new ConflictException('Schedule dates overlap with an existing rent period');
   }
 

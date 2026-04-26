@@ -2,8 +2,10 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  JoinColumn,
   ManyToOne,
   OneToMany,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Car } from '../cars/car.entity';
@@ -27,10 +29,11 @@ export class RentSession {
   @Column({ type: 'uuid' })
   carId: string;
 
-  @ManyToOne(() => RentSchedule, { nullable: true, onDelete: 'CASCADE' })
+  @OneToOne(() => RentSchedule, { nullable: true, onDelete: 'CASCADE', eager: false })
+  @JoinColumn()
   schedule: RentSchedule | null;
 
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: 'uuid', nullable: true, unique: true })
   scheduleId: string | null;
 
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })

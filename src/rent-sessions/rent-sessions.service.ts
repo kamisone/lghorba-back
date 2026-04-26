@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -30,7 +31,11 @@ export class RentSessionsService {
     private readonly scheduleRepo: Repository<RentSchedule>,
   ) {}
 
-  create(dto: CreateRentSessionDto): Promise<RentSession> {
+  async create(dto: CreateRentSessionDto): Promise<RentSession> {
+    if (dto.scheduleId) {
+      const existing = await this.sessionRepo.findOne({ where: { scheduleId: dto.scheduleId } });
+      if (existing) throw new ConflictException('This schedule already has a rent session');
+    }
     const now = new Date();
     return this.sessionRepo.save(
       this.sessionRepo.create({
