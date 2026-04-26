@@ -27,13 +27,26 @@ export class UsersService {
           WHERE sch."userId" = u.id
         ) sq
       )`, 'u_rentCount')
+      .addSelect(`(
+        EXISTS (
+          SELECT 1 FROM rent_sessions s WHERE s."userId" = u.id AND s.status = 'active'
+          UNION ALL
+          SELECT 1 FROM rent_sessions s
+          JOIN rent_schedules sch ON s."scheduleId" = sch.id
+          WHERE sch."userId" = u.id AND s.status = 'active'
+        )
+      )`, 'u_hasActiveSession')
       .orderBy('u.createdAt', 'DESC')
       .take(limit);
     if (search) {
       qb.where('u.name ILIKE :s OR u.phone ILIKE :s', { s: `%${search}%` });
     }
     const { entities, raw } = await qb.getRawAndEntities();
-    return entities.map((u, i) => ({ ...u, rentCount: raw[i]?.u_rentCount ?? 0 })) as (User & { rentCount: number })[];
+    return entities.map((u, i) => ({
+      ...u,
+      rentCount: raw[i]?.u_rentCount ?? 0,
+      hasActiveSession: raw[i]?.u_hasActiveSession ?? false,
+    })) as (User & { rentCount: number; hasActiveSession: boolean })[];
   }
 
   async create(dto: CreateUserDto): Promise<User> {
