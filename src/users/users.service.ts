@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RentSchedule } from '../cars/rent-schedule.entity';
@@ -31,7 +31,20 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto): Promise<User> {
-    return this.repo.save(
+    const session = await this.sessionRepo.findOne({ where: { id: dto.rentSessionId } });
+    if (!session) throw new NotFoundException(`RentSession ${dto.rentSessionId} not found`);
+    if (session.userId) throw new BadRequestException(`Session is already linked to a user`);
+
+    if (dto.phone) {
+      const conflict = await this.repo
+        .createQueryBuilder('u')
+        .where('LOWER(u.name) = LOWER(:name)', { name: dto.name })
+        .andWhere('LOWER(u.phone) = LOWER(:phone)', { phone: dto.phone })
+        .getOne();
+      if (conflict) throw new ConflictException(`User with this name and phone already exists`);
+    }
+
+    const user = await this.repo.save(
       this.repo.create({
         name: dto.name,
         phone: dto.phone ?? null,
@@ -41,42 +54,48 @@ export class UsersService {
         getaroundJoinDate: dto.getaroundJoinDate ?? null,
       }),
     );
+
+    await this.sessionRepo.update(dto.rentSessionId, { userId: user.id });
+    return user;
   }
 
   async findOne(id: string) {
     const user = await this.repo.findOne({ where: { id } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
 
-    const [rentCount, sessions] = await Promise.all([
+    const [rentCount, sessionsBySchedule, sessionsDirect] = await Promise.all([
       this.scheduleRepo.count({ where: { userId: id } }),
       this.sessionRepo
         .createQueryBuilder('s')
+        .innerJoinAndSelect('s.car', 'car')
         .innerJoinAndSelect('s.schedule', 'sch')
-        .innerJoinAndSelect('sch.car', 'car')
         .where('sch.userId = :userId', { userId: id })
+        .getMany(),
+      this.sessionRepo
+        .createQueryBuilder('s')
+        .innerJoinAndSelect('s.car', 'car')
+        .leftJoinAndSelect('s.schedule', 'sch')
+        .where('s.userId = :userId', { userId: id })
         .getMany(),
     ]);
 
-    const rentSessions = sessions.map((s) => ({
+    const toShape = (s: RentSession) => ({
       id: s.id,
       startedAt: s.startedAt,
       endedAt: s.endedAt,
       status: s.status,
-      schedule: s.schedule
-        ? {
-            id: s.schedule.id,
-            fromDate: s.schedule.fromDate,
-            toDate: s.schedule.toDate,
-            car: (s.schedule as any).car
-              ? {
-                  id: (s.schedule as any).car.id,
-                  name: (s.schedule as any).car.name,
-                  immatriculation: (s.schedule as any).car.immatriculation,
-                }
-              : null,
-          }
+      car: (s as any).car
+        ? { id: (s as any).car.id, name: (s as any).car.name, immatriculation: (s as any).car.immatriculation }
         : null,
-    }));
+      schedule: s.schedule
+        ? { id: s.schedule.id, fromDate: s.schedule.fromDate, toDate: s.schedule.toDate }
+        : null,
+    });
+
+    const seenIds = new Set<string>();
+    const rentSessions = [...sessionsBySchedule, ...sessionsDirect]
+      .filter((s) => { if (seenIds.has(s.id)) return false; seenIds.add(s.id); return true; })
+      .map(toShape);
 
     return { ...user, rentCount, rentSessions };
   }

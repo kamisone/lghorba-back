@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Car } from '../cars/car.entity';
 import { RentSchedule } from '../cars/rent-schedule.entity';
+import { User } from '../users/user.entity';
 import { RentPosition } from './rent-position.entity';
 
 export enum RentSessionStatus {
@@ -31,6 +32,12 @@ export class RentSession {
 
   @Column({ type: 'uuid', nullable: true })
   scheduleId: string | null;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  user: User | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  userId: string | null;
 
   @Column({ type: 'enum', enum: RentSessionStatus, default: RentSessionStatus.ACTIVE })
   status: RentSessionStatus;

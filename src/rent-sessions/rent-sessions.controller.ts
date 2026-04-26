@@ -24,7 +24,8 @@ export class RentSessionsController {
   }
 
   @Get()
-  findAll(@Query('carId') carId: string) {
+  findAll(@Query('carId') carId: string, @Query('unlinked') unlinked?: string) {
+    if (unlinked === 'true') return this.service.findUnlinked();
     return this.service.findAllForCar(carId);
   }
 

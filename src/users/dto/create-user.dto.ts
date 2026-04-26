@@ -1,4 +1,4 @@
-import { IsDateString, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class CreateUserDto {
   @IsString()
@@ -26,4 +26,7 @@ export class CreateUserDto {
   @IsDateString()
   @IsOptional()
   getaroundJoinDate?: string | null;
+
+  @IsUUID()
+  rentSessionId: string;
 }

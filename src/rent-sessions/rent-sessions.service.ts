@@ -47,6 +47,22 @@ export class RentSessionsService {
     });
   }
 
+  async findUnlinked(): Promise<{ id: string; startedAt: Date; endedAt: Date | null; status: RentSessionStatus; car: { id: string; name: string; immatriculation: string } | null }[]> {
+    const sessions = await this.sessionRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.car', 'car')
+      .where('s.userId IS NULL')
+      .orderBy('s.startedAt', 'DESC')
+      .getMany();
+    return sessions.map((s) => ({
+      id: s.id,
+      startedAt: s.startedAt,
+      endedAt: s.endedAt,
+      status: s.status,
+      car: s.car ? { id: s.car.id, name: s.car.name, immatriculation: s.car.immatriculation } : null,
+    }));
+  }
+
   async findOne(id: string): Promise<RentSession> {
     const session = await this.sessionRepo.findOne({
       where: { id },
