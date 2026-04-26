@@ -4,20 +4,14 @@ export class AddScheduleGuestFields1777300400000 implements MigrationInterface {
   name = 'AddScheduleGuestFields1777300400000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN IF EXISTS "guestName"`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN IF EXISTS "guestNumber"`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN IF EXISTS "guestEmail"`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN IF EXISTS "turoJoinDate"`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN IF EXISTS "getaroundJoinDate"`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "updatedAt" TIMESTAMP NOT NULL DEFAULT now()`);
+    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "guestEmail" varchar`);
+    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "turoJoinDate" date`);
+    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "getaroundJoinDate" date`);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN "updatedAt"`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "getaroundJoinDate" date`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "turoJoinDate" date`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "guestEmail" varchar`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "guestNumber" varchar`);
-    await queryRunner.query(`ALTER TABLE "rent_schedules" ADD "guestName" varchar`);
+    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN "getaroundJoinDate"`);
+    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN "turoJoinDate"`);
+    await queryRunner.query(`ALTER TABLE "rent_schedules" DROP COLUMN "guestEmail"`);
   }
 }
