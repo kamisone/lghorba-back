@@ -1,5 +1,8 @@
 import { Body, Controller, Post } from '@nestjs/common';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthService } from './auth.service';
+import { LoginDto, LoginSchema } from './dto/login.dto';
+import { RefreshDto, RefreshSchema } from './dto/refresh.dto';
 import { Public } from './public.decorator';
 
 @Controller('auth')
@@ -8,13 +11,13 @@ export class AuthController {
 
   @Public()
   @Post('login')
-  login(@Body() body: { email: string; password: string }) {
+  login(@Body(new ZodValidationPipe(LoginSchema)) body: LoginDto) {
     return this.authService.login(body.email, body.password);
   }
 
   @Public()
   @Post('refresh')
-  refresh(@Body() body: { refresh_token: string }) {
+  refresh(@Body(new ZodValidationPipe(RefreshSchema)) body: RefreshDto) {
     return this.authService.refresh(body.refresh_token);
   }
 }

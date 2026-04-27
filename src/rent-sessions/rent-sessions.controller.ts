@@ -9,9 +9,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { CreateRentPositionDto } from './dto/create-rent-position.dto';
-import { CreateRentSessionDto } from './dto/create-rent-session.dto';
-import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
+import { CreateRentPositionDto, CreateRentPositionSchema } from './dto/create-rent-position.dto';
+import { CreateRentSessionDto, CreateRentSessionSchema } from './dto/create-rent-session.dto';
+import { PatchRentSessionDto, PatchRentSessionSchema } from './dto/patch-rent-session.dto';
 import { RentSessionsService } from './rent-sessions.service';
 
 @Controller('api/rent-sessions')
@@ -19,7 +20,7 @@ export class RentSessionsController {
   constructor(private readonly service: RentSessionsService) {}
 
   @Post()
-  create(@Body() dto: CreateRentSessionDto) {
+  create(@Body(new ZodValidationPipe(CreateRentSessionSchema)) dto: CreateRentSessionDto) {
     return this.service.create(dto);
   }
 
@@ -35,7 +36,7 @@ export class RentSessionsController {
   }
 
   @Patch(':id')
-  patch(@Param('id') id: string, @Body() dto: PatchRentSessionDto) {
+  patch(@Param('id') id: string, @Body(new ZodValidationPipe(PatchRentSessionSchema)) dto: PatchRentSessionDto) {
     return this.service.patch(id, dto);
   }
 
@@ -46,7 +47,7 @@ export class RentSessionsController {
   }
 
   @Post(':id/positions')
-  addPosition(@Param('id') id: string, @Body() dto: CreateRentPositionDto) {
+  addPosition(@Param('id') id: string, @Body(new ZodValidationPipe(CreateRentPositionSchema)) dto: CreateRentPositionDto) {
     return this.service.addPosition(id, dto);
   }
 

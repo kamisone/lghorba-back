@@ -1,7 +1,7 @@
-import { IsString, MinLength } from 'class-validator';
+import { z } from 'zod';
 
-export class ResetPasswordDto {
-  @IsString()
-  @MinLength(6)
-  password: string;
-}
+export const ResetPasswordSchema = z.object({
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+export type ResetPasswordDto = z.infer<typeof ResetPasswordSchema>;

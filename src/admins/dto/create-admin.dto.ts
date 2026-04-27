@@ -1,19 +1,11 @@
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { z } from 'zod';
 import { AdminRole } from '../admin.entity';
 
-export class CreateAdminDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+export const CreateAdminSchema = z.object({
+  name:     z.string().min(1, 'Name is required'),
+  email:    z.email('Invalid email'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  role:     z.enum(['admin', 'superadmin']).transform((v) => v as AdminRole).optional(),
+});
 
-  @IsEmail()
-  email: string;
-
-  @IsString()
-  @MinLength(6)
-  password: string;
-
-  @IsEnum(AdminRole)
-  @IsOptional()
-  role?: AdminRole;
-}
+export type CreateAdminDto = z.infer<typeof CreateAdminSchema>;

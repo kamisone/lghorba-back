@@ -16,11 +16,12 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { CarsService } from './cars.service';
-import { CreateCarDto } from './dto/create-car.dto';
-import { CreateRentScheduleDto } from './dto/create-rent-schedule.dto';
-import { UpdateRentScheduleDto } from './dto/update-rent-schedule.dto';
-import { UpdateCarDto } from './dto/update-car.dto';
+import { CreateCarDto, CreateCarSchema } from './dto/create-car.dto';
+import { CreateRentScheduleDto, CreateRentScheduleSchema } from './dto/create-rent-schedule.dto';
+import { UpdateRentScheduleDto, UpdateRentScheduleSchema } from './dto/update-rent-schedule.dto';
+import { UpdateCarDto, UpdateCarSchema } from './dto/update-car.dto';
 import { RentSchedulesService } from './rent-schedules.service';
 
 @Controller('api/cars')
@@ -41,12 +42,12 @@ export class CarsController {
   }
 
   @Post()
-  create(@Body() dto: CreateCarDto) {
+  create(@Body(new ZodValidationPipe(CreateCarSchema)) dto: CreateCarDto) {
     return this.carsService.create(dto);
   }
 
   @Put(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateCarDto) {
+  update(@Param('id') id: string, @Body(new ZodValidationPipe(UpdateCarSchema)) dto: UpdateCarDto) {
     return this.carsService.update(id, dto);
   }
 
@@ -115,7 +116,10 @@ export class CarsController {
   }
 
   @Post(':carId/rent-schedules')
-  createSchedule(@Param('carId') carId: string, @Body() dto: CreateRentScheduleDto) {
+  createSchedule(
+    @Param('carId') carId: string,
+    @Body(new ZodValidationPipe(CreateRentScheduleSchema)) dto: CreateRentScheduleDto,
+  ) {
     return this.rentSchedulesService.create(carId, dto);
   }
 
@@ -123,7 +127,7 @@ export class CarsController {
   updateSchedule(
     @Param('id') carId: string,
     @Param('scheduleId') scheduleId: string,
-    @Body() dto: UpdateRentScheduleDto,
+    @Body(new ZodValidationPipe(UpdateRentScheduleSchema)) dto: UpdateRentScheduleDto,
   ) {
     return this.rentSchedulesService.update(carId, scheduleId, dto);
   }

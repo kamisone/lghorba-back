@@ -1,75 +1,34 @@
-import { IsInt, IsNotEmpty, IsOptional, IsString, Min } from 'class-validator';
+import { z } from 'zod';
 
-export class CreateCarDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+export const VEHICLE_TYPES = [
+  '4x4', 'SUV', 'Sedan', 'Estate', 'Convertible',
+  'City car', 'Cut', 'Minivan', 'Commercial vehicle',
+] as const;
 
-  @IsString()
-  @IsNotEmpty()
-  immatriculation: string;
+export const ENERGY_TYPES   = ['Petrol', 'Diesel', 'Hybrid', 'Electric'] as const;
+export const GEARBOX_TYPES  = ['Manual', 'Automatic'] as const;
+export const MILEAGE_RANGES = ['0-50', '50-100', '100-150', '150-200', '200-250', '250-300', '300+'] as const;
 
-  @IsString()
-  @IsNotEmpty()
-  phoneNumber: string;
+export const CreateCarSchema = z.object({
+  // ── Required ──────────────────────────────────────────────────────────────
+  name:            z.string().min(1, 'Name is required'),
+  immatriculation: z.string().min(1, 'Plate is required'),
+  phoneNumber:     z.string().min(1, 'Phone number is required'),
+  brand:           z.string().min(1, 'Brand is required'),
+  model:           z.string().min(1, 'Model is required'),
+  finishing:       z.string().min(1, 'Finishing is required'),
+  modelYear:       z.number().int().min(1900, 'Invalid year'),
+  color:           z.string().min(1, 'Color is required'),
+  energy:          z.enum(ENERGY_TYPES,  'Energy is required'),
+  gearbox:         z.enum(GEARBOX_TYPES, 'Gearbox is required'),
+  numberOfDoors:   z.number().int().min(2).max(6),
+  numberOfSeats:   z.number().int().min(1).max(9),
+  // ── Optional ──────────────────────────────────────────────────────────────
+  description:      z.string().nullish(),
+  vehicleType:      z.enum(VEHICLE_TYPES).nullish(),
+  din:              z.number().int().min(0).nullish(),
+  mileage:          z.enum(MILEAGE_RANGES).nullish(),
+  vehicleCondition: z.string().nullish(),
+});
 
-  @IsString()
-  @IsOptional()
-  description?: string | null;
-
-  @IsString()
-  @IsOptional()
-  brand?: string | null;
-
-  @IsString()
-  @IsOptional()
-  model?: string | null;
-
-  @IsString()
-  @IsOptional()
-  finishing?: string | null;
-
-  @IsInt()
-  @Min(1900)
-  @IsOptional()
-  modelYear?: number | null;
-
-  @IsString()
-  @IsOptional()
-  vehicleType?: string | null;
-
-  @IsString()
-  @IsOptional()
-  energy?: string | null;
-
-  @IsString()
-  @IsOptional()
-  gearbox?: string | null;
-
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  din?: number | null;
-
-  @IsString()
-  @IsOptional()
-  mileage?: string | null;
-
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  numberOfDoors?: number | null;
-
-  @IsInt()
-  @Min(0)
-  @IsOptional()
-  numberOfSeats?: number | null;
-
-  @IsString()
-  @IsOptional()
-  color?: string | null;
-
-  @IsString()
-  @IsOptional()
-  vehicleCondition?: string | null;
-}
+export type CreateCarDto = z.infer<typeof CreateCarSchema>;

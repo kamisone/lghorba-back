@@ -1,19 +1,10 @@
-import { Type } from 'class-transformer';
-import { IsDate, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import { z } from 'zod';
 
-export class CreateRentPositionDto {
-  @IsNumber()
-  lat: number;
+export const CreateRentPositionSchema = z.object({
+  lat:        z.number(),
+  lng:        z.number(),
+  rawMessage: z.string().optional(),
+  recordedAt: z.coerce.date(),
+});
 
-  @IsNumber()
-  lng: number;
-
-  @IsString()
-  @IsOptional()
-  rawMessage?: string;
-
-  @IsNotEmpty()
-  @IsDate()
-  @Type(() => Date)
-  recordedAt: Date;
-}
+export type CreateRentPositionDto = z.infer<typeof CreateRentPositionSchema>;

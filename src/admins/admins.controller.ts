@@ -1,8 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AdminsService } from './admins.service';
-import { CreateAdminDto } from './dto/create-admin.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
-import { UpdateAdminDto } from './dto/update-admin.dto';
+import { CreateAdminDto, CreateAdminSchema } from './dto/create-admin.dto';
+import { ResetPasswordDto, ResetPasswordSchema } from './dto/reset-password.dto';
+import { UpdateAdminDto, UpdateAdminSchema } from './dto/update-admin.dto';
 
 @Controller('api/admins')
 export class AdminsController {
@@ -14,7 +15,7 @@ export class AdminsController {
   }
 
   @Post()
-  create(@Body() dto: CreateAdminDto) {
+  create(@Body(new ZodValidationPipe(CreateAdminSchema)) dto: CreateAdminDto) {
     return this.adminsService.create(dto);
   }
 
@@ -24,7 +25,7 @@ export class AdminsController {
   }
 
   @Patch(':id')
-  patch(@Param('id') id: string, @Body() dto: UpdateAdminDto) {
+  patch(@Param('id') id: string, @Body(new ZodValidationPipe(UpdateAdminSchema)) dto: UpdateAdminDto) {
     return this.adminsService.patch(id, dto);
   }
 
@@ -34,7 +35,7 @@ export class AdminsController {
   }
 
   @Post(':id/reset-password')
-  resetPassword(@Param('id') id: string, @Body() dto: ResetPasswordDto) {
+  resetPassword(@Param('id') id: string, @Body(new ZodValidationPipe(ResetPasswordSchema)) dto: ResetPasswordDto) {
     return this.adminsService.resetPassword(id, dto);
   }
 }

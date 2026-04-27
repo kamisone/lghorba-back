@@ -1,10 +1,8 @@
-import { IsOptional, IsUUID } from 'class-validator';
+import { z } from 'zod';
 
-export class CreateRentSessionDto {
-  @IsUUID()
-  carId: string;
+export const CreateRentSessionSchema = z.object({
+  carId:      z.uuid('Invalid car ID'),
+  scheduleId: z.uuid().optional(),
+});
 
-  @IsOptional()
-  @IsUUID()
-  scheduleId?: string;
-}
+export type CreateRentSessionDto = z.infer<typeof CreateRentSessionSchema>;

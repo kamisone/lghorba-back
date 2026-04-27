@@ -1,19 +1,10 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { z } from 'zod';
 
-export class CreateContactDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+export const CreateContactSchema = z.object({
+  name:    z.string().min(1, 'Name is required'),
+  contact: z.string().min(1, 'Contact is required'),
+  subject: z.string().min(1, 'Subject is required'),
+  message: z.string().min(1, 'Message is required'),
+});
 
-  @IsString()
-  @IsNotEmpty()
-  contact: string;
-
-  @IsString()
-  @IsNotEmpty()
-  subject: string;
-
-  @IsString()
-  @IsNotEmpty()
-  message: string;
-}
+export type CreateContactDto = z.infer<typeof CreateContactSchema>;

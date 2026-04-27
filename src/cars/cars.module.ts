@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { memoryStorage } from 'multer';
 import { GcsModule } from '../gcs/gcs.module';
 import { RentSession } from '../rent-sessions/rent-session.entity';
+import { TranslationsModule } from '../translations/translations.module';
 import { UsersModule } from '../users/users.module';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
@@ -24,6 +25,7 @@ import { RentSchedulesService } from './rent-schedules.service';
     }),
     GcsModule,
     UsersModule,
+    TranslationsModule,
   ],
   controllers: [CarsController, PublicCarsController],
   providers: [CarsService, RentSchedulesService],

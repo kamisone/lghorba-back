@@ -1,7 +1,8 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ContactsService } from './contacts.service';
-import { CreateContactDto } from './dto/create-contact.dto';
+import { CreateContactDto, CreateContactSchema } from './dto/create-contact.dto';
 
 @Controller('api/contacts')
 export class ContactsController {
@@ -10,7 +11,7 @@ export class ContactsController {
   @Public()
   @Post()
   @HttpCode(201)
-  create(@Body() dto: CreateContactDto) {
+  create(@Body(new ZodValidationPipe(CreateContactSchema)) dto: CreateContactDto) {
     return this.service.create(dto);
   }
 

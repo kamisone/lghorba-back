@@ -1,50 +1,18 @@
-import { IsBoolean, IsDateString, IsEmail, IsISO8601, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { z } from 'zod';
 
-export class CreateRentScheduleDto {
-  @IsISO8601()
-  fromDate: string;
+export const CreateRentScheduleSchema = z.object({
+  fromDate:           z.string().min(1, 'fromDate is required'),
+  toDate:             z.string().min(1, 'toDate is required'),
+  guestName:          z.string().nullish(),
+  guestNumber:        z.string().nullish(),
+  reservationNumber:  z.string().nullish(),
+  totalEarning:       z.number().min(0).nullish(),
+  autoStartTracking:  z.boolean().optional(),
+  color:              z.string().nullish(),
+  guestEmail:         z.email().nullish(),
+  turoJoinDate:       z.string().nullish(),
+  getaroundJoinDate:  z.string().nullish(),
+  userId:             z.uuid().nullish(),
+});
 
-  @IsISO8601()
-  toDate: string;
-
-  @IsOptional()
-  @IsString()
-  guestName?: string;
-
-  @IsOptional()
-  @IsString()
-  guestNumber?: string;
-
-  @IsOptional()
-  @IsString()
-  reservationNumber?: string;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  totalEarning?: number | null;
-
-  @IsOptional()
-  @IsBoolean()
-  autoStartTracking?: boolean;
-
-  @IsOptional()
-  @IsString()
-  color?: string | null;
-
-  @IsEmail()
-  @IsOptional()
-  guestEmail?: string | null;
-
-  @IsDateString()
-  @IsOptional()
-  turoJoinDate?: string | null;
-
-  @IsDateString()
-  @IsOptional()
-  getaroundJoinDate?: string | null;
-
-  @IsUUID()
-  @IsOptional()
-  userId?: string | null;
-}
+export type CreateRentScheduleDto = z.infer<typeof CreateRentScheduleSchema>;

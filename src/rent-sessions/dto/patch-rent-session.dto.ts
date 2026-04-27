@@ -1,16 +1,10 @@
-import { IsBoolean, IsEnum, IsISO8601, IsOptional } from 'class-validator';
+import { z } from 'zod';
 import { RentSessionStatus } from '../rent-session.entity';
 
-export class PatchRentSessionDto {
-  @IsOptional()
-  @IsEnum(RentSessionStatus)
-  status?: RentSessionStatus;
+export const PatchRentSessionSchema = z.object({
+  status:                  z.enum(['active', 'ended']).transform((v) => v as RentSessionStatus).optional(),
+  trackingPaused:          z.boolean().optional(),
+  lastLocationRequestedAt: z.string().optional(),
+});
 
-  @IsOptional()
-  @IsBoolean()
-  trackingPaused?: boolean;
-
-  @IsOptional()
-  @IsISO8601()
-  lastLocationRequestedAt?: string;
-}
+export type PatchRentSessionDto = z.infer<typeof PatchRentSessionSchema>;

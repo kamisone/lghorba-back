@@ -1,16 +1,10 @@
-import { IsEmail, IsEnum, IsOptional, IsString } from 'class-validator';
+import { z } from 'zod';
 import { AdminRole } from '../admin.entity';
 
-export class UpdateAdminDto {
-  @IsString()
-  @IsOptional()
-  name?: string;
+export const UpdateAdminSchema = z.object({
+  name:  z.string().min(1).optional(),
+  email: z.email().optional(),
+  role:  z.enum(['admin', 'superadmin']).transform((v) => v as AdminRole).optional(),
+});
 
-  @IsEmail()
-  @IsOptional()
-  email?: string;
-
-  @IsEnum(AdminRole)
-  @IsOptional()
-  role?: AdminRole;
-}
+export type UpdateAdminDto = z.infer<typeof UpdateAdminSchema>;

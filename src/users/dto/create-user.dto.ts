@@ -1,32 +1,13 @@
-import { IsDateString, IsEmail, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { z } from 'zod';
 
-export class CreateUserDto {
-  @IsString()
-  @IsNotEmpty()
-  name: string;
+export const CreateUserSchema = z.object({
+  name:              z.string().min(1, 'Name is required'),
+  phone:             z.string().nullish(),
+  email:             z.email().nullish(),
+  score:             z.number().int().min(1).max(10).nullish(),
+  turoJoinDate:      z.string().nullish(),
+  getaroundJoinDate: z.string().nullish(),
+  rentSessionId:     z.uuid('Invalid rent session ID'),
+});
 
-  @IsString()
-  @IsOptional()
-  phone?: string | null;
-
-  @IsEmail()
-  @IsOptional()
-  email?: string | null;
-
-  @IsInt()
-  @Min(1)
-  @Max(10)
-  @IsOptional()
-  score?: number | null;
-
-  @IsDateString()
-  @IsOptional()
-  turoJoinDate?: string | null;
-
-  @IsDateString()
-  @IsOptional()
-  getaroundJoinDate?: string | null;
-
-  @IsUUID()
-  rentSessionId: string;
-}
+export type CreateUserDto = z.infer<typeof CreateUserSchema>;

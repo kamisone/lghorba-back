@@ -1,4 +1,5 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { CreateRentScheduleDto } from './create-rent-schedule.dto';
+import { z } from 'zod';
+import { CreateRentScheduleSchema } from './create-rent-schedule.dto';
 
-export class UpdateRentScheduleDto extends PartialType(CreateRentScheduleDto) {}
+export const UpdateRentScheduleSchema = CreateRentScheduleSchema.partial();
+export type UpdateRentScheduleDto = z.infer<typeof UpdateRentScheduleSchema>;

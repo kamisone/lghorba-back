@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { GcsService } from '../gcs/gcs.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
+import { TranslationsService } from '../translations/translations.service';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
@@ -22,11 +23,12 @@ export class CarsService {
     @InjectRepository(CarPhoto)
     private readonly photoRepo: Repository<CarPhoto>,
     private readonly gcsService: GcsService,
+    private readonly translationsService: TranslationsService,
   ) {}
 
-  async findAllPublic() {
+  async findAllPublic(lang?: string) {
     const cars = await this.findAll();
-    return cars.map((car) => ({
+    const publicCars = cars.map((car) => ({
       id: car.id,
       name: car.name,
       description: car.description,
@@ -46,12 +48,24 @@ export class CarsService {
       color: car.color,
       vehicleCondition: car.vehicleCondition,
     }));
+    if (!lang || lang === 'fr') return publicCars;
+    return this.translationsService.applyToEntities(
+      publicCars as Record<string, unknown>[],
+      'car',
+      lang,
+    );
   }
 
-  async findOnePublic(id: string) {
+  async findOnePublic(id: string, lang?: string) {
     const car = await this.findOne(id);
     const { immatriculation, phoneNumber, photo, ...rest } = car;
-    return { ...rest, hasPhoto: photo !== null };
+    const publicCar = { ...rest, hasPhoto: photo !== null };
+    if (!lang || lang === 'fr') return publicCar;
+    return this.translationsService.applyToEntity(
+      publicCar as Record<string, unknown>,
+      'car',
+      lang,
+    );
   }
 
   async findAll(): Promise<CarWithRentStatus[]> {

@@ -1,4 +1,4 @@
-import { Controller, Get, NotFoundException, Param, Res } from '@nestjs/common';
+import { Controller, Get, NotFoundException, Param, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Public } from '../auth/public.decorator';
 import { CarsService } from './cars.service';
@@ -9,14 +9,14 @@ export class PublicCarsController {
 
   @Public()
   @Get('cars')
-  findAll() {
-    return this.carsService.findAllPublic();
+  findAll(@Query('lang') lang?: string) {
+    return this.carsService.findAllPublic(lang);
   }
 
   @Public()
   @Get('cars/:id')
-  findOne(@Param('id') id: string) {
-    return this.carsService.findOnePublic(id);
+  findOne(@Param('id') id: string, @Query('lang') lang?: string) {
+    return this.carsService.findOnePublic(id, lang);
   }
 
   @Public()
