@@ -2,9 +2,13 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
+  Relation,
   UpdateDateColumn,
 } from 'typeorm';
+import { CarPricing } from './car-pricing.entity';
+import { Booking } from '../bookings/booking.entity';
 
 @Entity('cars')
 export class Car {
@@ -64,6 +68,15 @@ export class Car {
 
   @Column({ type: 'varchar', nullable: true })
   vehicleCondition: string | null;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  basePricePerDay: number | null;
+
+  @OneToMany(() => CarPricing, (p) => p.car)
+  pricings: Relation<CarPricing>[];
+
+  @OneToMany(() => Booking, (b) => b.car)
+  bookings: Relation<Booking>[];
 
   @CreateDateColumn()
   createdAt: Date;
