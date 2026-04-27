@@ -74,4 +74,7 @@ jobs:
             --from-literal GCS_PRIVATE_KEY_ID=${{ secrets.GCS_PRIVATE_KEY_ID }} \
             --from-literal GCS_PRIVATE_KEY=${{ secrets.GCS_PRIVATE_KEY }}
             kubectl apply -f /srv/k8s/back
+            minikube addons enable ingress
             echo ${{ secrets.SERVER_SECOND_USER_PASSWORD }} | sudo -S systemctl restart nginx
+            echo y | docker exec -i minikube docker system prune -a --volumes
+            
