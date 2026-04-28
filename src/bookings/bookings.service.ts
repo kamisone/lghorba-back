@@ -9,7 +9,7 @@ import { CreateCarPricingDto, UpdateCarPricingDto } from './dto/create-car-prici
 
 export interface PriceBreakdownItem {
   startDate: string;
-  endDate: string; // inclusive display
+  endDate: string;
   pricePerDay: number;
   days: number;
   subtotal: number;
@@ -53,32 +53,43 @@ export class BookingsService {
     return Math.round((db.getTime() - da.getTime()) / 86_400_000);
   }
 
-  private validateDateRange(startDate: string, endDate: string): void {
-    if (startDate >= endDate) {
-      throw new BadRequestException('startDate must be before endDate');
+  private isoToDate(iso: string): string {
+    return new Date(iso).toISOString().slice(0, 10);
+  }
+
+  private validateDateRange(startDateTime: string, endDateTime: string): void {
+    const start = new Date(startDateTime);
+    const end = new Date(endDateTime);
+    if (end <= start) {
+      throw new BadRequestException('startDateTime must be before endDateTime');
     }
-    const today = new Date().toISOString().slice(0, 10);
-    if (startDate < today) {
-      throw new BadRequestException('startDate cannot be in the past');
+    if (start <= new Date()) {
+      throw new BadRequestException('startDateTime cannot be in the past');
     }
   }
 
   // ── Pricing ──────────────────────────────────────────────────────────────────
 
-  async computePrice(carId: string, startDate: string, endDate: string): Promise<PriceResult> {
+  async computePrice(carId: string, startDateTime: string, endDateTime: string): Promise<PriceResult> {
     const car = await this.carRepo.findOne({ where: { id: carId } });
     if (!car) throw new NotFoundException(`Car ${carId} not found`);
+
+    const start = new Date(startDateTime);
+    const end = new Date(endDateTime);
+    const numberOfDays = Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86_400_000));
+
+    const startDate = this.isoToDate(startDateTime);
+    const endDateForPricing = this.addDays(startDate, numberOfDays);
 
     const pricings = await this.pricingRepo
       .createQueryBuilder('p')
       .where('p.carId = :carId', { carId })
-      .andWhere('p.startDate <= :endDate', { endDate: this.addDays(endDate, -1) })
+      .andWhere('p.startDate <= :endDate', { endDate: this.addDays(endDateForPricing, -1) })
       .andWhere('p.endDate >= :startDate', { startDate })
       .getMany();
 
-    const numberOfDays = this.daysDiff(startDate, endDate);
     const base = car.basePricePerDay !== null ? Number(car.basePricePerDay) : 0;
-    const breakdown = this.buildBreakdown(startDate, endDate, base, pricings);
+    const breakdown = this.buildBreakdown(startDate, endDateForPricing, base, pricings);
     const totalPrice = Math.round(breakdown.reduce((sum, b) => sum + b.subtotal, 0) * 100) / 100;
 
     return { totalPrice, numberOfDays, breakdown, basePricePerDay: car.basePricePerDay !== null ? base : null };
@@ -96,7 +107,6 @@ export class BookingsService {
     while (cursor < endDate) {
       const rule = pricings.find((p) => p.startDate <= cursor && p.endDate >= cursor) ?? null;
 
-      // Advance until rule changes or end
       let segEnd = this.addDays(cursor, 1);
       while (segEnd < endDate) {
         const nextRule = pricings.find((p) => p.startDate <= segEnd && p.endDate >= segEnd) ?? null;
@@ -123,7 +133,7 @@ export class BookingsService {
 
   // ── Availability ─────────────────────────────────────────────────────────────
 
-  async checkAvailability(carId: string, startDate: string, endDate: string): Promise<AvailabilityResult> {
+  async checkAvailability(carId: string, startDateTime: string, endDateTime: string): Promise<AvailabilityResult> {
     const car = await this.carRepo.findOne({ where: { id: carId } });
     if (!car) throw new NotFoundException(`Car ${carId} not found`);
 
@@ -131,8 +141,8 @@ export class BookingsService {
       .createQueryBuilder('b')
       .where('b.carId = :carId', { carId })
       .andWhere('b.status != :cancelled', { cancelled: BookingStatus.CANCELLED })
-      .andWhere('b.startDate < :endDate', { endDate })
-      .andWhere('b.endDate > :startDate', { startDate })
+      .andWhere('b.startDateTime < :endDateTime', { endDateTime })
+      .andWhere('b.endDateTime > :startDateTime', { startDateTime })
       .getOne();
 
     if (conflict) {
@@ -144,17 +154,17 @@ export class BookingsService {
   // ── Bookings ─────────────────────────────────────────────────────────────────
 
   async createBooking(dto: CreateBookingDto): Promise<Booking> {
-    this.validateDateRange(dto.startDate, dto.endDate);
+    this.validateDateRange(dto.startDateTime, dto.endDateTime);
 
-    const { available, reason } = await this.checkAvailability(dto.carId, dto.startDate, dto.endDate);
+    const { available, reason } = await this.checkAvailability(dto.carId, dto.startDateTime, dto.endDateTime);
     if (!available) throw new BadRequestException(reason ?? 'Car is not available for these dates');
 
-    const priceResult = await this.computePrice(dto.carId, dto.startDate, dto.endDate);
+    const priceResult = await this.computePrice(dto.carId, dto.startDateTime, dto.endDateTime);
 
     const booking = this.bookingRepo.create({
       carId:         dto.carId,
-      startDate:     dto.startDate,
-      endDate:       dto.endDate,
+      startDateTime: new Date(dto.startDateTime),
+      endDateTime:   new Date(dto.endDateTime),
       totalPrice:    priceResult.totalPrice,
       status:        BookingStatus.PENDING,
       customerName:  dto.customerName  ?? null,
@@ -184,9 +194,8 @@ export class BookingsService {
 
     if (filters?.status)    qb.andWhere('b.status = :status', { status: filters.status });
     if (filters?.carId)     qb.andWhere('b.carId = :carId',   { carId: filters.carId });
-    // Bookings that overlap with the requested date window
-    if (filters?.startDate) qb.andWhere('b.endDate >= :from',   { from: filters.startDate });
-    if (filters?.endDate)   qb.andWhere('b.startDate <= :to',   { to:   filters.endDate   });
+    if (filters?.startDate) qb.andWhere('b.endDateTime >= :from', { from: new Date(`${filters.startDate}T00:00:00Z`) });
+    if (filters?.endDate)   qb.andWhere('b.startDateTime <= :to', { to: new Date(`${filters.endDate}T23:59:59Z`) });
 
     return qb.getMany();
   }
@@ -198,7 +207,7 @@ export class BookingsService {
   }
 
   async deleteBooking(id: string): Promise<void> {
-    await this.findBooking(id); // throws 404 if not found
+    await this.findBooking(id);
     await this.bookingRepo.delete(id);
   }
 

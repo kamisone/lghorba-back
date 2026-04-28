@@ -20,22 +20,22 @@ export class PublicBookingsController {
   @Get('cars/:carId/availability')
   checkAvailability(
     @Param('carId') carId: string,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+    @Query('startDateTime') startDateTime: string,
+    @Query('endDateTime') endDateTime: string,
   ) {
-    if (!startDate || !endDate) throw new BadRequestException('startDate and endDate are required');
-    return this.svc.checkAvailability(carId, startDate, endDate);
+    if (!startDateTime || !endDateTime) throw new BadRequestException('startDateTime and endDateTime are required');
+    return this.svc.checkAvailability(carId, startDateTime, endDateTime);
   }
 
   @Public()
   @Get('cars/:carId/price')
   computePrice(
     @Param('carId') carId: string,
-    @Query('startDate') startDate: string,
-    @Query('endDate') endDate: string,
+    @Query('startDateTime') startDateTime: string,
+    @Query('endDateTime') endDateTime: string,
   ) {
-    if (!startDate || !endDate) throw new BadRequestException('startDate and endDate are required');
-    return this.svc.computePrice(carId, startDate, endDate);
+    if (!startDateTime || !endDateTime) throw new BadRequestException('startDateTime and endDateTime are required');
+    return this.svc.computePrice(carId, startDateTime, endDateTime);
   }
 
   @Public()

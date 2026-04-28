@@ -17,11 +17,11 @@ export class Booking {
   @Column({ type: 'uuid' })
   carId: string;
 
-  @Column({ type: 'date' })
-  startDate: string; // YYYY-MM-DD
+  @Column({ type: 'timestamp with time zone' })
+  startDateTime: Date;
 
-  @Column({ type: 'date' })
-  endDate: string; // YYYY-MM-DD exclusive (return day)
+  @Column({ type: 'timestamp with time zone' })
+  endDateTime: Date;
 
   @Column({ type: 'decimal', precision: 10, scale: 2 })
   totalPrice: number;
