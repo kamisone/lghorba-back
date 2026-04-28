@@ -92,4 +92,24 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: GCS_PRIVATE_KEY
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: REDIS_HOST
+            - name: REDIS_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: REDIS_PORT
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: REDIS_PASSWORD
+            - name: REDIS_DB
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: REDIS_DB
             

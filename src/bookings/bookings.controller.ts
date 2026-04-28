@@ -1,8 +1,9 @@
 import {
   BadRequestException, Body, Controller, Delete, Get, HttpCode,
-  Param, Patch, Post, Query,
+  Param, Patch, Post, Query, UseInterceptors,
 } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
+import { IdempotencyInterceptor } from '../common/idempotency/idempotency.interceptor';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { BookingStatus } from './booking.entity';
 import { BookingsService } from './bookings.service';
@@ -40,6 +41,7 @@ export class PublicBookingsController {
 
   @Public()
   @Post('bookings')
+  @UseInterceptors(IdempotencyInterceptor)
   createBooking(@Body(new ZodValidationPipe(CreateBookingSchema)) dto: CreateBookingDto) {
     return this.svc.createBooking(dto);
   }

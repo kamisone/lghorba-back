@@ -36,7 +36,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          source: 'docker/k8s/back-deployment.yaml,docker/k8s/back-hpa.yaml,docker/k8s/back-cluster-ip-service.yaml,docker/k8s/back-ingress-service.yaml,docker/k8s/db-deployment.yaml,docker/k8s/db-persistent-volume-claim.yaml,docker/k8s/db-cluster-ip-service.yaml,'
+          source: 'docker/k8s/back-deployment.yaml,docker/k8s/back-hpa.yaml,docker/k8s/back-cluster-ip-service.yaml,docker/k8s/back-ingress-service.yaml,docker/k8s/db-deployment.yaml,docker/k8s/db-persistent-volume-claim.yaml,docker/k8s/db-cluster-ip-service.yaml,docker/k8s/redis-deployment.yaml,docker/k8s/redis-persistent-volume-claim.yaml,docker/k8s/redist-cluster-ip-service.yaml,'
           target: '/srv/k8s/back'
           strip_components: 2
 
@@ -72,7 +72,11 @@ jobs:
             --from-literal GCS_PROJECT_ID=${{ secrets.GCS_PROJECT_ID }} \
             --from-literal GCS_CLIENT_EMAIL=${{ secrets.GCS_CLIENT_EMAIL }} \
             --from-literal GCS_PRIVATE_KEY_ID=${{ secrets.GCS_PRIVATE_KEY_ID }} \
-            --from-literal GCS_PRIVATE_KEY=${{ secrets.GCS_PRIVATE_KEY }}
+            --from-literal GCS_PRIVATE_KEY=${{ secrets.GCS_PRIVATE_KEY }} \
+            --from-literal REDIS_HOST=${{ secrets.REDIS_HOST }} \
+            --from-literal REDIS_PORT=${{ secrets.REDIS_PORT }} \
+            --from-literal REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }} \
+            --from-literal REDIS_DB=${{ secrets.REDIS_DB }}
             kubectl apply -f /srv/k8s/back
             minikube addons enable ingress
             echo ${{ secrets.SERVER_SECOND_USER_PASSWORD }} | sudo -S systemctl restart nginx

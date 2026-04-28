@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { Column, CreateDateColumn, Entity, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn, VersionColumn } from 'typeorm';
 import { Car } from '../cars/car.entity';
 
 export enum BookingStatus {
@@ -37,6 +37,9 @@ export class Booking {
 
   @Column({ type: 'varchar', nullable: true })
   customerPhone: string | null;
+
+  /** Incremented automatically on every save — used for optimistic locking. */
+  @VersionColumn() version: number;
 
   @CreateDateColumn() createdAt: Date;
   @UpdateDateColumn() updatedAt: Date;

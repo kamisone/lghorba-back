@@ -14,3 +14,9 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=lghorba
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--requirepass", "local-redis-password"]

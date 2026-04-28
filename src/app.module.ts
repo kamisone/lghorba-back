@@ -17,6 +17,7 @@ import { RentSchedule } from './cars/rent-schedule.entity';
 import { Booking } from './bookings/booking.entity';
 import { BookingsModule } from './bookings/bookings.module';
 import { CarsModule } from './cars/cars.module';
+import { RedisModule } from './redis/redis.module';
 import { RentPosition } from './rent-sessions/rent-position.entity';
 import { RentSession } from './rent-sessions/rent-session.entity';
 import { RentSessionsModule } from './rent-sessions/rent-sessions.module';
@@ -44,6 +45,7 @@ config();
       migrationsRun: true,
     }),
     ScheduleModule.forRoot(),
+    RedisModule,
     SmsModule,
     AuthModule,
     AdminsModule,
