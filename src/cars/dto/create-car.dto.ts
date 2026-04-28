@@ -23,6 +23,7 @@ export const CreateCarSchema = z.object({
   gearbox:         z.enum(GEARBOX_TYPES, 'Gearbox is required'),
   numberOfDoors:   z.number().int().min(2).max(6),
   numberOfSeats:   z.number().int().min(1).max(9),
+  basePricePerDay: z.number().positive('Base price per day is required'),
   // ── Optional ──────────────────────────────────────────────────────────────
   description:      z.string().nullish(),
   vehicleType:      z.enum(VEHICLE_TYPES).nullish(),

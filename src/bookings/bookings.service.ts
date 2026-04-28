@@ -171,14 +171,35 @@ export class BookingsService {
     return booking;
   }
 
-  async findAllBookings(): Promise<Booking[]> {
-    return this.bookingRepo.find({ relations: ['car'], order: { createdAt: 'DESC' } });
+  async findAllBookings(filters?: {
+    status?: BookingStatus;
+    startDate?: string;
+    endDate?: string;
+    carId?: string;
+  }): Promise<Booking[]> {
+    const qb = this.bookingRepo
+      .createQueryBuilder('b')
+      .leftJoinAndSelect('b.car', 'car')
+      .orderBy('b.createdAt', 'DESC');
+
+    if (filters?.status)    qb.andWhere('b.status = :status', { status: filters.status });
+    if (filters?.carId)     qb.andWhere('b.carId = :carId',   { carId: filters.carId });
+    // Bookings that overlap with the requested date window
+    if (filters?.startDate) qb.andWhere('b.endDate >= :from',   { from: filters.startDate });
+    if (filters?.endDate)   qb.andWhere('b.startDate <= :to',   { to:   filters.endDate   });
+
+    return qb.getMany();
   }
 
   async updateBookingStatus(id: string, status: BookingStatus): Promise<Booking> {
     const booking = await this.findBooking(id);
     await this.bookingRepo.update(id, { status });
     return { ...booking, status };
+  }
+
+  async deleteBooking(id: string): Promise<void> {
+    await this.findBooking(id); // throws 404 if not found
+    await this.bookingRepo.delete(id);
   }
 
   // ── Car Pricings (admin) ─────────────────────────────────────────────────────

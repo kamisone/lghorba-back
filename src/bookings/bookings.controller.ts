@@ -1,6 +1,6 @@
 import {
   BadRequestException, Body, Controller, Delete, Get, HttpCode,
-  NotFoundException, Param, Patch, Post, Query,
+  Param, Patch, Post, Query,
 } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -58,8 +58,23 @@ export class BookingsAdminController {
   constructor(private readonly svc: BookingsService) {}
 
   @Get()
-  findAll() {
-    return this.svc.findAllBookings();
+  findAll(
+    @Query('status')    status?:    BookingStatus,
+    @Query('startDate') startDate?: string,
+    @Query('endDate')   endDate?:   string,
+    @Query('carId')     carId?:     string,
+  ) {
+    return this.svc.findAllBookings({
+      status:    status    || undefined,
+      startDate: startDate || undefined,
+      endDate:   endDate   || undefined,
+      carId:     carId     || undefined,
+    });
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.svc.findBooking(id);
   }
 
   @Patch(':id/status')
@@ -71,6 +86,12 @@ export class BookingsAdminController {
     const parsed = schema.safeParse(body);
     if (!parsed.success) throw new BadRequestException(parsed.error.message);
     return this.svc.updateBookingStatus(id, parsed.data.status);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  deleteBooking(@Param('id') id: string) {
+    return this.svc.deleteBooking(id);
   }
 }
 
