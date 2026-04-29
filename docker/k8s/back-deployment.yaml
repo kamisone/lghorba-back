@@ -112,4 +112,14 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: REDIS_DB
+            - name: STRIPE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: STRIPE_SECRET_KEY
+            - name: STRIPE_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: STRIPE_WEBHOOK_SECRET
             

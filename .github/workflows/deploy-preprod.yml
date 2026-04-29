@@ -76,7 +76,9 @@ jobs:
             --from-literal REDIS_HOST=${{ secrets.REDIS_HOST }} \
             --from-literal REDIS_PORT=${{ secrets.REDIS_PORT }} \
             --from-literal REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }} \
-            --from-literal REDIS_DB=${{ secrets.REDIS_DB }}
+            --from-literal REDIS_DB=${{ secrets.REDIS_DB }} \
+            --from-literal STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }} \
+            --from-literal STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
             kubectl apply -f /srv/k8s/back
             minikube addons enable ingress
             echo ${{ secrets.SERVER_SECOND_USER_PASSWORD }} | sudo -S systemctl restart nginx
