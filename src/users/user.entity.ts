@@ -1,5 +1,4 @@
-import { Column, CreateDateColumn, Entity, OneToMany, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
-import { RentSchedule } from '../cars/rent-schedule.entity';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from 'typeorm';
 
 @Entity('users')
 @Unique(['name', 'phone'])
@@ -24,9 +23,6 @@ export class User {
 
   @Column({ type: 'date', nullable: true })
   getaroundJoinDate: string | null;
-
-  @OneToMany(() => RentSchedule, (s) => s.user)
-  rentSchedules: RentSchedule[];
 
   @CreateDateColumn()
   createdAt: Date;

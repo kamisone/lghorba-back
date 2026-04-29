@@ -8,8 +8,8 @@ import {
   OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { Booking } from '../bookings/booking.entity';
 import { Car } from '../cars/car.entity';
-import { RentSchedule } from '../cars/rent-schedule.entity';
 import { User } from '../users/user.entity';
 import { RentPosition } from './rent-position.entity';
 
@@ -29,12 +29,12 @@ export class RentSession {
   @Column({ type: 'uuid' })
   carId: string;
 
-  @OneToOne(() => RentSchedule, { nullable: true, onDelete: 'CASCADE', eager: false })
+  @OneToOne(() => Booking, { nullable: true, onDelete: 'SET NULL', eager: false })
   @JoinColumn()
-  schedule: RentSchedule | null;
+  booking: Booking | null;
 
   @Column({ type: 'uuid', nullable: true, unique: true })
-  scheduleId: string | null;
+  bookingId: string | null;
 
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   user: User | null;

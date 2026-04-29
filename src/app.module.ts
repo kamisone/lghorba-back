@@ -13,7 +13,6 @@ import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { CarPhoto } from './cars/car-photo.entity';
 import { Car } from './cars/car.entity';
 import { CarPricing } from './cars/car-pricing.entity';
-import { RentSchedule } from './cars/rent-schedule.entity';
 import { Booking } from './bookings/booking.entity';
 import { BookingsModule } from './bookings/bookings.module';
 import { CarsModule } from './cars/cars.module';
@@ -40,7 +39,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSchedule, RentSession, RentPosition, User, Admin, Contact, Translation, Booking],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),

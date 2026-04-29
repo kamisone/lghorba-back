@@ -25,6 +25,7 @@ export const CreateCarSchema = z.object({
   numberOfSeats:   z.number().int().min(1).max(9),
   basePricePerDay: z.number().positive('Base price per day is required'),
   // ── Optional ──────────────────────────────────────────────────────────────
+  basePricePerWeekendDay: z.number().positive().nullish(),
   description:      z.string().nullish(),
   vehicleType:      z.enum(VEHICLE_TYPES).nullish(),
   din:              z.number().int().min(0).nullish(),

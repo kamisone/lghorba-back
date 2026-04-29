@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Booking } from '../bookings/booking.entity';
 import { Car } from '../cars/car.entity';
-import { RentSchedule } from '../cars/rent-schedule.entity';
 import { SmsModule } from '../sms/sms.module';
 import { RentPosition } from './rent-position.entity';
 import { RentSession } from './rent-session.entity';
@@ -11,7 +11,7 @@ import { RentSessionsService } from './rent-sessions.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([RentSession, RentPosition, RentSchedule, Car]),
+    TypeOrmModule.forFeature([RentSession, RentPosition, Booking, Car]),
     SmsModule,
   ],
   controllers: [RentSessionsController],

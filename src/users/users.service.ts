@@ -23,8 +23,8 @@ export class UsersService {
           SELECT s.id AS sid FROM rent_sessions s WHERE s."userId" = u.id
           UNION
           SELECT s.id AS sid FROM rent_sessions s
-          JOIN rent_schedules sch ON s."scheduleId" = sch.id
-          WHERE sch."userId" = u.id
+          JOIN bookings b ON s."bookingId" = b.id
+          WHERE b."userId" = u.id
         ) sq
       )`, 'u_rentCount')
       .addSelect(`(
@@ -32,8 +32,8 @@ export class UsersService {
           SELECT 1 FROM rent_sessions s WHERE s."userId" = u.id AND s.status = 'active'
           UNION ALL
           SELECT 1 FROM rent_sessions s
-          JOIN rent_schedules sch ON s."scheduleId" = sch.id
-          WHERE sch."userId" = u.id AND s.status = 'active'
+          JOIN bookings b ON s."bookingId" = b.id
+          WHERE b."userId" = u.id AND s.status = 'active'
         )
       )`, 'u_hasActiveSession')
       .orderBy('u.createdAt', 'DESC')
@@ -82,17 +82,17 @@ export class UsersService {
     const user = await this.repo.findOne({ where: { id } });
     if (!user) throw new NotFoundException(`User ${id} not found`);
 
-    const [sessionsBySchedule, sessionsDirect] = await Promise.all([
+    const [sessionsByBooking, sessionsDirect] = await Promise.all([
       this.sessionRepo
         .createQueryBuilder('s')
         .innerJoinAndSelect('s.car', 'car')
-        .innerJoinAndSelect('s.schedule', 'sch')
-        .where('sch.userId = :userId', { userId: id })
+        .innerJoinAndSelect('s.booking', 'bk')
+        .where('bk.userId = :userId', { userId: id })
         .getMany(),
       this.sessionRepo
         .createQueryBuilder('s')
         .innerJoinAndSelect('s.car', 'car')
-        .leftJoinAndSelect('s.schedule', 'sch')
+        .leftJoinAndSelect('s.booking', 'bk')
         .where('s.userId = :userId', { userId: id })
         .getMany(),
     ]);
@@ -105,13 +105,13 @@ export class UsersService {
       car: (s as any).car
         ? { id: (s as any).car.id, name: (s as any).car.name, immatriculation: (s as any).car.immatriculation }
         : null,
-      schedule: s.schedule
-        ? { id: s.schedule.id, fromDate: s.schedule.fromDate, toDate: s.schedule.toDate }
+      booking: s.booking
+        ? { id: s.booking.id, startDateTime: s.booking.startDateTime, endDateTime: s.booking.endDateTime }
         : null,
     });
 
     const seenIds = new Set<string>();
-    const rentSessions = [...sessionsBySchedule, ...sessionsDirect]
+    const rentSessions = [...sessionsByBooking, ...sessionsDirect]
       .filter((s) => { if (seenIds.has(s.id)) return false; seenIds.add(s.id); return true; })
       .map(toShape);
 

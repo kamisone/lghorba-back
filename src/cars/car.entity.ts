@@ -72,6 +72,9 @@ export class Car {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   basePricePerDay: number | null;
 
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  basePricePerWeekendDay: number | null;
+
   @OneToMany(() => CarPricing, (p) => p.car)
   pricings: Relation<CarPricing>[];
 

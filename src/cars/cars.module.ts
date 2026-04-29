@@ -11,12 +11,10 @@ import { Car } from './car.entity';
 import { CarsController } from './cars.controller';
 import { CarsService } from './cars.service';
 import { PublicCarsController } from './public-cars.controller';
-import { RentSchedule } from './rent-schedule.entity';
-import { RentSchedulesService } from './rent-schedules.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Car, CarPhoto, RentSchedule, RentSession]),
+    TypeOrmModule.forFeature([Car, CarPhoto, RentSession]),
     MulterModule.register({
       storage: memoryStorage(),
       fileFilter: (_req, file, cb) => {
@@ -28,6 +26,6 @@ import { RentSchedulesService } from './rent-schedules.service';
     TranslationsModule,
   ],
   controllers: [CarsController, PublicCarsController],
-  providers: [CarsService, RentSchedulesService],
+  providers: [CarsService],
 })
 export class CarsModule {}

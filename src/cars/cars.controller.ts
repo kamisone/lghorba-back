@@ -7,7 +7,6 @@ import {
   HttpCode,
   NotFoundException,
   Param,
-  Patch,
   Post,
   Put,
   Res,
@@ -19,17 +18,11 @@ import { Response } from 'express';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { CarsService } from './cars.service';
 import { CreateCarDto, CreateCarSchema } from './dto/create-car.dto';
-import { CreateRentScheduleDto, CreateRentScheduleSchema } from './dto/create-rent-schedule.dto';
-import { UpdateRentScheduleDto, UpdateRentScheduleSchema } from './dto/update-rent-schedule.dto';
 import { UpdateCarDto, UpdateCarSchema } from './dto/update-car.dto';
-import { RentSchedulesService } from './rent-schedules.service';
 
 @Controller('api/cars')
 export class CarsController {
-  constructor(
-    private readonly carsService: CarsService,
-    private readonly rentSchedulesService: RentSchedulesService,
-  ) {}
+  constructor(private readonly carsService: CarsService) {}
 
   @Get()
   findAll() {
@@ -108,33 +101,5 @@ export class CarsController {
   @HttpCode(204)
   deletePhotoById(@Param('id') id: string, @Param('photoId') photoId: string) {
     return this.carsService.deletePhotoById(id, photoId);
-  }
-
-  @Get(':carId/rent-schedules')
-  findSchedules(@Param('carId') carId: string) {
-    return this.rentSchedulesService.findAllForCar(carId);
-  }
-
-  @Post(':carId/rent-schedules')
-  createSchedule(
-    @Param('carId') carId: string,
-    @Body(new ZodValidationPipe(CreateRentScheduleSchema)) dto: CreateRentScheduleDto,
-  ) {
-    return this.rentSchedulesService.create(carId, dto);
-  }
-
-  @Patch(':id/rent-schedules/:scheduleId')
-  updateSchedule(
-    @Param('id') carId: string,
-    @Param('scheduleId') scheduleId: string,
-    @Body(new ZodValidationPipe(UpdateRentScheduleSchema)) dto: UpdateRentScheduleDto,
-  ) {
-    return this.rentSchedulesService.update(carId, scheduleId, dto);
-  }
-
-  @Delete(':carId/rent-schedules/:id')
-  @HttpCode(204)
-  removeSchedule(@Param('carId') carId: string, @Param('id') id: string) {
-    return this.rentSchedulesService.remove(id, carId);
   }
 }

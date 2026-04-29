@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { RentSchedule } from '../cars/rent-schedule.entity';
 import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
@@ -27,20 +26,18 @@ export class RentSessionsService {
     private readonly sessionRepo: Repository<RentSession>,
     @InjectRepository(RentPosition)
     private readonly positionRepo: Repository<RentPosition>,
-    @InjectRepository(RentSchedule)
-    private readonly scheduleRepo: Repository<RentSchedule>,
   ) {}
 
   async create(dto: CreateRentSessionDto): Promise<RentSession> {
-    if (dto.scheduleId) {
-      const existing = await this.sessionRepo.findOne({ where: { scheduleId: dto.scheduleId } });
-      if (existing) throw new ConflictException('This schedule already has a rent session');
+    if (dto.bookingId) {
+      const existing = await this.sessionRepo.findOne({ where: { bookingId: dto.bookingId } });
+      if (existing) throw new ConflictException('This booking already has a rent session');
     }
     const now = new Date();
     return this.sessionRepo.save(
       this.sessionRepo.create({
         carId: dto.carId,
-        scheduleId: dto.scheduleId ?? null,
+        bookingId: dto.bookingId ?? null,
         trackingPaused: false,
         nextLocationAt: addLocationInterval(now),
       }),
@@ -50,7 +47,7 @@ export class RentSessionsService {
   findAllForCar(carId: string): Promise<RentSession[]> {
     return this.sessionRepo.find({
       where: { carId },
-      relations: { positions: true, schedule: { user: true } },
+      relations: { positions: true, booking: { user: true } },
       order: { startedAt: 'DESC', positions: { recordedAt: 'ASC' } },
     });
   }
@@ -115,11 +112,7 @@ export class RentSessionsService {
     if (session.status !== RentSessionStatus.ENDED) {
       throw new BadRequestException('Cannot delete an active session');
     }
-    if (session.scheduleId) {
-      await this.scheduleRepo.delete(session.scheduleId);
-    } else {
-      await this.sessionRepo.delete(id);
-    }
+    await this.sessionRepo.delete(id);
   }
 
   async addPosition(
