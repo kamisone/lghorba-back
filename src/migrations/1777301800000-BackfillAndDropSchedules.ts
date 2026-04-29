@@ -30,6 +30,41 @@ export class BackfillAndDropSchedules1777301800000 implements MigrationInterface
       LEFT JOIN users u ON u.id = rs."userId"
     `);
 
+    // Dedup 1: cancel the later-created entry in every overlapping pair
+    // within the backfill set itself.
+    await qr.query(`
+      UPDATE _sched_booking_map
+      SET status = 'cancelled'
+      WHERE booking_id IN (
+        SELECT DISTINCT
+          CASE WHEN m1."createdAt" <= m2."createdAt" THEN m2.booking_id ELSE m1.booking_id END
+        FROM _sched_booking_map m1
+        JOIN _sched_booking_map m2 ON (
+          m1.booking_id < m2.booking_id
+          AND m1."carId" = m2."carId"
+          AND m1.status != 'cancelled'
+          AND m2.status != 'cancelled'
+          AND m1."startDateTime" < m2."endDateTime"
+          AND m1."endDateTime"   > m2."startDateTime"
+        )
+      )
+    `);
+
+    // Dedup 2: cancel backfill entries that conflict with bookings already
+    // in the table (created directly via the new bookings API).
+    await qr.query(`
+      UPDATE _sched_booking_map m
+      SET status = 'cancelled'
+      WHERE m.status != 'cancelled'
+        AND EXISTS (
+          SELECT 1 FROM bookings b
+          WHERE b."carId" = m."carId"
+            AND b.status != 'cancelled'
+            AND b."startDateTime" < m."endDateTime"
+            AND b."endDateTime"   > m."startDateTime"
+        )
+    `);
+
     await qr.query(`
       INSERT INTO bookings (
         id, "carId", "startDateTime", "endDateTime", "totalPrice", status, version,
