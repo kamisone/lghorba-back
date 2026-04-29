@@ -1,13 +1,11 @@
 import {
   BadRequestException, Body, Controller, Delete, Get, HttpCode,
-  Param, Patch, Post, Put, Query, UseInterceptors,
+  Param, Patch, Post, Put, Query,
 } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
-import { IdempotencyInterceptor } from '../common/idempotency/idempotency.interceptor';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { BookingSource, BookingStatus } from './booking.entity';
 import { BookingsService } from './bookings.service';
-import { CreateBookingDto, CreateBookingSchema } from './dto/create-booking.dto';
 import { CreateBookingAdminDto, CreateBookingAdminSchema } from './dto/create-booking-admin.dto';
 import { UpdateBookingAdminSchema } from './dto/update-booking-admin.dto';
 import { CreateCarPricingDto, CreateCarPricingSchema, UpdateCarPricingDto, UpdateCarPricingSchema } from './dto/create-car-pricing.dto';
@@ -39,13 +37,6 @@ export class PublicBookingsController {
   ) {
     if (!startDateTime || !endDateTime) throw new BadRequestException('startDateTime and endDateTime are required');
     return this.svc.computePrice(carId, startDateTime, endDateTime);
-  }
-
-  @Public()
-  @Post('bookings')
-  @UseInterceptors(IdempotencyInterceptor)
-  createBooking(@Body(new ZodValidationPipe(CreateBookingSchema)) dto: CreateBookingDto) {
-    return this.svc.createBooking(dto);
   }
 
   @Public()

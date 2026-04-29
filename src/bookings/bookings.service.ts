@@ -5,8 +5,9 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, LessThan, Repository } from 'typeorm';
 import { Car } from '../cars/car.entity';
 import { CarPricing } from '../cars/car-pricing.entity';
 import { DistributedLockService } from '../common/lock/distributed-lock.service';
@@ -214,7 +215,10 @@ export class BookingsService {
   //  Layer 3 — Retry on serialization failure (SQLSTATE 40001 / 40P01)
   //  Layer 4 — DB exclusion constraint (absolute safety net, never bypassed)
   //
-  async createBooking(dto: CreateBookingDto): Promise<Booking> {
+  //  Creates with status=pending_payment; PaymentsController attaches the
+  //  PaymentIntent and the webhook transitions it to confirmed/cancelled.
+  //
+  async createPendingPaymentBooking(dto: CreateBookingDto): Promise<Booking> {
     this.validateDateRange(dto.startDateTime, dto.endDateTime);
 
     const lockKey = `booking:${dto.carId}`;
@@ -225,14 +229,14 @@ export class BookingsService {
       () =>
         withRetry(
           () => this.dataSource.transaction('SERIALIZABLE', manager =>
-            this.createBookingInTx(manager, dto),
+            this.createPendingPaymentBookingInTx(manager, dto),
           ),
           { maxAttempts: 3, isRetryable: isTransientDbError },
         ),
     );
   }
 
-  private async createBookingInTx(
+  private async createPendingPaymentBookingInTx(
     manager: EntityManager,
     dto: CreateBookingDto,
   ): Promise<Booking> {
@@ -267,7 +271,7 @@ export class BookingsService {
         startDateTime: new Date(dto.startDateTime),
         endDateTime:   new Date(dto.endDateTime),
         totalPrice:    priceResult.totalPrice,
-        status:        BookingStatus.PENDING,
+        status:        BookingStatus.PENDING_PAYMENT,
         source:        'private' as BookingSource,
         customerName:  dto.customerName  ?? null,
         customerEmail: dto.customerEmail ?? null,
@@ -280,6 +284,43 @@ export class BookingsService {
         throw new ConflictException('Car is not available for the requested period');
       }
       throw err;
+    }
+  }
+
+  async setPaymentIntentId(bookingId: string, paymentIntentId: string): Promise<void> {
+    await this.bookingRepo.update(bookingId, { paymentIntentId });
+  }
+
+  async confirmByPaymentIntent(paymentIntentId: string): Promise<void> {
+    const booking = await this.bookingRepo.findOne({ where: { paymentIntentId } });
+    if (!booking) {
+      this.logger.warn(`confirmByPaymentIntent: no booking for PI ${paymentIntentId}`);
+      return;
+    }
+    if (booking.status === BookingStatus.CONFIRMED) return; // idempotent
+    await this.bookingRepo.update(booking.id, { status: BookingStatus.CONFIRMED });
+  }
+
+  async cancelByPaymentIntent(paymentIntentId: string): Promise<void> {
+    const booking = await this.bookingRepo.findOne({ where: { paymentIntentId } });
+    if (!booking) return;
+    if (booking.status === BookingStatus.CANCELLED) return; // idempotent
+    await this.bookingRepo.update(booking.id, { status: BookingStatus.CANCELLED });
+  }
+
+  // ── TTL cleanup: expire stale pending_payment bookings ────────────────────
+  // Runs every 5 minutes. Bookings that have been in pending_payment for
+  // more than 30 minutes without a confirmed webhook are cancelled.
+
+  @Cron('*/5 * * * *')
+  async expireStalePendingPayments(): Promise<void> {
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+    const stale  = await this.bookingRepo.find({
+      where: { status: BookingStatus.PENDING_PAYMENT, createdAt: LessThan(cutoff) },
+    });
+    for (const booking of stale) {
+      this.logger.log(`Expiring stale pending_payment booking ${booking.id}`);
+      await this.bookingRepo.update(booking.id, { status: BookingStatus.CANCELLED });
     }
   }
 

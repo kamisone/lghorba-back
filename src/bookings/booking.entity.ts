@@ -6,9 +6,10 @@ import { Car } from '../cars/car.entity';
 import { User } from '../users/user.entity';
 
 export enum BookingStatus {
-  PENDING    = 'pending',
-  CONFIRMED  = 'confirmed',
-  CANCELLED  = 'cancelled',
+  PENDING_PAYMENT = 'pending_payment',
+  PENDING         = 'pending',
+  CONFIRMED       = 'confirmed',
+  CANCELLED       = 'cancelled',
 }
 
 export type BookingSource = 'private' | 'turo' | 'getaround';
@@ -68,6 +69,9 @@ export class Booking {
 
   @Column({ type: 'boolean', default: false })
   autoStartTracking: boolean;
+
+  @Column({ type: 'varchar', nullable: true, unique: true })
+  paymentIntentId: string | null;
 
   /** Incremented automatically on every save — used for optimistic locking. */
   @VersionColumn() version: number;

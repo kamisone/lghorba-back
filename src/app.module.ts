@@ -15,6 +15,7 @@ import { Car } from './cars/car.entity';
 import { CarPricing } from './cars/car-pricing.entity';
 import { Booking } from './bookings/booking.entity';
 import { BookingsModule } from './bookings/bookings.module';
+import { PaymentsModule } from './payments/payments.module';
 import { CarsModule } from './cars/cars.module';
 import { RedisModule } from './redis/redis.module';
 import { RentPosition } from './rent-sessions/rent-position.entity';
@@ -54,6 +55,7 @@ config();
     ContactsModule,
     TranslationsModule,
     BookingsModule,
+    PaymentsModule,
   ],
   controllers: [SmsController],
   providers: [
