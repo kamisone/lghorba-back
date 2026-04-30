@@ -1,6 +1,6 @@
 import { HttpException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { SmsMessage, SmsType } from './sms-message.entity';
 
 @Injectable()
@@ -50,14 +50,13 @@ export class SmsService {
   async getLastConsumed(
     to: string,
   ): Promise<{ inbound: SmsMessage | null; outbound: SmsMessage | null }> {
-    const [sms] = await this.repo.find({
+    const unconsumed = await this.repo.find({
       where: { type: SmsType.INBOUND, consumed: false, ...(to ? { to } : {}) },
       order: { createdAt: 'ASC' },
-      take: 1,
     });
-    if (sms) {
-      await this.repo.update(sms.id, { consumed: true });
-      await this.pruneConsumedForNumber(sms.to);
+    if (unconsumed.length > 0) {
+      await this.repo.update({ id: In(unconsumed.map(s => s.id)) }, { consumed: true });
+      await this.pruneConsumedForNumber(to);
     }
 
     const where = (type: SmsType) => ({
