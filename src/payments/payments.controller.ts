@@ -30,7 +30,7 @@ export class PaymentsController {
   // ── Public booking creation (with payment) ───────────────────────────────
 
   @Public()
-  @Post('api/public/bookings')
+  @Post('public/bookings')
   @UseInterceptors(IdempotencyInterceptor)
   async createPublicBooking(
     @Body(new ZodValidationPipe(CreateBookingSchema)) dto: CreateBookingDto,
@@ -55,7 +55,7 @@ export class PaymentsController {
   // ── Stripe webhook ────────────────────────────────────────────────────────
 
   @Public()
-  @Post('api/webhooks/stripe')
+  @Post('webhooks/stripe')
   @HttpCode(200)
   async handleStripeWebhook(
     @Headers('stripe-signature') sig: string,

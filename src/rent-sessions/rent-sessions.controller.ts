@@ -15,7 +15,7 @@ import { CreateRentSessionDto, CreateRentSessionSchema } from './dto/create-rent
 import { PatchRentSessionDto, PatchRentSessionSchema } from './dto/patch-rent-session.dto';
 import { RentSessionsService } from './rent-sessions.service';
 
-@Controller('api/rent-sessions')
+@Controller('rent-sessions')
 export class RentSessionsController {
   constructor(private readonly service: RentSessionsService) {}
 

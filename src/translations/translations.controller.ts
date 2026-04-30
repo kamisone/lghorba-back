@@ -12,7 +12,7 @@ import { BulkUpsertTranslationDto, BulkUpsertTranslationSchema } from './dto/bul
 import { UpsertTranslationDto, UpsertTranslationSchema } from './dto/upsert-translation.dto';
 import { TranslationsService } from './translations.service';
 
-@Controller('api/translations')
+@Controller('translations')
 export class TranslationsController {
   constructor(private readonly service: TranslationsService) {}
 

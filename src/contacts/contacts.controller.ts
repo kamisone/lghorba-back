@@ -4,7 +4,7 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { ContactsService } from './contacts.service';
 import { CreateContactDto, CreateContactSchema } from './dto/create-contact.dto';
 
-@Controller('api/contacts')
+@Controller('contacts')
 export class ContactsController {
   constructor(private readonly service: ContactsService) {}
 

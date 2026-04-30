@@ -3,7 +3,7 @@ import { Response } from 'express';
 import { Public } from '../auth/public.decorator';
 import { CarsService } from './cars.service';
 
-@Controller('api/public')
+@Controller('public')
 export class PublicCarsController {
   constructor(private readonly carsService: CarsService) {}
 

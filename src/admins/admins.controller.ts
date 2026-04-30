@@ -5,7 +5,7 @@ import { CreateAdminDto, CreateAdminSchema } from './dto/create-admin.dto';
 import { ResetPasswordDto, ResetPasswordSchema } from './dto/reset-password.dto';
 import { UpdateAdminDto, UpdateAdminSchema } from './dto/update-admin.dto';
 
-@Controller('api/admins')
+@Controller('admins')
 export class AdminsController {
   constructor(private readonly adminsService: AdminsService) {}
 

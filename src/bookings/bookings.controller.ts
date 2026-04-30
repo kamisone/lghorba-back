@@ -13,7 +13,7 @@ import { z } from 'zod';
 
 // ── Public routes ────────────────────────────────────────────────────────────
 
-@Controller('api/public')
+@Controller('public')
 export class PublicBookingsController {
   constructor(private readonly svc: BookingsService) {}
 
@@ -48,7 +48,7 @@ export class PublicBookingsController {
 
 // ── Admin routes ─────────────────────────────────────────────────────────────
 
-@Controller('api/bookings')
+@Controller('bookings')
 export class BookingsAdminController {
   constructor(private readonly svc: BookingsService) {}
 
@@ -113,7 +113,7 @@ export class BookingsAdminController {
 
 // ── Car Pricings admin ───────────────────────────────────────────────────────
 
-@Controller('api/cars')
+@Controller('cars')
 export class CarPricingsController {
   constructor(private readonly svc: BookingsService) {}
 
