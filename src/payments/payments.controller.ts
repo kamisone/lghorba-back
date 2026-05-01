@@ -17,6 +17,7 @@ import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { BookingsService } from '../bookings/bookings.service';
 import { CreateBookingDto, CreateBookingSchema } from '../bookings/dto/create-booking.dto';
 import { PaymentsService } from './payments.service';
+import { InvoiceService } from '../billing/invoice.service';
 
 @Controller()
 export class PaymentsController {
@@ -25,6 +26,7 @@ export class PaymentsController {
   constructor(
     private readonly bookingsService: BookingsService,
     private readonly paymentsService: PaymentsService,
+    private readonly invoiceService: InvoiceService,
   ) {}
 
   // ── Public booking creation (with payment) ───────────────────────────────
@@ -76,9 +78,20 @@ export class PaymentsController {
     const paymentIntentId = intent.id;
 
     switch (event.type) {
-      case 'payment_intent.succeeded':
+      case 'payment_intent.succeeded': {
         await this.bookingsService.confirmByPaymentIntent(paymentIntentId);
+        // Fire-and-forget: invoice generation runs asynchronously via BullMQ.
+        // Failure is handled by BullMQ retry; it must not fail the webhook response.
+        const booking = await this.bookingsService
+          .findBookingByPaymentIntentId(paymentIntentId)
+          .catch(() => null);
+        if (booking) {
+          await this.invoiceService
+            .scheduleInvoiceGeneration(booking.id, paymentIntentId)
+            .catch(err => this.logger.error(`Failed to queue invoice for booking ${booking.id}: ${err?.message}`));
+        }
         break;
+      }
 
       case 'payment_intent.payment_failed':
       case 'payment_intent.canceled':

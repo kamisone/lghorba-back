@@ -122,4 +122,64 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: STRIPE_WEBHOOK_SECRET
+            - name: SELLER_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SELLER_NAME
+            - name: SELLER_ADDRESS_LINE1
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SELLER_ADDRESS_LINE1
+            - name: SELLER_ADDRESS_CITY
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SELLER_ADDRESS_CITY
+            - name: SELLER_ADDRESS_ZIP
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SELLER_ADDRESS_ZIP
+            - name: SELLER_ADDRESS_COUNTRY
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SELLER_ADDRESS_COUNTRY
+            - name: SELLER_VAT_NUMBER
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SELLER_VAT_NUMBER
+            - name: SELLER_SIRET
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SELLER_SIRET
+            - name: SMTP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SMTP_HOST
+            - name: SMTP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SMTP_PORT
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SMTP_USER
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SMTP_PASS
+            - name: SMTP_FROM
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: SMTP_FROM
             

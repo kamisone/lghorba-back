@@ -494,6 +494,10 @@ export class BookingsService {
     return booking;
   }
 
+  async findBookingByPaymentIntentId(paymentIntentId: string): Promise<Booking | null> {
+    return this.bookingRepo.findOne({ where: { paymentIntentId } });
+  }
+
   async findAllBookings(filters?: {
     status?: BookingStatus;
     startDate?: string;

@@ -78,7 +78,19 @@ jobs:
             --from-literal REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }} \
             --from-literal REDIS_DB=${{ secrets.REDIS_DB }} \
             --from-literal STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }} \
-            --from-literal STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            --from-literal STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }} \
+            --from-literal SELLER_NAME=${{ secrets.SELLER_NAME }} \
+            --from-literal SELLER_ADDRESS_LINE1=${{ secrets.SELLER_ADDRESS_LINE1 }} \
+            --from-literal SELLER_ADDRESS_CITY=${{ secrets.SELLER_ADDRESS_CITY }} \
+            --from-literal SELLER_ADDRESS_ZIP=${{ secrets.SELLER_ADDRESS_ZIP }} \
+            --from-literal SELLER_ADDRESS_COUNTRY=${{ secrets.SELLER_ADDRESS_COUNTRY }} \
+            --from-literal SELLER_VAT_NUMBER=${{ secrets.SELLER_VAT_NUMBER }} \
+            --from-literal SELLER_SIRET=${{ secrets.SELLER_SIRET }} \
+            --from-literal SMTP_HOST=${{ secrets.SMTP_HOST }} \
+            --from-literal SMTP_PORT=${{ secrets.SMTP_PORT }} \
+            --from-literal SMTP_USER=${{ secrets.SMTP_USER }} \
+            --from-literal SMTP_PASS=${{ secrets.SMTP_PASS }} \
+            --from-literal SMTP_FROM=${{ secrets.SMTP_FROM }}
             kubectl apply -f /srv/k8s/back
             minikube addons enable ingress
             echo ${{ secrets.SERVER_SECOND_USER_PASSWORD }} | sudo -S systemctl restart nginx

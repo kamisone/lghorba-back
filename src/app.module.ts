@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { Admin } from './admins/admin.entity';
 import { AdminsModule } from './admins/admins.module';
 import { AuthModule } from './auth/auth.module';
@@ -26,6 +27,11 @@ import { SmsController } from './sms/sms.controller';
 import { SmsModule } from './sms/sms.module';
 import { User } from './users/user.entity';
 import { UsersModule } from './users/users.module';
+import { BillingModule } from './billing/billing.module';
+import { Invoice } from './billing/invoice.entity';
+import { InvoiceLine } from './billing/invoice-line.entity';
+import { TaxRate } from './billing/tax-rate.entity';
+import { InvoiceAuditLog } from './billing/invoice-audit-log.entity';
 
 import { config } from 'dotenv';
 
@@ -40,11 +46,21 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
     ScheduleModule.forRoot(),
+    BullModule.forRootAsync({
+      useFactory: () => ({
+        connection: {
+          host:     process.env.REDIS_HOST     ?? 'localhost',
+          port:     Number(process.env.REDIS_PORT ?? 6379),
+          password: process.env.REDIS_PASSWORD  ?? undefined,
+          db:       Number(process.env.REDIS_DB  ?? 0),
+        },
+      }),
+    }),
     RedisModule,
     SmsModule,
     AuthModule,
@@ -56,6 +72,7 @@ config();
     TranslationsModule,
     BookingsModule,
     PaymentsModule,
+    BillingModule,
   ],
   controllers: [SmsController],
   providers: [
