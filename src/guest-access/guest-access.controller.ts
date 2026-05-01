@@ -25,6 +25,11 @@ export class GuestAccessController {
     };
   }
 
+  @Get(':token/car-status')
+  async getCarStatus(@Param('token') rawToken: string) {
+    return this.guestTokenService.getCarStatus(rawToken);
+  }
+
   @Post(':token/action')
   @UsePipes(new ZodValidationPipe(ExecuteGuestActionSchema))
   async executeAction(

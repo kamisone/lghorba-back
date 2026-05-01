@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Req,
   UsePipes,
 } from '@nestjs/common';
@@ -37,5 +38,10 @@ export class GuestTokensAdminController {
   @Delete(':id/revoke')
   revoke(@Param('id') id: string, @Req() req: Request & { user: AdminJwtPayload }) {
     return this.guestTokenService.revoke(id, req.user.id);
+  }
+
+  @Get('audit')
+  getAudit(@Query('tokenId') tokenId?: string) {
+    return this.guestTokenService.findAuditLogs(tokenId);
   }
 }

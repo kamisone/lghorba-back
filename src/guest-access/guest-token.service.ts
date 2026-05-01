@@ -9,7 +9,9 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
+import { Car } from '../cars/car.entity';
 import { RedisService } from '../redis/redis.service';
+import { SmsService } from '../sms/sms.service';
 import { CreateGuestTokenDto } from './dto/create-guest-token.dto';
 import { GuestToken, GuestAction } from './entities/guest-token.entity';
 import { GuestTokenAuditLog } from './entities/guest-token-audit.entity';
@@ -40,9 +42,12 @@ export class GuestTokenService {
     private readonly tokenRepo: Repository<GuestToken>,
     @InjectRepository(GuestTokenAuditLog)
     private readonly auditRepo: Repository<GuestTokenAuditLog>,
+    @InjectRepository(Car)
+    private readonly carRepo: Repository<Car>,
     @InjectQueue(GUEST_ACTIONS_QUEUE)
     private readonly queue: Queue<GuestActionJobData>,
     private readonly redis: RedisService,
+    private readonly smsService: SmsService,
   ) {}
 
   async create(dto: CreateGuestTokenDto, adminId: string): Promise<{ token: GuestToken; rawToken: string }> {
@@ -81,7 +86,15 @@ export class GuestTokenService {
     return this.tokenRepo.find({ order: { createdAt: 'DESC' } });
   }
 
-  async revoke(id: string, adminId: string): Promise<GuestToken> {
+  async findAuditLogs(tokenId?: string): Promise<GuestTokenAuditLog[]> {
+    return this.auditRepo.find({
+      where: tokenId ? { tokenId } : undefined,
+      order: { createdAt: 'DESC' },
+      take: 500,
+    });
+  }
+
+  async revoke(id: string, _adminId: string): Promise<GuestToken> {
     const token = await this.tokenRepo.findOne({ where: { id } });
     if (!token) throw new NotFoundException('Guest token not found');
 
@@ -143,6 +156,18 @@ export class GuestTokenService {
     );
 
     await this.recordAudit(token.id, action, true, null, ipAddress, userAgent);
+  }
+
+  async getCarStatus(rawToken: string): Promise<{ lastInboundId: number | null; lastInboundAt: string | null }> {
+    const token = await this.resolveToken(rawToken);
+    const car   = await this.carRepo.findOne({ where: { id: token.carId } });
+    if (!car) throw new NotFoundException(`Car not found`);
+
+    const { inbound } = await this.smsService.getLastConsumed(car.phoneNumber);
+    return {
+      lastInboundId: inbound?.id        ?? null,
+      lastInboundAt: inbound?.createdAt ? (inbound.createdAt as unknown as Date).toISOString() : null,
+    };
   }
 
   private async resolveToken(rawToken: string): Promise<GuestToken> {
