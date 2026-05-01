@@ -63,7 +63,7 @@ export class InvoiceService {
       'generate',
       { bookingId, paymentIntentId } satisfies InvoiceJobData,
       {
-        jobId:    `invoice:${bookingId}`,
+        jobId:    `invoice.${bookingId}`,
         attempts: 5,
         backoff:  { type: 'exponential', delay: 10_000 },
         removeOnComplete: 50,
@@ -178,7 +178,7 @@ export class InvoiceService {
       'render-pdf',
       { invoiceId } satisfies PdfJobData,
       {
-        jobId:    `pdf:${invoiceId}`,
+        jobId:    `pdf.${invoiceId}`,
         attempts: 3,
         backoff:  { type: 'exponential', delay: 15_000 },
         removeOnComplete: 50,
@@ -192,7 +192,7 @@ export class InvoiceService {
       'send-email',
       { invoiceId } satisfies EmailJobData,
       {
-        jobId:    `email:${invoiceId}`,
+        jobId:    `email.${invoiceId}`,
         attempts: 3,
         backoff:  { type: 'exponential', delay: 30_000 },
         removeOnComplete: 50,
