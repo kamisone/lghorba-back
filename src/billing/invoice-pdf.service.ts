@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import PDFDocument from 'pdfkit';
+import PDFDocument = require('pdfkit');
 import { GcsService } from '../gcs/gcs.service';
 import { Invoice } from './invoice.entity';
 import { InvoiceLine } from './invoice-line.entity';
