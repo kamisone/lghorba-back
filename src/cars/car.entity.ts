@@ -75,6 +75,29 @@ export class Car {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   basePricePerWeekendDay: number | null;
 
+  /* ── Parking location ─────────────────────────────────────────────────── */
+
+  @Column({ type: 'varchar', nullable: true })
+  parkingAddress: string | null;
+
+  @Column({ type: 'float', nullable: true })
+  parkingLat: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  parkingLng: number | null;
+
+  /* ── Delivery configuration ───────────────────────────────────────────── */
+
+  /** 'none' | 'radius' | 'whitelist' */
+  @Column({ type: 'varchar', nullable: true, default: 'none' })
+  deliveryType: string | null;
+
+  @Column({ type: 'float', nullable: true })
+  deliveryRadiusKm: number | null;
+
+  @Column({ type: 'simple-json', nullable: true })
+  deliveryAddresses: { label: string; lat: number; lng: number }[] | null;
+
   @OneToMany(() => CarPricing, (p) => p.car)
   pricings: Relation<CarPricing>[];
 

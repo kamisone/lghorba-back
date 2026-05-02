@@ -31,6 +31,17 @@ export const CreateCarSchema = z.object({
   din:              z.number().int().min(0).nullish(),
   mileage:          z.enum(MILEAGE_RANGES).nullish(),
   vehicleCondition: z.string().nullish(),
+  // ── Location & delivery ───────────────────────────────────────────────────
+  parkingAddress:   z.string().max(500).nullish(),
+  parkingLat:       z.number().min(-90).max(90).nullish(),
+  parkingLng:       z.number().min(-180).max(180).nullish(),
+  deliveryType:     z.enum(['none', 'radius', 'whitelist']).nullish(),
+  deliveryRadiusKm: z.number().positive().nullish(),
+  deliveryAddresses: z.array(z.object({
+    label: z.string(),
+    lat:   z.number(),
+    lng:   z.number(),
+  })).nullish(),
 });
 
 export type CreateCarDto = z.infer<typeof CreateCarSchema>;

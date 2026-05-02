@@ -1,7 +1,9 @@
-import { Controller, Get, NotFoundException, Param, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { Public } from '../auth/public.decorator';
+import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { CarsService } from './cars.service';
+import { SearchCarsDto, SearchCarsSchema } from './dto/search-cars.dto';
 
 @Controller('public')
 export class PublicCarsController {
@@ -11,6 +13,14 @@ export class PublicCarsController {
   @Get('cars')
   findAll(@Query('lang') lang?: string) {
     return this.carsService.findAllPublic(lang);
+  }
+
+  @Public()
+  @Post('cars/search')
+  searchCars(
+    @Body(new ZodValidationPipe(SearchCarsSchema)) dto: SearchCarsDto,
+  ) {
+    return this.carsService.searchPublic(dto);
   }
 
   @Public()

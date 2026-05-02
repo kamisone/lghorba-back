@@ -1,17 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { extname } from 'path';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
+import { Booking, BookingStatus } from '../bookings/booking.entity';
 import { GcsService } from '../gcs/gcs.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
 import { TranslationsService } from '../translations/translations.service';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
+import { SearchCarsDto } from './dto/search-cars.dto';
 import { UpdateCarDto } from './dto/update-car.dto';
 
 type CarWithRentStatus = Car & { isCurrentlyRented: boolean; isTrackingActive: boolean };
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 @Injectable()
 export class CarsService {
@@ -22,6 +35,8 @@ export class CarsService {
     private readonly sessionRepo: Repository<RentSession>,
     @InjectRepository(CarPhoto)
     private readonly photoRepo: Repository<CarPhoto>,
+    @InjectRepository(Booking)
+    private readonly bookingRepo: Repository<Booking>,
     private readonly gcsService: GcsService,
     private readonly translationsService: TranslationsService,
   ) {}
@@ -66,6 +81,93 @@ export class CarsService {
       'car',
       lang,
     );
+  }
+
+  async searchPublic(dto: SearchCarsDto) {
+    const { startDateTime, endDateTime, addressLat, addressLng } = dto;
+
+    if (new Date(endDateTime) <= new Date(startDateTime)) {
+      throw new BadRequestException('endDateTime must be after startDateTime');
+    }
+
+    // Fetch all cars with current rent status
+    const all = await this.findAll();
+
+    // Find car IDs with overlapping bookings
+    const conflicts = await this.bookingRepo
+      .createQueryBuilder('b')
+      .select('b.carId', 'carId')
+      .where('b.status != :cancelled', { cancelled: BookingStatus.CANCELLED })
+      .andWhere('b.startDateTime < :end',   { end: endDateTime })
+      .andWhere('b.endDateTime   > :start', { start: startDateTime })
+      .distinct(true)
+      .getRawMany<{ carId: string }>();
+
+    const bookedIds = new Set(conflicts.map((c) => c.carId));
+
+    // Build results: all cars not currently booked or rented
+    const results = all
+      .filter((car) => !bookedIds.has(car.id) && !car.isCurrentlyRented)
+      .map((car) => {
+        const distanceKm =
+          car.parkingLat != null && car.parkingLng != null
+            ? Math.round(haversineKm(addressLat, addressLng, car.parkingLat, car.parkingLng) * 10) / 10
+            : null;
+
+        let deliveryAvailable = false;
+        let deliveryNote: string | null = null;
+
+        if (car.deliveryType === 'radius' && car.deliveryRadiusKm != null && distanceKm != null) {
+          deliveryAvailable = distanceKm <= car.deliveryRadiusKm;
+          deliveryNote = deliveryAvailable
+            ? `Livraison disponible (rayon ${car.deliveryRadiusKm} km)`
+            : `Retrait sur place (rayon livraison : ${car.deliveryRadiusKm} km)`;
+        } else if (car.deliveryType === 'whitelist' && car.deliveryAddresses) {
+          deliveryAvailable = car.deliveryAddresses.some(
+            (a) => haversineKm(addressLat, addressLng, a.lat, a.lng) < 0.5,
+          );
+          deliveryNote = deliveryAvailable
+            ? 'Livraison disponible à votre adresse'
+            : 'Livraison à des adresses spécifiques uniquement';
+        }
+
+        return {
+          id:               car.id,
+          name:             car.name,
+          description:      car.description,
+          hasPhoto:         car.photo !== null,
+          brand:            car.brand,
+          model:            car.model,
+          finishing:        car.finishing,
+          modelYear:        car.modelYear,
+          vehicleType:      car.vehicleType,
+          energy:           car.energy,
+          gearbox:          car.gearbox,
+          din:              car.din,
+          mileage:          car.mileage,
+          numberOfDoors:    car.numberOfDoors,
+          numberOfSeats:    car.numberOfSeats,
+          color:            car.color,
+          vehicleCondition: car.vehicleCondition,
+          basePricePerDay:  car.basePricePerDay,
+          parkingAddress:   car.parkingAddress,
+          deliveryType:     car.deliveryType ?? 'none',
+          deliveryRadiusKm: car.deliveryRadiusKm,
+          distanceKm,
+          deliveryAvailable,
+          deliveryNote,
+        };
+      });
+
+    // Sort: delivery-eligible first, then by distance (nulls last)
+    results.sort((a, b) => {
+      if (a.deliveryAvailable !== b.deliveryAvailable) return a.deliveryAvailable ? -1 : 1;
+      if (a.distanceKm === null) return 1;
+      if (b.distanceKm === null) return -1;
+      return a.distanceKm - b.distanceKm;
+    });
+
+    return results;
   }
 
   async findAll(): Promise<CarWithRentStatus[]> {
