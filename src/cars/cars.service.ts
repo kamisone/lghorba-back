@@ -11,20 +11,10 @@ import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
 import { SearchCarsDto } from './dto/search-cars.dto';
+import { haversineKm } from '../common/utils/map.util';
 import { UpdateCarDto } from './dto/update-car.dto';
 
 type CarWithRentStatus = Car & { isCurrentlyRented: boolean; isTrackingActive: boolean };
-
-function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6371;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
 
 @Injectable()
 export class CarsService {

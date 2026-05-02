@@ -10,7 +10,7 @@ import { Repository } from 'typeorm';
 import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
-import { extractLatLng, extractMapsUrl, haversineKm } from './map-utils';
+import { extractLatLng, extractMapsUrl, haversineKm } from '../common/utils/map.util';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
