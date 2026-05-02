@@ -75,6 +75,7 @@ export class CarsService {
 
   async searchPublic(dto: SearchCarsDto) {
     const { startDateTime, endDateTime, addressLat, addressLng } = dto;
+    const hasAddress = addressLat != null && addressLng != null;
 
     if (new Date(endDateTime) <= new Date(startDateTime)) {
       throw new BadRequestException('endDateTime must be after startDateTime');
@@ -100,25 +101,27 @@ export class CarsService {
       .filter((car) => !bookedIds.has(car.id) && !car.isCurrentlyRented)
       .map((car) => {
         const distanceKm =
-          car.parkingLat != null && car.parkingLng != null
-            ? Math.round(haversineKm(addressLat, addressLng, car.parkingLat, car.parkingLng) * 10) / 10
+          hasAddress && car.parkingLat != null && car.parkingLng != null
+            ? Math.round(haversineKm(addressLat!, addressLng!, car.parkingLat, car.parkingLng) * 10) / 10
             : null;
 
         let deliveryAvailable = false;
         let deliveryNote: string | null = null;
 
-        if (car.deliveryType === 'radius' && car.deliveryRadiusKm != null && distanceKm != null) {
-          deliveryAvailable = distanceKm <= car.deliveryRadiusKm;
-          deliveryNote = deliveryAvailable
-            ? `Livraison disponible (rayon ${car.deliveryRadiusKm} km)`
-            : `Retrait sur place (rayon livraison : ${car.deliveryRadiusKm} km)`;
-        } else if (car.deliveryType === 'whitelist' && car.deliveryAddresses) {
-          deliveryAvailable = car.deliveryAddresses.some(
-            (a) => haversineKm(addressLat, addressLng, a.lat, a.lng) < 0.5,
-          );
-          deliveryNote = deliveryAvailable
-            ? 'Livraison disponible à votre adresse'
-            : 'Livraison à des adresses spécifiques uniquement';
+        if (hasAddress) {
+          if (car.deliveryType === 'radius' && car.deliveryRadiusKm != null && distanceKm != null) {
+            deliveryAvailable = distanceKm <= car.deliveryRadiusKm;
+            deliveryNote = deliveryAvailable
+              ? `Livraison disponible (rayon ${car.deliveryRadiusKm} km)`
+              : `Retrait sur place (rayon livraison : ${car.deliveryRadiusKm} km)`;
+          } else if (car.deliveryType === 'whitelist' && car.deliveryAddresses) {
+            deliveryAvailable = car.deliveryAddresses.some(
+              (a) => haversineKm(addressLat!, addressLng!, a.lat, a.lng) < 0.5,
+            );
+            deliveryNote = deliveryAvailable
+              ? 'Livraison disponible à votre adresse'
+              : 'Livraison à des adresses spécifiques uniquement';
+          }
         }
 
         return {
