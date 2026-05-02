@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -9,11 +10,12 @@ import { Repository } from 'typeorm';
 import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
-import { extractLatLng, extractMapsUrl } from './map-utils';
+import { extractLatLng, extractMapsUrl, haversineKm } from './map-utils';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
 const LOCATION_INTERVAL_MS = 15 * 60 * 1000;
+const MAX_POSITION_JUMP_KM = 100;
 
 export function addLocationInterval(from: Date): Date {
   return new Date(from.getTime() + LOCATION_INTERVAL_MS);
@@ -21,6 +23,8 @@ export function addLocationInterval(from: Date): Date {
 
 @Injectable()
 export class RentSessionsService {
+  private readonly logger = new Logger(RentSessionsService.name);
+
   constructor(
     @InjectRepository(RentSession)
     private readonly sessionRepo: Repository<RentSession>,
@@ -118,8 +122,33 @@ export class RentSessionsService {
   async addPosition(
     id: string,
     dto: CreateRentPositionDto,
-  ): Promise<RentPosition> {
+  ): Promise<RentPosition | null> {
     await this.findOne(id);
+
+    // Accept the first 3 positions unconditionally (bootstrapping phase).
+    // A single LIMIT-3 query is enough: length < 3 means we're still in the
+    // warm-up window; otherwise recent[0] is the last recorded position.
+    const recent = await this.positionRepo.find({
+      where: { sessionId: id },
+      order: { recordedAt: 'DESC' },
+      take: 3,
+    });
+
+    if (recent.length >= 3) {
+      const dist = haversineKm(
+        Number(recent[0].lat), Number(recent[0].lng),
+        dto.lat, dto.lng,
+      );
+      if (dist > MAX_POSITION_JUMP_KM) {
+        this.logger.warn(
+          `Position discarded for session ${id}: ` +
+          `jump of ${dist.toFixed(1)} km exceeds ${MAX_POSITION_JUMP_KM} km limit ` +
+          `(prev ${recent[0].lat},${recent[0].lng} → new ${dto.lat},${dto.lng})`,
+        );
+        return null;
+      }
+    }
+
     return this.positionRepo.save(
       this.positionRepo.create({ ...dto, sessionId: id }),
     );
@@ -152,24 +181,6 @@ export class RentSessionsService {
 
     const coords = extractLatLng(mapsUrl);
     if (!coords) return;
-
-    if (coords.lat % 1 === 0 || coords.lng % 1 === 0) {
-      const last = await this.positionRepo.findOne({
-        where: { sessionId: session.id },
-        order: { recordedAt: 'DESC' },
-      });
-      if (!last) return;
-      await this.positionRepo.save(
-        this.positionRepo.create({
-          sessionId: session.id,
-          lat: last.lat,
-          lng: last.lng,
-          rawMessage: message,
-          recordedAt: receivedAt,
-        }),
-      );
-      return;
-    }
 
     await this.addPosition(session.id, {
       lat: coords.lat,
