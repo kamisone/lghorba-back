@@ -81,24 +81,37 @@ export class CarsService {
       throw new BadRequestException('endDateTime must be after startDateTime');
     }
 
-    // Fetch all cars with current rent status
-    const all = await this.findAll();
+    // Single query: exclude cars with overlapping bookings OR active rent sessions
+    const cars = await this.repo
+      .createQueryBuilder('c')
+      .where(qb =>
+        `c.id NOT IN ${qb
+          .subQuery()
+          .select('b.carId')
+          .from(Booking, 'b')
+          .where('b.status != :cancelled')
+          .andWhere('b.startDateTime < :end')
+          .andWhere('b.endDateTime > :start')
+          .getQuery()}`,
+      )
+      .andWhere(qb =>
+        `c.id NOT IN ${qb
+          .subQuery()
+          .select('rs.carId')
+          .from(RentSession, 'rs')
+          .where('rs.status = :active')
+          .getQuery()}`,
+      )
+      .setParameters({
+        cancelled: BookingStatus.CANCELLED,
+        start:     startDateTime,
+        end:       endDateTime,
+        active:    RentSessionStatus.ACTIVE,
+      })
+      .getMany();
 
-    // Find car IDs with overlapping bookings
-    const conflicts = await this.bookingRepo
-      .createQueryBuilder('b')
-      .select('b.carId', 'carId')
-      .where('b.status != :cancelled', { cancelled: BookingStatus.CANCELLED })
-      .andWhere('b.startDateTime < :end',   { end: endDateTime })
-      .andWhere('b.endDateTime   > :start', { start: startDateTime })
-      .distinct(true)
-      .getRawMany<{ carId: string }>();
-
-    const bookedIds = new Set(conflicts.map((c) => c.carId));
-
-    // Build results: all cars not currently booked or rented
-    const results = all
-      .filter((car) => !bookedIds.has(car.id) && !car.isCurrentlyRented)
+    // Build results with distance / delivery info
+    const results = cars
       .map((car) => {
         const distanceKm =
           hasAddress && car.parkingLat != null && car.parkingLng != null
@@ -166,22 +179,17 @@ export class CarsService {
   async findAll(): Promise<CarWithRentStatus[]> {
     const cars = await this.repo.find();
     if (cars.length === 0) return [];
-    const [activeSessions, trackingSessions] = await Promise.all([
-      this.sessionRepo.find({
-        where: { status: RentSessionStatus.ACTIVE },
-        select: ['carId'],
-      }),
-      this.sessionRepo.find({
-        where: { status: RentSessionStatus.ACTIVE, trackingPaused: false },
-        select: ['carId'],
-      }),
-    ]);
-    const rentedIds = new Set(activeSessions.map((s) => s.carId));
-    const trackingIds = new Set(trackingSessions.map((s) => s.carId));
+    // Single query for all active sessions; derive both sets from the result
+    const activeSessions = await this.sessionRepo.find({
+      where: { status: RentSessionStatus.ACTIVE },
+      select: ['carId', 'trackingPaused'],
+    });
+    const rentedIds   = new Set(activeSessions.map((s) => s.carId));
+    const trackingIds = new Set(activeSessions.filter((s) => !s.trackingPaused).map((s) => s.carId));
     return cars.map((car) =>
       Object.assign(car, {
         isCurrentlyRented: rentedIds.has(car.id),
-        isTrackingActive: trackingIds.has(car.id),
+        isTrackingActive:  trackingIds.has(car.id),
       }),
     );
   }

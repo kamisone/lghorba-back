@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
@@ -55,6 +56,9 @@ config();
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
+    ThrottlerModule.forRoot([
+      { name: 'auth', ttl: 15 * 60 * 1000, limit: 10 },
+    ]),
     ScheduleModule.forRoot(),
     BullModule.forRootAsync({
       useFactory: () => ({
