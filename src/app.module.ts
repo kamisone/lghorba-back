@@ -35,6 +35,8 @@ import { InvoiceAuditLog } from './billing/invoice-audit-log.entity';
 import { GuestAccessModule } from './guest-access/guest-access.module';
 import { GuestToken } from './guest-access/entities/guest-token.entity';
 import { GuestTokenAuditLog } from './guest-access/entities/guest-token-audit.entity';
+import { PageContent } from './page-content/page-content.entity';
+import { PageContentModule } from './page-content/page-content.module';
 
 import { config } from 'dotenv';
 
@@ -49,7 +51,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -77,6 +79,7 @@ config();
     PaymentsModule,
     BillingModule,
     GuestAccessModule,
+    PageContentModule,
   ],
   controllers: [SmsController],
   providers: [
