@@ -221,6 +221,12 @@ export class BookingsService {
   async createPendingPaymentBooking(dto: CreateBookingDto): Promise<Booking> {
     this.validateDateRange(dto.startDateTime, dto.endDateTime);
 
+    const user = await this.usersService.findOrCreate(
+      dto.customerName,
+      dto.customerPhone,
+      { email: dto.customerEmail ?? undefined },
+    );
+
     const lockKey = `booking:${dto.carId}`;
 
     return this.lockService.withLock(
@@ -229,7 +235,7 @@ export class BookingsService {
       () =>
         withRetry(
           () => this.dataSource.transaction('SERIALIZABLE', manager =>
-            this.createPendingPaymentBookingInTx(manager, dto),
+            this.createPendingPaymentBookingInTx(manager, dto, user.id),
           ),
           { maxAttempts: 3, isRetryable: isTransientDbError },
         ),
@@ -239,6 +245,7 @@ export class BookingsService {
   private async createPendingPaymentBookingInTx(
     manager: EntityManager,
     dto: CreateBookingDto,
+    userId: string,
   ): Promise<Booking> {
     const carRepo     = manager.getRepository(Car);
     const bookingRepo = manager.getRepository(Booking);
@@ -273,9 +280,7 @@ export class BookingsService {
         totalPrice:    priceResult.totalPrice,
         status:        BookingStatus.PENDING_PAYMENT,
         source:        'private' as BookingSource,
-        customerName:  dto.customerName  ?? null,
-        customerEmail: dto.customerEmail ?? null,
-        customerPhone: dto.customerPhone ?? null,
+        userId,
       });
       return await bookingRepo.save(booking);
     } catch (err: unknown) {
@@ -380,9 +385,6 @@ export class BookingsService {
         status:            (dto.status ?? 'confirmed') as BookingStatus,
         source:            dto.source as BookingSource,
         userId,
-        customerName:      dto.customerName  ?? null,
-        customerEmail:     dto.customerEmail ?? null,
-        customerPhone:     dto.customerPhone ?? null,
         reservationNumber: dto.reservationNumber ?? null,
         totalEarning:      dto.totalEarning != null ? Number(dto.totalEarning) : null,
         color:             dto.color ?? null,
@@ -408,6 +410,9 @@ export class BookingsService {
     guestEmail?: string | null;
     turoJoinDate?: string | null;
     getaroundJoinDate?: string | null;
+    customerName?: string | null;
+    customerPhone?: string | null;
+    customerEmail?: string | null;
   }): Promise<string | null> {
     if (dto.userId) {
       await this.usersService.patchPlatformDates(dto.userId, dto.turoJoinDate, dto.getaroundJoinDate, dto.guestEmail);
@@ -418,6 +423,14 @@ export class BookingsService {
         dto.guestName,
         dto.guestNumber,
         { email: dto.guestEmail, turoJoinDate: dto.turoJoinDate, getaroundJoinDate: dto.getaroundJoinDate },
+      );
+      return user.id;
+    }
+    if (dto.customerName && dto.customerPhone) {
+      const user = await this.usersService.findOrCreate(
+        dto.customerName,
+        dto.customerPhone,
+        { email: dto.customerEmail ?? undefined },
       );
       return user.id;
     }
@@ -445,7 +458,7 @@ export class BookingsService {
       if (conflict) throw new ConflictException('Car is not available for the requested period');
     }
 
-    const userId = dto.userId !== undefined || dto.guestName !== undefined
+    const userId = dto.userId !== undefined || dto.guestName !== undefined || dto.customerName !== undefined || dto.customerPhone !== undefined
       ? await this.resolveUser(dto)
       : undefined;
 
@@ -455,9 +468,6 @@ export class BookingsService {
     if (dto.source)             update.source            = dto.source as BookingSource;
     if (dto.status)             update.status            = dto.status as BookingStatus;
     if (userId !== undefined)   update.userId            = userId;
-    if (dto.customerName      !== undefined) update.customerName      = dto.customerName      ?? null;
-    if (dto.customerEmail     !== undefined) update.customerEmail     = dto.customerEmail     ?? null;
-    if (dto.customerPhone     !== undefined) update.customerPhone     = dto.customerPhone     ?? null;
     if (dto.reservationNumber !== undefined) update.reservationNumber = dto.reservationNumber ?? null;
     if (dto.totalEarning      !== undefined) update.totalEarning      = dto.totalEarning != null ? Number(dto.totalEarning) : null;
     if (dto.color             !== undefined) update.color             = dto.color             ?? null;

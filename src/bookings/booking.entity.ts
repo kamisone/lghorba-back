@@ -48,15 +48,6 @@ export class Booking {
   @Column({ type: 'uuid', nullable: true })
   userId: string | null;
 
-  @Column({ type: 'varchar', nullable: true })
-  customerName: string | null;
-
-  @Column({ type: 'varchar', nullable: true })
-  customerEmail: string | null;
-
-  @Column({ type: 'varchar', nullable: true })
-  customerPhone: string | null;
-
   // ── Platform metadata ─────────────────────────────────────────────────────
   @Column({ type: 'varchar', nullable: true })
   reservationNumber: string | null;

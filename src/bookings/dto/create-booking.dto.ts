@@ -7,7 +7,7 @@ const CreateBookingBase = z.object({
   startDateTime: z.string().regex(DATETIME_RE, 'Must be ISO datetime (YYYY-MM-DDTHH:mm)'),
   endDateTime:   z.string().regex(DATETIME_RE, 'Must be ISO datetime (YYYY-MM-DDTHH:mm)'),
   customerName:  z.string().min(1, 'Name is required').max(200),
-  customerEmail: z.string().email('Enter a valid email address'),
+  customerEmail: z.string().email('Enter a valid email address').optional(),
   customerPhone: z.string().min(1, 'Phone number is required').max(30),
 });
 

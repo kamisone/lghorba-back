@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { CreateBookingAdminSchema } from './create-booking-admin.dto';
+import { CreateBookingAdminBaseSchema } from './create-booking-admin.dto';
 
-export const UpdateBookingAdminSchema = CreateBookingAdminSchema
+// Derived from the base (no refinements) so .omit() and .partial() work in Zod v4.
+export const UpdateBookingAdminSchema = CreateBookingAdminBaseSchema
   .omit({ carId: true })
   .partial();
 
