@@ -85,6 +85,11 @@ export class RentSessionsService {
   async patch(id: string, dto: PatchRentSessionDto): Promise<RentSession> {
     const session = await this.findOne(id);
     if (session.status === RentSessionStatus.ENDED) {
+      // Allow stopping tracking on an ended manual-GPS session
+      if (dto.trackingPaused === true) {
+        await this.sessionRepo.update(id, { trackingPaused: true, nextLocationAt: null });
+        return this.findOne(id);
+      }
       throw new BadRequestException('Cannot update an ended session');
     }
     const update: Partial<RentSession> = {};
@@ -162,15 +167,24 @@ export class RentSessionsService {
     });
   }
 
-  private findActiveSessionByCarPhone(phoneNumber: string): Promise<RentSession | null> {
-    return this.sessionRepo.findOne({
-      where: { status: RentSessionStatus.ACTIVE, car: { phoneNumber } },
-      relations: { car: true },
-    });
+  private findTrackingSessionByCarPhone(phoneNumber: string): Promise<RentSession | null> {
+    // Matches both active sessions and ended sessions still tracking (manual GPS mode)
+    return this.sessionRepo
+      .createQueryBuilder('s')
+      .innerJoinAndSelect('s.car', 'car')
+      .leftJoin('s.booking', 'booking')
+      .where('car.phoneNumber = :phoneNumber', { phoneNumber })
+      .andWhere('s.trackingPaused = false')
+      .andWhere(
+        '(s.status = :active OR (s.status = :ended AND booking.gpsStopMode = :manual))',
+        { active: RentSessionStatus.ACTIVE, ended: RentSessionStatus.ENDED, manual: 'manual' },
+      )
+      .orderBy('s.startedAt', 'DESC')
+      .getOne();
   }
 
   async processInboundSms(phoneNumber: string, message: string, receivedAt: Date): Promise<void> {
-    const session = await this.findActiveSessionByCarPhone(phoneNumber);
+    const session = await this.findTrackingSessionByCarPhone(phoneNumber);
     if (!session) return;
     if (session.trackingPaused) return;
     if (!session.lastLocationRequestedAt) return;

@@ -387,6 +387,7 @@ export class BookingsService {
         totalEarning:      dto.totalEarning != null ? Number(dto.totalEarning) : null,
         color:             dto.color ?? null,
         autoStartTracking: dto.autoStartTracking ?? false,
+        gpsStopMode:       dto.gpsStopMode       ?? 'auto',
       });
       return await bookingRepo.save(booking);
     } catch (err: unknown) {
@@ -461,6 +462,7 @@ export class BookingsService {
     if (dto.totalEarning      !== undefined) update.totalEarning      = dto.totalEarning != null ? Number(dto.totalEarning) : null;
     if (dto.color             !== undefined) update.color             = dto.color             ?? null;
     if (dto.autoStartTracking !== undefined) update.autoStartTracking = dto.autoStartTracking;
+    if (dto.gpsStopMode       !== undefined) update.gpsStopMode       = dto.gpsStopMode;
 
     await this.bookingRepo.update(id, update);
     return this.findBooking(id);

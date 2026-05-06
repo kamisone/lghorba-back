@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThanOrEqual, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Booking, BookingStatus } from '../bookings/booking.entity';
 import { Car } from '../cars/car.entity';
 import { SmsService } from '../sms/sms.service';
@@ -23,10 +23,20 @@ export class RentSessionsTasksService {
   @Cron(CronExpression.EVERY_MINUTE)
   async sendLocationRequests(): Promise<void> {
     const now = new Date();
-    const sessions = await this.sessionRepo.find({
-      where: { status: RentSessionStatus.ACTIVE, trackingPaused: false, nextLocationAt: LessThanOrEqual(now) },
-      relations: { car: true },
-    });
+    // Include ended sessions whose booking has gpsStopMode = 'manual' and
+    // tracking has not yet been paused — the admin must explicitly stop it.
+    const sessions = await this.sessionRepo
+      .createQueryBuilder('s')
+      .innerJoinAndSelect('s.car', 'car')
+      .leftJoin('s.booking', 'booking')
+      .where('s.trackingPaused = :paused', { paused: false })
+      .andWhere('s.nextLocationAt <= :now', { now })
+      .andWhere(
+        '(s.status = :active OR (s.status = :ended AND booking.gpsStopMode = :manual))',
+        { active: RentSessionStatus.ACTIVE, ended: RentSessionStatus.ENDED, manual: 'manual' },
+      )
+      .getMany();
+
     await Promise.all(
       sessions.map(async (session) => {
         await this.smsService.addMessage(session.car.phoneNumber, 'location');
@@ -76,6 +86,9 @@ export class RentSessionsTasksService {
   @Cron(CronExpression.EVERY_MINUTE)
   async endExpiredScheduledSessions(): Promise<void> {
     const now = new Date();
+    // End ALL expired sessions regardless of gpsStopMode.
+    // For manual-mode bookings the session ends but sendLocationRequests keeps
+    // pinging until the admin explicitly sets trackingPaused = true.
     const sessions = await this.sessionRepo
       .createQueryBuilder('session')
       .innerJoin('session.booking', 'booking')

@@ -12,7 +12,8 @@ export enum BookingStatus {
   CANCELLED       = 'cancelled',
 }
 
-export type BookingSource = 'private' | 'turo' | 'getaround';
+export type BookingSource  = 'private' | 'turo' | 'getaround';
+export type GpsStopMode    = 'auto' | 'manual';
 
 @Entity('bookings')
 export class Booking {
@@ -69,6 +70,9 @@ export class Booking {
 
   @Column({ type: 'boolean', default: false })
   autoStartTracking: boolean;
+
+  @Column({ type: 'varchar', default: 'auto' })
+  gpsStopMode: GpsStopMode;
 
   @Column({ type: 'varchar', nullable: true, unique: true })
   paymentIntentId: string | null;

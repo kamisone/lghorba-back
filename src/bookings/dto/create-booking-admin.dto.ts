@@ -23,6 +23,7 @@ export const CreateBookingAdminSchema = z.object({
   // Calendar
   color:                  z.string().nullish(),
   autoStartTracking:      z.boolean().optional().default(false),
+  gpsStopMode:            z.enum(['auto', 'manual']).optional().default('auto'),
 });
 
 export type CreateBookingAdminDto = z.infer<typeof CreateBookingAdminSchema>;
