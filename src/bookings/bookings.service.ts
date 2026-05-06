@@ -480,9 +480,11 @@ export class BookingsService {
 
   // ── Calendar query — bookings visible on the admin calendar ──────────────
 
-  async findCalendarBookings(carId: string): Promise<Booking[]> {
-    // Returns non-cancelled bookings that don't have an active session
-    return this.bookingRepo
+  async findCalendarBookings(carId: string): Promise<(Booking & { hasSession: boolean })[]> {
+    // Returns non-cancelled bookings that don't have an active session.
+    // hasSession indicates whether any session (active or ended) exists — used
+    // to lock the autoStartTracking toggle on the frontend.
+    const { entities, raw } = await this.bookingRepo
       .createQueryBuilder('b')
       .leftJoin('b.car', 'car')
       .leftJoinAndSelect('b.user', 'user')
@@ -491,11 +493,19 @@ export class BookingsService {
         'rs',
         'rs."bookingId" = b.id AND rs.status = \'active\'',
       )
+      .addSelect(
+        `EXISTS (SELECT 1 FROM rent_sessions rs2 WHERE rs2."bookingId" = b.id)`,
+        'b_hasSession',
+      )
       .where('b.carId = :carId', { carId })
       .andWhere('b.status != :cancelled', { cancelled: BookingStatus.CANCELLED })
       .andWhere('rs.id IS NULL')
       .orderBy('b.startDateTime', 'ASC')
-      .getMany();
+      .getRawAndEntities();
+
+    return entities.map((e, i) =>
+      Object.assign(e, { hasSession: raw[i]?.b_hasSession === true || raw[i]?.b_hasSession === 't' }),
+    );
   }
 
   // ── Read ──────────────────────────────────────────────────────────────────
@@ -516,11 +526,15 @@ export class BookingsService {
     endDate?: string;
     carId?: string;
     source?: BookingSource;
-  }): Promise<Booking[]> {
+  }): Promise<(Booking & { hasSession: boolean })[]> {
     const qb = this.bookingRepo
       .createQueryBuilder('b')
       .leftJoinAndSelect('b.car', 'car')
       .leftJoinAndSelect('b.user', 'user')
+      .addSelect(
+        `EXISTS (SELECT 1 FROM rent_sessions rs WHERE rs."bookingId" = b.id)`,
+        'b_hasSession',
+      )
       .orderBy('b.createdAt', 'DESC');
 
     if (filters?.status)    qb.andWhere('b.status = :status',        { status: filters.status });
@@ -529,7 +543,10 @@ export class BookingsService {
     if (filters?.startDate) qb.andWhere('b.endDateTime   >= :from',  { from: new Date(`${filters.startDate}T00:00:00Z`) });
     if (filters?.endDate)   qb.andWhere('b.startDateTime <= :to',    { to:   new Date(`${filters.endDate}T23:59:59Z`) });
 
-    return qb.getMany();
+    const { entities, raw } = await qb.getRawAndEntities();
+    return entities.map((e, i) =>
+      Object.assign(e, { hasSession: raw[i]?.b_hasSession === true || raw[i]?.b_hasSession === 't' }),
+    );
   }
 
   // ── Status update — optimistic lock prevents concurrent overwrite ─────────
