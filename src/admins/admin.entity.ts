@@ -5,6 +5,8 @@ export enum AdminRole {
   SUPERADMIN = 'superadmin',
 }
 
+export type MfaMethod = 'email' | 'sms';
+
 @Entity('admins')
 export class Admin {
   @PrimaryGeneratedColumn('uuid')
@@ -16,11 +18,21 @@ export class Admin {
   @Column({ type: 'varchar', unique: true })
   email: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  phone: string | null;
+
   @Column({ type: 'varchar' })
   password: string;
 
   @Column({ type: 'enum', enum: AdminRole, default: AdminRole.ADMIN })
   role: AdminRole;
+
+  // ── MFA ───────────────────────────────────────────────────────────────────
+  @Column({ type: 'boolean', default: false })
+  mfaEnabled: boolean;
+
+  @Column({ type: 'varchar', default: 'email' })
+  preferredMfaMethod: MfaMethod;
 
   @CreateDateColumn()
   createdAt: Date;

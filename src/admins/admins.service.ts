@@ -38,6 +38,10 @@ export class AdminsService implements OnModuleInit {
     return this.repo.findOne({ where: { email } });
   }
 
+  async findById(id: string): Promise<Admin | null> {
+    return this.repo.findOne({ where: { id } });
+  }
+
   async findAll(): Promise<PublicAdmin[]> {
     const admins = await this.repo.find({ order: { createdAt: 'ASC' } });
     return admins.map(this.toPublic);
@@ -81,6 +85,15 @@ export class AdminsService implements OnModuleInit {
     if (!admin) throw new NotFoundException(`Admin ${id} not found`);
     await this.repo.delete(id);
     return { ok: true };
+  }
+
+  async updateMfa(id: string, dto: { mfaEnabled: boolean; preferredMfaMethod?: 'email' | 'sms'; phone?: string | null }): Promise<PublicAdmin> {
+    const admin = await this.repo.findOne({ where: { id } });
+    if (!admin) throw new NotFoundException(`Admin ${id} not found`);
+    admin.mfaEnabled = dto.mfaEnabled;
+    if (dto.preferredMfaMethod !== undefined) admin.preferredMfaMethod = dto.preferredMfaMethod;
+    if (dto.phone !== undefined) admin.phone = dto.phone ?? null;
+    return this.toPublic(await this.repo.save(admin));
   }
 
   async resetPassword(id: string, dto: ResetPasswordDto): Promise<{ ok: true }> {
