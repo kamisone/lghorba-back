@@ -12,6 +12,7 @@ import { ContactsModule } from './contacts/contacts.module';
 import { Translation } from './translations/translation.entity';
 import { TranslationsModule } from './translations/translations.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
+import { CarDeliveryLocation } from './cars/car-delivery-location.entity';
 import { CarPhoto } from './cars/car-photo.entity';
 import { Car } from './cars/car.entity';
 import { CarPricing } from './cars/car-pricing.entity';
@@ -54,7 +55,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),

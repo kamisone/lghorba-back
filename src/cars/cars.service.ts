@@ -8,6 +8,7 @@ import { GcsService } from '../gcs/gcs.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
 import { TranslationsService } from '../translations/translations.service';
 import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
+import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
@@ -28,6 +29,8 @@ export class CarsService {
     private readonly photoRepo: Repository<CarPhoto>,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(CarDeliveryLocation)
+    private readonly deliveryLocationRepo: Repository<CarDeliveryLocation>,
     private readonly gcsService: GcsService,
     private readonly translationsService: TranslationsService,
     private readonly availabilityService: VehicleAvailabilityService,
@@ -58,6 +61,9 @@ export class CarsService {
       numberOfSeats: car.numberOfSeats,
       color: car.color,
       vehicleCondition: car.vehicleCondition,
+      deliveryEnabled: car.deliveryEnabled,
+      deliveryType: car.deliveryType,
+      deliveryRadiusKm: car.deliveryRadiusKm,
     }));
     if (!lang || lang === 'fr') return publicCars;
     return this.translationsService.applyToEntities(
@@ -69,18 +75,73 @@ export class CarsService {
 
   async findOnePublic(id: string, lang?: string) {
     const today = new Date().toISOString().slice(0, 10);
-    const [car, blocked] = await Promise.all([
+    const [car, blocked, deliveryLocations] = await Promise.all([
       this.findOne(id),
       this.availabilityService.isBlocked(id, `${today}T00:00`, `${today}T23:59`),
+      this.deliveryLocationRepo.find({ where: { carId: id }, order: { createdAt: 'ASC' } }),
     ]);
     const { immatriculation, phoneNumber, photo, isCurrentlyRented, isTrackingActive, ...rest } = car;
-    const publicCar = { ...rest, hasPhoto: photo !== null, isAvailable: !isCurrentlyRented && !blocked };
+    const publicLocations = deliveryLocations.map(({ id: locId, label, address, lat, lng, radiusKm, price }) => ({
+      id: locId, label, address, lat, lng, radiusKm, price: price !== null ? Number(price) : null,
+    }));
+    const publicCar = {
+      ...rest,
+      deliveryRadiusPrice: rest.deliveryRadiusPrice !== null ? Number(rest.deliveryRadiusPrice) : null,
+      hasPhoto: photo !== null,
+      isAvailable: !isCurrentlyRented && !blocked,
+      deliveryLocations: publicLocations,
+    };
     if (!lang || lang === 'fr') return publicCar;
     return this.translationsService.applyToEntity(
       publicCar as Record<string, unknown>,
       'car',
       lang,
     );
+  }
+
+  async validateDelivery(
+    carId: string,
+    addressLat: number,
+    addressLng: number,
+    addressLabel: string,
+  ): Promise<{ available: boolean; fee: number | null; address: string; lat: number; lng: number }> {
+    const car = await this.repo.findOne({ where: { id: carId } });
+    if (!car) throw new NotFoundException(`Car ${carId} not found`);
+
+    if (!car.deliveryEnabled) {
+      return { available: false, fee: null, address: addressLabel, lat: addressLat, lng: addressLng };
+    }
+
+    if (car.deliveryType === 'radius') {
+      if (car.deliveryRadiusKm == null || car.parkingLat == null || car.parkingLng == null) {
+        return { available: false, fee: null, address: addressLabel, lat: addressLat, lng: addressLng };
+      }
+      const dist = haversineKm(addressLat, addressLng, car.parkingLat, car.parkingLng);
+      const available = dist <= car.deliveryRadiusKm;
+      return {
+        available,
+        fee: available && car.deliveryRadiusPrice != null ? Number(car.deliveryRadiusPrice) : null,
+        address: addressLabel,
+        lat: addressLat,
+        lng: addressLng,
+      };
+    }
+
+    if (car.deliveryType === 'location') {
+      const locations = await this.deliveryLocationRepo.find({ where: { carId } });
+      const match = locations.find(
+        loc => haversineKm(addressLat, addressLng, loc.lat, loc.lng) <= loc.radiusKm,
+      );
+      return {
+        available: !!match,
+        fee: match?.price != null ? Number(match.price) : null,
+        address: addressLabel,
+        lat: addressLat,
+        lng: addressLng,
+      };
+    }
+
+    return { available: false, fee: null, address: addressLabel, lat: addressLat, lng: addressLng };
   }
 
   async searchPublic(dto: SearchCarsDto) {
@@ -134,60 +195,64 @@ export class CarsService {
       })
       .getMany();
 
-    // Build results with distance / delivery info
-    const results = cars
-      .map((car) => {
-        const distanceKm =
-          hasAddress && car.parkingLat != null && car.parkingLng != null
-            ? Math.round(haversineKm(addressLat!, addressLng!, car.parkingLat, car.parkingLng) * 10) / 10
-            : null;
+    // Load delivery locations for all available cars in one query
+    const carIds = cars.map(c => c.id);
+    const allLocations = carIds.length
+      ? await this.deliveryLocationRepo.find({ where: carIds.map(id => ({ carId: id })) })
+      : [];
+    const locationsByCarId = new Map<string, CarDeliveryLocation[]>();
+    for (const loc of allLocations) {
+      (locationsByCarId.get(loc.carId) ?? locationsByCarId.set(loc.carId, []).get(loc.carId)!).push(loc);
+    }
 
-        let deliveryAvailable = false;
-        let deliveryNote: string | null = null;
+    // Build results with distance / delivery eligibility
+    const results = cars.map((car) => {
+      const distanceKm =
+        hasAddress && car.parkingLat != null && car.parkingLng != null
+          ? Math.round(haversineKm(addressLat!, addressLng!, car.parkingLat, car.parkingLng) * 10) / 10
+          : null;
 
-        if (hasAddress) {
-          if (car.deliveryType === 'radius' && car.deliveryRadiusKm != null && distanceKm != null) {
-            deliveryAvailable = distanceKm <= car.deliveryRadiusKm;
-            deliveryNote = deliveryAvailable
-              ? `Livraison disponible (rayon ${car.deliveryRadiusKm} km)`
-              : `Retrait sur place (rayon livraison : ${car.deliveryRadiusKm} km)`;
-          } else if (car.deliveryType === 'whitelist' && car.deliveryAddresses) {
-            deliveryAvailable = car.deliveryAddresses.some(
-              (a) => haversineKm(addressLat!, addressLng!, a.lat, a.lng) < 0.5,
-            );
-            deliveryNote = deliveryAvailable
-              ? 'Livraison disponible à votre adresse'
-              : 'Livraison à des adresses spécifiques uniquement';
-          }
+      let deliveryAvailable = false;
+
+      if (hasAddress && car.deliveryEnabled) {
+        if (car.deliveryType === 'radius' && car.deliveryRadiusKm != null && distanceKm != null) {
+          deliveryAvailable = distanceKm <= car.deliveryRadiusKm;
+        } else if (car.deliveryType === 'location') {
+          const locations = locationsByCarId.get(car.id) ?? [];
+          deliveryAvailable = locations.some(
+            (loc) => haversineKm(addressLat!, addressLng!, loc.lat, loc.lng) <= loc.radiusKm,
+          );
         }
+      }
 
-        return {
-          id:               car.id,
-          name:             car.name,
-          description:      car.description,
-          hasPhoto:         car.photo !== null,
-          brand:            car.brand,
-          model:            car.model,
-          finishing:        car.finishing,
-          modelYear:        car.modelYear,
-          vehicleType:      car.vehicleType,
-          energy:           car.energy,
-          gearbox:          car.gearbox,
-          din:              car.din,
-          mileage:          car.mileage,
-          numberOfDoors:    car.numberOfDoors,
-          numberOfSeats:    car.numberOfSeats,
-          color:            car.color,
-          vehicleCondition: car.vehicleCondition,
-          basePricePerDay:  car.basePricePerDay,
-          parkingAddress:   car.parkingAddress,
-          deliveryType:     car.deliveryType ?? 'none',
-          deliveryRadiusKm: car.deliveryRadiusKm,
-          distanceKm,
-          deliveryAvailable,
-          deliveryNote,
-        };
-      });
+      return {
+        id:               car.id,
+        name:             car.name,
+        description:      car.description,
+        hasPhoto:         car.photo !== null,
+        brand:            car.brand,
+        model:            car.model,
+        finishing:        car.finishing,
+        modelYear:        car.modelYear,
+        vehicleType:      car.vehicleType,
+        energy:           car.energy,
+        gearbox:          car.gearbox,
+        din:              car.din,
+        mileage:          car.mileage,
+        numberOfDoors:    car.numberOfDoors,
+        numberOfSeats:    car.numberOfSeats,
+        color:            car.color,
+        vehicleCondition: car.vehicleCondition,
+        basePricePerDay:  car.basePricePerDay,
+        parkingAddress:   car.parkingAddress,
+        deliveryEnabled:      car.deliveryEnabled,
+        deliveryType:         car.deliveryType,
+        deliveryRadiusKm:     car.deliveryRadiusKm,
+        deliveryRadiusPrice:  car.deliveryRadiusPrice !== null ? Number(car.deliveryRadiusPrice) : null,
+        distanceKm,
+        deliveryAvailable,
+      };
+    });
 
     // Sort: delivery-eligible first, then by distance (nulls last)
     results.sort((a, b) => {
@@ -228,14 +293,40 @@ export class CarsService {
     return Object.assign(car, { isCurrentlyRented: rentedCount > 0, isTrackingActive: trackingCount > 0 });
   }
 
-  create(dto: CreateCarDto): Promise<Car> {
-    return this.repo.save(this.repo.create(dto));
+  async create(dto: CreateCarDto): Promise<Car> {
+    const { deliveryLocations, ...carFields } = dto;
+    const car = await this.repo.save(this.repo.create(carFields));
+    if (deliveryLocations?.length) {
+      await this.syncDeliveryLocations(car.id, deliveryLocations);
+    }
+    return car;
   }
 
   async update(id: string, dto: UpdateCarDto): Promise<CarWithRentStatus> {
     await this.findOne(id);
-    await this.repo.update(id, dto);
+    const { deliveryLocations, ...carFields } = dto;
+    await this.repo.update(id, carFields);
+    if (deliveryLocations !== undefined) {
+      await this.syncDeliveryLocations(id, deliveryLocations ?? []);
+    }
     return this.findOne(id);
+  }
+
+  private async syncDeliveryLocations(
+    carId: string,
+    locations: NonNullable<CreateCarDto['deliveryLocations']>,
+  ): Promise<void> {
+    await this.deliveryLocationRepo.delete({ carId });
+    if (locations.length > 0) {
+      await this.deliveryLocationRepo.save(
+        locations.map(l => this.deliveryLocationRepo.create({ ...l, carId })),
+      );
+    }
+  }
+
+  async getDeliveryLocations(carId: string): Promise<CarDeliveryLocation[]> {
+    await this.findOne(carId); // 404 if not found
+    return this.deliveryLocationRepo.find({ where: { carId }, order: { createdAt: 'ASC' } });
   }
 
   async remove(id: string): Promise<void> {

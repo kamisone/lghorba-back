@@ -10,6 +10,8 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, LessThan, Repository } from 'typeorm';
 import { Car } from '../cars/car.entity';
 import { CarPricing } from '../cars/car-pricing.entity';
+import { CarDeliveryLocation } from '../cars/car-delivery-location.entity';
+import { haversineKm } from '../common/utils/map.util';
 import { DistributedLockService } from '../common/lock/distributed-lock.service';
 import { isTransientDbError, withRetry } from '../common/utils/retry.util';
 import { UsersService } from '../users/users.service';
@@ -36,6 +38,7 @@ export interface PriceResult {
   breakdown: PriceBreakdownItem[];
   basePricePerDay: number | null;
   basePricePerWeekendDay: number | null;
+  deliveryFee?: number | null;
 }
 
 export interface AvailabilityResult {
@@ -278,15 +281,66 @@ export class BookingsService {
       dto.carId, dto.startDateTime, dto.endDateTime,
     );
 
+    // Resolve and validate delivery fee inside the transaction
+    let deliveryFee: number | null = null;
+    let deliveryAddress: string | null = null;
+    let deliveryAddressLat: number | null = null;
+    let deliveryAddressLng: number | null = null;
+    const deliveryRequested = dto.deliveryRequested ?? false;
+
+    if (deliveryRequested) {
+      if (!car.deliveryEnabled) {
+        throw new BadRequestException('This vehicle does not offer delivery');
+      }
+      if (dto.deliveryAddressLat == null || dto.deliveryAddressLng == null || !dto.deliveryAddress) {
+        throw new BadRequestException('A delivery address is required');
+      }
+
+      const lat = dto.deliveryAddressLat;
+      const lng = dto.deliveryAddressLng;
+      deliveryAddress    = dto.deliveryAddress;
+      deliveryAddressLat = lat;
+      deliveryAddressLng = lng;
+
+      if (car.deliveryType === 'radius') {
+        if (car.deliveryRadiusKm == null || car.parkingLat == null || car.parkingLng == null) {
+          throw new BadRequestException('Delivery not configured for this vehicle');
+        }
+        const dist = haversineKm(lat, lng, car.parkingLat, car.parkingLng);
+        if (dist > car.deliveryRadiusKm) {
+          throw new BadRequestException('Delivery address is outside the delivery zone');
+        }
+        if (car.deliveryRadiusPrice != null) {
+          deliveryFee = Math.round(Number(car.deliveryRadiusPrice) * 100) / 100;
+        }
+      } else if (car.deliveryType === 'location') {
+        const locations = await manager.getRepository(CarDeliveryLocation).find({ where: { carId: dto.carId } });
+        const match = locations.find(loc => haversineKm(lat, lng, loc.lat, loc.lng) <= loc.radiusKm);
+        if (!match) {
+          throw new BadRequestException('No delivery available at this location');
+        }
+        if (match.price != null) {
+          deliveryFee = Math.round(Number(match.price) * 100) / 100;
+        }
+      }
+    }
+
+    const totalPrice = Math.round((priceResult.totalPrice + (deliveryFee ?? 0)) * 100) / 100;
+
     try {
       const booking = bookingRepo.create({
-        carId:         dto.carId,
-        startDateTime: new Date(dto.startDateTime),
-        endDateTime:   new Date(dto.endDateTime),
-        totalPrice:    priceResult.totalPrice,
-        status:        BookingStatus.PENDING_PAYMENT,
-        source:        'private' as BookingSource,
+        carId:              dto.carId,
+        startDateTime:      new Date(dto.startDateTime),
+        endDateTime:        new Date(dto.endDateTime),
+        totalPrice,
+        status:             BookingStatus.PENDING_PAYMENT,
+        source:             'private' as BookingSource,
         userId,
+        deliveryRequested,
+        deliveryFee,
+        deliveryAddress,
+        deliveryAddressLat,
+        deliveryAddressLng,
       });
       return await bookingRepo.save(booking);
     } catch (err: unknown) {

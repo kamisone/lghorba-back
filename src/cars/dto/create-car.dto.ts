@@ -9,8 +9,19 @@ export const ENERGY_TYPES   = ['Petrol', 'Diesel', 'Hybrid', 'Electric'] as cons
 export const GEARBOX_TYPES  = ['Manual', 'Automatic'] as const;
 export const MILEAGE_RANGES = ['0-50', '50-100', '100-150', '150-200', '200-250', '250-300', '300+'] as const;
 
+const DeliveryLocationSchema = z.object({
+  label:    z.string().min(1).max(200),
+  address:  z.string().min(1).max(500),
+  lat:      z.number().min(-90).max(90),
+  lng:      z.number().min(-180).max(180),
+  radiusKm: z.number().positive().max(50).optional(),
+  price:    z.number().min(0).nullish(),
+});
+
+export type DeliveryLocationInput = z.infer<typeof DeliveryLocationSchema>;
+
 export const CreateCarSchema = z.object({
-  // ── Required ──────────────────────────────────────────────────────────────
+  // ── Required
   name:            z.string().min(1, 'Name is required'),
   immatriculation: z.string().min(1, 'Plate is required'),
   phoneNumber:     z.string().min(1, 'Phone number is required'),
@@ -24,24 +35,23 @@ export const CreateCarSchema = z.object({
   numberOfDoors:   z.number().int().min(2).max(6),
   numberOfSeats:   z.number().int().min(1).max(9),
   basePricePerDay: z.number().positive('Base price per day is required'),
-  // ── Optional ──────────────────────────────────────────────────────────────
+  // ── Optional
   basePricePerWeekendDay: z.number().positive().nullish(),
   description:      z.string().nullish(),
   vehicleType:      z.enum(VEHICLE_TYPES).nullish(),
   din:              z.number().int().min(0).nullish(),
   mileage:          z.enum(MILEAGE_RANGES).nullish(),
   vehicleCondition: z.string().nullish(),
-  // ── Location & delivery ───────────────────────────────────────────────────
+  // ── Parking
   parkingAddress:   z.string().max(500).nullish(),
   parkingLat:       z.number().min(-90).max(90).nullish(),
   parkingLng:       z.number().min(-180).max(180).nullish(),
-  deliveryType:     z.enum(['none', 'radius', 'whitelist']).nullish(),
-  deliveryRadiusKm: z.number().positive().nullish(),
-  deliveryAddresses: z.array(z.object({
-    label: z.string(),
-    lat:   z.number(),
-    lng:   z.number(),
-  })).nullish(),
+  // ── Delivery
+  deliveryEnabled:      z.boolean().optional(),
+  deliveryType:         z.enum(['radius', 'location']).nullish(),
+  deliveryRadiusKm:     z.number().positive().nullish(),
+  deliveryRadiusPrice:  z.number().min(0).nullish(),
+  deliveryLocations:    z.array(DeliveryLocationSchema).max(10, 'Maximum 10 delivery locations').nullish(),
 });
 
 export type CreateCarDto = z.infer<typeof CreateCarSchema>;

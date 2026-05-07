@@ -8,6 +8,7 @@ import { RentSession } from '../rent-sessions/rent-session.entity';
 import { TranslationsModule } from '../translations/translations.module';
 import { UsersModule } from '../users/users.module';
 import { VehicleAvailabilityModule } from '../vehicle-availability/vehicle-availability.module';
+import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CarsController } from './cars.controller';
@@ -16,7 +17,7 @@ import { PublicCarsController } from './public-cars.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Car, CarPhoto, RentSession, Booking]),
+    TypeOrmModule.forFeature([Car, CarPhoto, CarDeliveryLocation, RentSession, Booking]),
     MulterModule.register({
       storage: memoryStorage(),
       fileFilter: (_req, file, cb) => {

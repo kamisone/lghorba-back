@@ -72,6 +72,11 @@ export class CarsController {
     return this.carsService.removePhoto(id);
   }
 
+  @Get(':id/delivery-locations')
+  getDeliveryLocations(@Param('id') id: string) {
+    return this.carsService.getDeliveryLocations(id);
+  }
+
   @Get(':id/photos')
   listPhotos(@Param('id') id: string) {
     return this.carsService.listPhotos(id);

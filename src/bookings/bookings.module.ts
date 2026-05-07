@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Car } from '../cars/car.entity';
 import { CarPricing } from '../cars/car-pricing.entity';
+import { CarDeliveryLocation } from '../cars/car-delivery-location.entity';
 import { DistributedLockService } from '../common/lock/distributed-lock.service';
 import { IdempotencyInterceptor } from '../common/idempotency/idempotency.interceptor';
 import { UsersModule } from '../users/users.module';
@@ -12,7 +13,7 @@ import { BookingsAdminController, CarPricingsController, PublicBookingsControlle
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Booking, Car, CarPricing]),
+    TypeOrmModule.forFeature([Booking, Car, CarPricing, CarDeliveryLocation]),
     UsersModule,
     VehicleAvailabilityModule,
   ],

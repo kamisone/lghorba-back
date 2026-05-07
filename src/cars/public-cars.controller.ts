@@ -4,6 +4,7 @@ import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { CarsService } from './cars.service';
 import { SearchCarsDto, SearchCarsSchema } from './dto/search-cars.dto';
+import { ValidateDeliveryDto, ValidateDeliverySchema } from './dto/validate-delivery.dto';
 
 @Controller('public')
 export class PublicCarsController {
@@ -41,6 +42,15 @@ export class PublicCarsController {
   @Get('cars/:id/photos')
   listPhotos(@Param('id') id: string) {
     return this.carsService.listPhotos(id);
+  }
+
+  @Public()
+  @Post('cars/:id/delivery/validate')
+  validateDelivery(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(ValidateDeliverySchema)) dto: ValidateDeliveryDto,
+  ) {
+    return this.carsService.validateDelivery(id, dto.addressLat, dto.addressLng, dto.addressLabel);
   }
 
   @Public()

@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { CarPricing } from './car-pricing.entity';
+import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { Booking } from '../bookings/booking.entity';
 
 @Entity('cars')
@@ -88,15 +89,21 @@ export class Car {
 
   /* ── Delivery configuration ───────────────────────────────────────────── */
 
-  /** 'none' | 'radius' | 'whitelist' */
-  @Column({ type: 'varchar', nullable: true, default: 'none' })
-  deliveryType: string | null;
+  @Column({ type: 'boolean', default: false })
+  deliveryEnabled: boolean;
+
+  /** 'radius' | 'location' — only relevant when deliveryEnabled = true */
+  @Column({ type: 'varchar', nullable: true })
+  deliveryType: 'radius' | 'location' | null;
 
   @Column({ type: 'float', nullable: true })
   deliveryRadiusKm: number | null;
 
-  @Column({ type: 'simple-json', nullable: true })
-  deliveryAddresses: { label: string; lat: number; lng: number }[] | null;
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  deliveryRadiusPrice: number | null;
+
+  @OneToMany(() => CarDeliveryLocation, (l) => l.car)
+  deliveryLocations: Relation<CarDeliveryLocation>[];
 
   @OneToMany(() => CarPricing, (p) => p.car)
   pricings: Relation<CarPricing>[];

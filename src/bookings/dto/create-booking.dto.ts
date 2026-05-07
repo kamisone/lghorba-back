@@ -9,6 +9,11 @@ const CreateBookingBase = z.object({
   customerName:  z.string().min(1, 'Name is required').max(200),
   customerEmail: z.string().email('Enter a valid email address').optional(),
   customerPhone: z.string().min(1, 'Phone number is required').max(30),
+  // ── Delivery
+  deliveryRequested:    z.boolean().optional(),
+  deliveryAddress:      z.string().max(500).optional(),
+  deliveryAddressLat:   z.number().min(-90).max(90).optional(),
+  deliveryAddressLng:   z.number().min(-180).max(180).optional(),
 });
 
 export const CreateBookingSchema = CreateBookingBase.refine(

@@ -103,6 +103,12 @@ export class InvoiceService {
       (booking.endDateTime.getTime() - booking.startDateTime.getTime()) / 86_400_000,
     ));
 
+    const deliveryFee     = booking.deliveryRequested && booking.deliveryFee != null
+      ? Math.round(Number(booking.deliveryFee) * 100) / 100
+      : 0;
+    const deliveryAddress = booking.deliveryAddress ?? null;
+    const rentalTtc       = Math.round((totalTtc - deliveryFee) * 100) / 100;
+
     const sellerName    = process.env.SELLER_NAME      ?? '';
     const sellerAddress = {
       line1:   process.env.SELLER_ADDRESS_LINE1   ?? '',
@@ -149,18 +155,36 @@ export class InvoiceService {
 
       const saved = await invRepo.save(invoice);
 
-      await lineRepo.save(
+      const lines = [
         lineRepo.create({
           invoiceId:   saved.id,
           description: `Location ${carLabel} – du ${startDate} au ${endDate}`,
           quantity:    days,
-          unitPrice:   Math.round((totalTtc / days) * 100) / 100,
-          subtotal:    totalTtc,
+          unitPrice:   Math.round((rentalTtc / days) * 100) / 100,
+          subtotal:    rentalTtc,
           startDate,
           endDate,
           sortOrder:   0,
         }),
-      );
+      ];
+
+      if (deliveryFee > 0) {
+        const deliveryDesc = deliveryAddress
+          ? `Livraison – ${deliveryAddress}`
+          : 'Livraison';
+        lines.push(lineRepo.create({
+          invoiceId:   saved.id,
+          description: deliveryDesc,
+          quantity:    1,
+          unitPrice:   deliveryFee,
+          subtotal:    deliveryFee,
+          startDate,
+          endDate,
+          sortOrder:   1,
+        }));
+      }
+
+      await lineRepo.save(lines);
 
       await auditRepo.save([
         this.buildAudit(saved.id, 'created_draft'),

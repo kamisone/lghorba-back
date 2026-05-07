@@ -65,6 +65,22 @@ export class Booking {
   @Column({ type: 'varchar', default: 'auto' })
   gpsStopMode: GpsStopMode;
 
+  // ── Delivery ──────────────────────────────────────────────────────────────
+  @Column({ type: 'boolean', default: false })
+  deliveryRequested: boolean;
+
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  deliveryFee: number | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  deliveryAddress: string | null;
+
+  @Column({ type: 'float', nullable: true })
+  deliveryAddressLat: number | null;
+
+  @Column({ type: 'float', nullable: true })
+  deliveryAddressLng: number | null;
+
   @Column({ type: 'varchar', nullable: true, unique: true })
   paymentIntentId: string | null;
 
