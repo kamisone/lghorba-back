@@ -1,6 +1,44 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Invoice } from './invoice.entity';
 
+// ── Email copy ────────────────────────────────────────────────────────────────
+// All user-facing strings live here; adding a language = adding one block.
+
+const COPY = {
+  fr: {
+    subject:   (invoiceNumber: string, sellerName: string) => `Votre facture ${invoiceNumber} – ${sellerName}`,
+    greeting:  (name: string) => `Bonjour ${name},`,
+    intro:     'Merci pour votre location. Votre facture est disponible :',
+    labelInvoice: 'Facture',
+    labelAmount:  'Montant réglé',
+    labelDate:    'Date',
+    cta:          'Télécharger ma facture (PDF)',
+    linkNote:     'Ce lien est valable 15 minutes. Contactez-nous si vous avez besoin d\'une nouvelle copie.',
+    htmlLang:     'fr',
+    fallbackName: 'Client',
+  },
+  en: {
+    subject:   (invoiceNumber: string, sellerName: string) => `Your invoice ${invoiceNumber} – ${sellerName}`,
+    greeting:  (name: string) => `Hello ${name},`,
+    intro:     'Thank you for your rental. Your invoice is now available:',
+    labelInvoice: 'Invoice',
+    labelAmount:  'Amount paid',
+    labelDate:    'Date',
+    cta:          'Download my invoice (PDF)',
+    linkNote:     'This link is valid for 15 minutes. Contact us if you need a new copy.',
+    htmlLang:     'en',
+    fallbackName: 'Customer',
+  },
+} as const;
+
+type InvoiceLang = keyof typeof COPY;
+
+function resolveLang(locale: string | null | undefined): InvoiceLang {
+  return locale && locale in COPY ? (locale as InvoiceLang) : 'fr';
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
+
 @Injectable()
 export class InvoiceEmailService {
   private readonly logger = new Logger(InvoiceEmailService.name);
@@ -19,20 +57,19 @@ export class InvoiceEmailService {
     });
   }
 
-  async sendInvoice(
-    invoice: Invoice,
-    downloadUrl: string,
-  ): Promise<void> {
+  async sendInvoice(invoice: Invoice, downloadUrl: string): Promise<void> {
     if (!invoice.customerEmail) {
       this.logger.warn(`No customer email for invoice ${invoice.id}, skipping`);
       return;
     }
 
-    const from    = process.env.SMTP_FROM ?? `noreply@${process.env.SELLER_NAME ?? 'company'}.fr`;
-    const subject = `Votre facture ${invoice.invoiceNumber ?? ''} – ${invoice.sellerName}`;
+    const lang = resolveLang(invoice.customerLocale);
+    const c    = COPY[lang];
+    const name = esc(invoice.customerName ?? c.fallbackName);
+    const from = process.env.SMTP_FROM ?? `noreply@${process.env.SELLER_NAME ?? 'company'}.fr`;
 
     const html = `<!DOCTYPE html>
-<html lang="fr"><head><meta charset="utf-8">
+<html lang="${c.htmlLang}"><head><meta charset="utf-8">
 <style>
   body { font-family: Arial, sans-serif; font-size: 14px; color: #1a1a1a; line-height: 1.6; }
   .container { max-width: 600px; margin: 0 auto; padding: 32px 24px; }
@@ -46,15 +83,15 @@ export class InvoiceEmailService {
 <body>
 <div class="container">
   <div class="header"><div class="brand">${esc(invoice.sellerName)}</div></div>
-  <p>Bonjour ${esc(invoice.customerName ?? 'Client')},</p>
-  <p>Merci pour votre location. Votre facture est disponible :</p>
+  <p>${c.greeting(name)}</p>
+  <p>${c.intro}</p>
   <p>
-    <strong>Facture :</strong> ${esc(invoice.invoiceNumber ?? '')}<br>
-    <strong>Montant réglé :</strong> <span class="amount">${fmtEur(Number(invoice.totalAmount))}</span><br>
-    <strong>Date :</strong> ${fmtDate(invoice.issuedAt)}
+    <strong>${c.labelInvoice} :</strong> ${esc(invoice.invoiceNumber ?? '')}<br>
+    <strong>${c.labelAmount} :</strong> <span class="amount">${fmtCurrency(Number(invoice.totalAmount), lang)}</span><br>
+    <strong>${c.labelDate} :</strong> ${fmtDate(invoice.issuedAt, lang)}
   </p>
-  <a class="btn" href="${esc(downloadUrl)}">Télécharger ma facture (PDF)</a>
-  <p style="font-size:11px;color:#64748b;">Ce lien est valable 15 minutes. Contactez-nous si vous avez besoin d'une nouvelle copie.</p>
+  <a class="btn" href="${esc(downloadUrl)}">${c.cta}</a>
+  <p style="font-size:11px;color:#64748b;">${c.linkNote}</p>
   <div class="footer">
     ${esc(invoice.sellerName)}
     ${invoice.sellerSiret ? `· SIRET ${esc(invoice.sellerSiret)}` : ''}
@@ -64,27 +101,30 @@ export class InvoiceEmailService {
 </body></html>`;
 
     const transport = this.createTransport();
-
     await transport.sendMail({
       from,
       to:      invoice.customerEmail,
-      subject,
+      subject: c.subject(esc(invoice.invoiceNumber ?? ''), esc(invoice.sellerName)),
       html,
     });
 
-    this.logger.log(`Invoice email sent to ${invoice.customerEmail} for ${invoice.invoiceNumber}`);
+    this.logger.log(`Invoice email sent (${lang}) to ${invoice.customerEmail} for ${invoice.invoiceNumber}`);
   }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function fmtDate(d: Date | null): string {
+function fmtDate(d: Date | null, lang: InvoiceLang): string {
   if (!d) return '';
-  return new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(d);
+  const locale = lang === 'fr' ? 'fr-FR' : 'en-GB';
+  return new Intl.DateTimeFormat(locale, { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(d);
 }
 
-function fmtEur(n: number): string {
-  return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
+function fmtCurrency(n: number, lang: InvoiceLang): string {
+  const locale = lang === 'fr' ? 'fr-FR' : 'en-GB';
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: 'EUR' }).format(n);
 }

@@ -138,6 +138,7 @@ export class InvoiceService {
         taxCountry:      'FR',
         customerName:    booking.user?.name ?? null,
         customerEmail:   booking.user?.email ?? null,
+        customerLocale:  'fr',
         sellerName,
         sellerAddress,
         sellerVatNumber: process.env.SELLER_VAT_NUMBER ?? null,

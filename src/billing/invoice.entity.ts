@@ -47,6 +47,7 @@ export class Invoice {
   // ── Snapshotted customer info ─────────────────────────────────────────────
   @Column({ type: 'varchar', nullable: true }) customerName: string | null;
   @Column({ type: 'varchar', nullable: true }) customerEmail: string | null;
+  @Column({ type: 'varchar', length: 5, default: 'fr' }) customerLocale: string;
 
   // ── Snapshotted seller info ───────────────────────────────────────────────
   @Column({ type: 'varchar' }) sellerName: string;
