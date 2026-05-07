@@ -15,9 +15,9 @@ import { RedisService } from '../redis/redis.service';
 import { MfaNotificationService } from './mfa-notification.service';
 
 export interface MfaChallengePayload {
-  sub: string;     // adminId
+  sub: string;
   email: string;
-  jti: string;     // unique token id for Redis key
+  jti: string;
   type: 'mfa-challenge';
 }
 
@@ -28,10 +28,10 @@ export interface MfaChallengeResult {
   maskedDestination: string;
 }
 
-const OTP_TTL_SEC   = 5 * 60;   // 5 minutes
-const COOLDOWN_SEC  = 60;        // 60 seconds between sends
-const RL_MAX        = 5;         // max OTP sends per window
-const RL_TTL_SEC    = 15 * 60;  // 15-minute rate-limit window
+const OTP_TTL_SEC  = 5 * 60;
+const COOLDOWN_SEC = 60;
+const RL_MAX       = 5;
+const RL_TTL_SEC   = 15 * 60;
 
 @Injectable()
 export class MfaService {
@@ -44,10 +44,12 @@ export class MfaService {
     private readonly notifications: MfaNotificationService,
   ) {}
 
-  /** Issue a fresh challenge and immediately send the first OTP. */
   async initChallenge(adminId: string, email: string, preferredMethod: MfaMethod): Promise<MfaChallengeResult> {
     const admin = await this.adminsService.findById(adminId);
-    if (!admin) throw new UnauthorizedException();
+    if (!admin) {
+      this.logger.warn(`initChallenge: admin ${adminId} not found`);
+      throw new UnauthorizedException({ code: 'challenge_invalid' });
+    }
 
     const availableMethods: MfaMethod[] = ['email'];
     if (admin.phone) availableMethods.push('sms');
@@ -59,48 +61,53 @@ export class MfaService {
       expiresIn: '5m',
     });
 
-    // Send first OTP automatically
     const method = availableMethods.includes(preferredMethod) ? preferredMethod : availableMethods[0];
     const maskedDestination = await this.sendOtp(admin, jti, method);
 
     return { challengeToken, availableMethods, preferredMethod: method, maskedDestination };
   }
 
-  /** Resend OTP (or switch method). */
   async resend(challengeToken: string, method?: MfaMethod): Promise<{ maskedDestination: string }> {
     const payload = this.verifyChallengeToken(challengeToken);
     const admin   = await this.adminsService.findById(payload.sub);
-    if (!admin) throw new UnauthorizedException();
+    if (!admin) {
+      this.logger.warn(`resend: admin ${payload.sub} not found`);
+      throw new UnauthorizedException({ code: 'challenge_invalid' });
+    }
 
     const availableMethods: MfaMethod[] = ['email'];
     if (admin.phone) availableMethods.push('sms');
 
-    const chosenMethod = method && availableMethods.includes(method) ? method : admin.preferredMfaMethod;
+    if (method && !availableMethods.includes(method)) {
+      this.logger.warn(`resend: method ${method} not available for admin ${payload.sub} (no phone)`);
+      throw new BadRequestException({ code: 'method_unavailable' });
+    }
+
+    const chosenMethod = method ?? admin.preferredMfaMethod;
     const maskedDestination = await this.sendOtp(admin, payload.jti, chosenMethod);
     return { maskedDestination };
   }
 
-  /** Verify OTP and return the admin id if valid. */
   async verify(challengeToken: string, otp: string): Promise<{ adminId: string; email: string }> {
-    const payload = this.verifyChallengeToken(challengeToken);
-
+    const payload    = this.verifyChallengeToken(challengeToken);
     const storedHash = await this.redis.client.get(`mfa:otp:${payload.jti}`);
+
     if (!storedHash) {
-      throw new BadRequestException('OTP expired or not found');
+      this.logger.warn(`verify: OTP not found or expired for jti=${payload.jti}`);
+      throw new BadRequestException({ code: 'otp_expired' });
     }
 
     const valid = await bcrypt.compare(otp, storedHash);
     if (!valid) {
-      throw new BadRequestException('Invalid OTP');
+      this.logger.warn(`verify: wrong OTP for jti=${payload.jti}`);
+      throw new BadRequestException({ code: 'otp_invalid' });
     }
 
-    // Consume the OTP so it cannot be reused
     await this.redis.client.del(`mfa:otp:${payload.jti}`);
-
     return { adminId: payload.sub, email: payload.email };
   }
 
-  // ── private helpers ────────────────────────────────────────────────────────
+  // ── private ────────────────────────────────────────────────────────────────
 
   private verifyChallengeToken(token: string): MfaChallengePayload {
     try {
@@ -109,8 +116,9 @@ export class MfaService {
       });
       if (payload.type !== 'mfa-challenge') throw new Error('wrong type');
       return payload;
-    } catch {
-      throw new UnauthorizedException('Invalid or expired challenge token');
+    } catch (err: unknown) {
+      this.logger.warn(`verifyChallengeToken failed: ${(err as Error)?.message}`);
+      throw new UnauthorizedException({ code: 'challenge_invalid' });
     }
   }
 
@@ -119,32 +127,29 @@ export class MfaService {
     jti: string,
     method: MfaMethod,
   ): Promise<string> {
-    // Rate-limit: max RL_MAX sends per RL_TTL_SEC window
     const rlKey = `mfa:rl:${admin.id}`;
     const count = await this.redis.client.incr(rlKey);
     if (count === 1) await this.redis.client.expire(rlKey, RL_TTL_SEC);
     if (count > RL_MAX) {
-      throw new HttpException('Too many OTP requests. Try again later.', HttpStatus.TOO_MANY_REQUESTS);
+      this.logger.warn(`sendOtp: rate limit hit for admin ${admin.id} (${count} attempts)`);
+      throw new HttpException({ code: 'rate_limited' }, HttpStatus.TOO_MANY_REQUESTS);
     }
 
-    // Cooldown: enforce at least COOLDOWN_SEC between sends
     const cdKey = `mfa:cd:${admin.id}`;
     const cd    = await this.redis.client.get(cdKey);
     if (cd) {
-      throw new HttpException('Please wait before requesting another OTP.', HttpStatus.TOO_MANY_REQUESTS);
+      this.logger.warn(`sendOtp: cooldown active for admin ${admin.id}`);
+      throw new HttpException({ code: 'cooldown' }, HttpStatus.TOO_MANY_REQUESTS);
     }
     await this.redis.client.set(cdKey, '1', 'EX', COOLDOWN_SEC);
 
-    // Generate, hash, and store OTP
     const otp  = String(Math.floor(100000 + Math.random() * 900000));
     const hash = await bcrypt.hash(otp, 10);
     await this.redis.client.set(`mfa:otp:${jti}`, hash, 'EX', OTP_TTL_SEC);
 
-    // Send notification and mask destination
     if (method === 'sms') {
-      if (!admin.phone) throw new BadRequestException('No phone number on record');
-      await this.notifications.sendSms(admin.phone, otp);
-      return this.maskPhone(admin.phone);
+      await this.notifications.sendSms(admin.phone!, otp);
+      return this.maskPhone(admin.phone!);
     } else {
       await this.notifications.sendEmail(admin.email, otp);
       return this.maskEmail(admin.email);
