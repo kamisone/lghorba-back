@@ -28,10 +28,11 @@ export interface MfaChallengeResult {
   maskedDestination: string;
 }
 
-const OTP_TTL_SEC  = 5 * 60;
-const COOLDOWN_SEC = 60;
-const RL_MAX       = 5;
-const RL_TTL_SEC   = 15 * 60;
+const OTP_TTL_SEC   = 5 * 60;
+const COOLDOWN_SEC  = 60;   // sliding window duration in seconds
+const COOLDOWN_MAX  = 5;    // sends allowed within that window before blocking
+const RL_MAX        = 5;
+const RL_TTL_SEC    = 15 * 60;
 
 @Injectable()
 export class MfaService {
@@ -135,13 +136,13 @@ export class MfaService {
       throw new HttpException({ code: 'rate_limited' }, HttpStatus.TOO_MANY_REQUESTS);
     }
 
-    const cdKey = `mfa:cd:${admin.id}`;
-    const cd    = await this.redis.client.get(cdKey);
-    if (cd) {
-      this.logger.warn(`sendOtp: cooldown active for admin ${admin.id}`);
+    const cdKey   = `mfa:cd:${admin.id}`;
+    const cdCount = await this.redis.client.incr(cdKey);
+    if (cdCount === 1) await this.redis.client.expire(cdKey, COOLDOWN_SEC);
+    if (cdCount > COOLDOWN_MAX) {
+      this.logger.warn(`sendOtp: cooldown active for admin ${admin.id} (${cdCount} sends in ${COOLDOWN_SEC}s window)`);
       throw new HttpException({ code: 'cooldown' }, HttpStatus.TOO_MANY_REQUESTS);
     }
-    await this.redis.client.set(cdKey, '1', 'EX', COOLDOWN_SEC);
 
     const otp  = String(Math.floor(100000 + Math.random() * 900000));
     const hash = await bcrypt.hash(otp, 10);
