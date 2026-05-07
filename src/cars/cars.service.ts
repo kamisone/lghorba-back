@@ -63,8 +63,8 @@ export class CarsService {
 
   async findOnePublic(id: string, lang?: string) {
     const car = await this.findOne(id);
-    const { immatriculation, phoneNumber, photo, ...rest } = car;
-    const publicCar = { ...rest, hasPhoto: photo !== null };
+    const { immatriculation, phoneNumber, photo, isCurrentlyRented, isTrackingActive, ...rest } = car;
+    const publicCar = { ...rest, hasPhoto: photo !== null, isAvailable: !isCurrentlyRented };
     if (!lang || lang === 'fr') return publicCar;
     return this.translationsService.applyToEntity(
       publicCar as Record<string, unknown>,
