@@ -7,6 +7,7 @@ import { GcsModule } from '../gcs/gcs.module';
 import { RentSession } from '../rent-sessions/rent-session.entity';
 import { TranslationsModule } from '../translations/translations.module';
 import { UsersModule } from '../users/users.module';
+import { VehicleAvailabilityModule } from '../vehicle-availability/vehicle-availability.module';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CarsController } from './cars.controller';
@@ -25,6 +26,7 @@ import { PublicCarsController } from './public-cars.controller';
     GcsModule,
     UsersModule,
     TranslationsModule,
+    VehicleAvailabilityModule,
   ],
   controllers: [CarsController, PublicCarsController],
   providers: [CarsService],

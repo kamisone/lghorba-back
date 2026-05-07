@@ -13,6 +13,7 @@ import { CarPricing } from '../cars/car-pricing.entity';
 import { DistributedLockService } from '../common/lock/distributed-lock.service';
 import { isTransientDbError, withRetry } from '../common/utils/retry.util';
 import { UsersService } from '../users/users.service';
+import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
 import { Booking, BookingSource, BookingStatus } from './booking.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingAdminDto } from './dto/create-booking-admin.dto';
@@ -59,6 +60,7 @@ export class BookingsService {
     private readonly dataSource: DataSource,
     private readonly lockService: DistributedLockService,
     private readonly usersService: UsersService,
+    private readonly availabilityService: VehicleAvailabilityService,
   ) {}
 
   // ── Date helpers ──────────────────────────────────────────────────────────
@@ -195,17 +197,20 @@ export class BookingsService {
     const car = await this.carRepo.findOne({ where: { id: carId } });
     if (!car) throw new NotFoundException(`Car ${carId} not found`);
 
-    const conflict = await this.bookingRepo
-      .createQueryBuilder('b')
-      .where('b.carId = :carId',             { carId })
-      .andWhere('b.status != :cancelled',    { cancelled: BookingStatus.CANCELLED })
-      .andWhere('b.startDateTime < :end',    { end: endDateTime })
-      .andWhere('b.endDateTime   > :start',  { start: startDateTime })
-      .getOne();
+    const [conflict, block] = await Promise.all([
+      this.bookingRepo
+        .createQueryBuilder('b')
+        .where('b.carId = :carId',            { carId })
+        .andWhere('b.status != :cancelled',   { cancelled: BookingStatus.CANCELLED })
+        .andWhere('b.startDateTime < :end',   { end: endDateTime })
+        .andWhere('b.endDateTime   > :start', { start: startDateTime })
+        .getOne(),
+      this.availabilityService.isBlocked(carId, startDateTime, endDateTime),
+    ]);
 
-    return conflict
-      ? { available: false, reason: 'A booking already overlaps with these dates' }
-      : { available: true };
+    if (block)    return { available: false, reason: block.reason ? `Unavailable: ${block.reason}` : 'Vehicle unavailable for this period' };
+    if (conflict) return { available: false, reason: 'A booking already overlaps with these dates' };
+    return { available: true };
   }
 
   // ── Create booking (public) — full concurrency protection ─────────────────
@@ -262,9 +267,10 @@ export class BookingsService {
       .setLock('pessimistic_read')
       .getOne();
 
-    if (conflict) {
-      throw new ConflictException('Car is not available for the requested period');
-    }
+    if (conflict) throw new ConflictException('Car is not available for the requested period');
+
+    const block = await this.availabilityService.isBlocked(dto.carId, dto.startDateTime, dto.endDateTime);
+    if (block) throw new ConflictException('Car is not available for the requested period');
 
     const priceResult = await this.computePriceWithRepos(
       manager.getRepository(Car),
@@ -372,9 +378,10 @@ export class BookingsService {
       .setLock('pessimistic_read')
       .getOne();
 
-    if (conflict) {
-      throw new ConflictException('Car is not available for the requested period');
-    }
+    if (conflict) throw new ConflictException('Car is not available for the requested period');
+
+    const block = await this.availabilityService.isBlocked(dto.carId, dto.startDateTime, dto.endDateTime);
+    if (block) throw new ConflictException('Car is not available for the requested period');
 
     try {
       const booking = bookingRepo.create({

@@ -7,6 +7,7 @@ import { Booking, BookingStatus } from '../bookings/booking.entity';
 import { GcsService } from '../gcs/gcs.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
 import { TranslationsService } from '../translations/translations.service';
+import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
 import { CreateCarDto } from './dto/create-car.dto';
@@ -29,16 +30,21 @@ export class CarsService {
     private readonly bookingRepo: Repository<Booking>,
     private readonly gcsService: GcsService,
     private readonly translationsService: TranslationsService,
+    private readonly availabilityService: VehicleAvailabilityService,
   ) {}
 
   async findAllPublic(lang?: string) {
-    const cars = await this.findAll();
+    const today = new Date().toISOString().slice(0, 10);
+    const [cars, blockedIds] = await Promise.all([
+      this.findAll(),
+      this.availabilityService.getBlockedCarIds(today),
+    ]);
     const publicCars = cars.map((car) => ({
       id: car.id,
       name: car.name,
       description: car.description,
       hasPhoto: car.photo !== null,
-      isAvailable: !car.isCurrentlyRented,
+      isAvailable: !car.isCurrentlyRented && !blockedIds.has(car.id),
       brand: car.brand,
       model: car.model,
       finishing: car.finishing,
@@ -62,9 +68,13 @@ export class CarsService {
   }
 
   async findOnePublic(id: string, lang?: string) {
-    const car = await this.findOne(id);
+    const today = new Date().toISOString().slice(0, 10);
+    const [car, blocked] = await Promise.all([
+      this.findOne(id),
+      this.availabilityService.isBlocked(id, `${today}T00:00`, `${today}T23:59`),
+    ]);
     const { immatriculation, phoneNumber, photo, isCurrentlyRented, isTrackingActive, ...rest } = car;
-    const publicCar = { ...rest, hasPhoto: photo !== null, isAvailable: !isCurrentlyRented };
+    const publicCar = { ...rest, hasPhoto: photo !== null, isAvailable: !isCurrentlyRented && !blocked };
     if (!lang || lang === 'fr') return publicCar;
     return this.translationsService.applyToEntity(
       publicCar as Record<string, unknown>,
@@ -81,7 +91,10 @@ export class CarsService {
       throw new BadRequestException('endDateTime must be after startDateTime');
     }
 
-    // Single query: exclude cars with overlapping bookings OR active rent sessions
+    const startDate = startDateTime.slice(0, 10);
+    const endDate   = endDateTime.slice(0, 10);
+
+    // Single query: exclude cars blocked by bookings, active sessions, or availability blocks
     const cars = await this.repo
       .createQueryBuilder('c')
       .where(qb =>
@@ -102,11 +115,22 @@ export class CarsService {
           .where('rs.status = :active')
           .getQuery()}`,
       )
+      .andWhere(qb =>
+        `c.id NOT IN ${qb
+          .subQuery()
+          .select('va.carId')
+          .from('vehicle_availabilities', 'va')
+          .where('va.startDate <= :endDate')
+          .andWhere('va.endDate >= :startDate')
+          .getQuery()}`,
+      )
       .setParameters({
         cancelled: BookingStatus.CANCELLED,
         start:     startDateTime,
         end:       endDateTime,
         active:    RentSessionStatus.ACTIVE,
+        startDate,
+        endDate,
       })
       .getMany();
 

@@ -38,6 +38,8 @@ import { GuestToken } from './guest-access/entities/guest-token.entity';
 import { GuestTokenAuditLog } from './guest-access/entities/guest-token-audit.entity';
 import { PageContent } from './page-content/page-content.entity';
 import { PageContentModule } from './page-content/page-content.module';
+import { VehicleAvailability } from './vehicle-availability/vehicle-availability.entity';
+import { VehicleAvailabilityModule } from './vehicle-availability/vehicle-availability.module';
 
 import { config } from 'dotenv';
 
@@ -52,7 +54,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -84,6 +86,7 @@ config();
     BillingModule,
     GuestAccessModule,
     PageContentModule,
+    VehicleAvailabilityModule,
   ],
   controllers: [SmsController],
   providers: [
