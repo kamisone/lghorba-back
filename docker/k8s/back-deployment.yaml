@@ -182,4 +182,24 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: SMTP_FROM
+            - name: IMAP_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: IMAP_HOST
+            - name: IMAP_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: IMAP_PORT
+            - name: IMAP_USER
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: IMAP_USER
+            - name: IMAP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: IMAP_PASSWORD
             

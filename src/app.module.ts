@@ -41,6 +41,8 @@ import { PageContent } from './page-content/page-content.entity';
 import { PageContentModule } from './page-content/page-content.module';
 import { VehicleAvailability } from './vehicle-availability/vehicle-availability.entity';
 import { VehicleAvailabilityModule } from './vehicle-availability/vehicle-availability.module';
+import { IngestedEmail } from './email-ingestion/entities/ingested-email.entity';
+import { EmailIngestionModule } from './email-ingestion/email-ingestion.module';
 
 import { config } from 'dotenv';
 
@@ -55,7 +57,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -88,6 +90,7 @@ config();
     GuestAccessModule,
     PageContentModule,
     VehicleAvailabilityModule,
+    EmailIngestionModule,
   ],
   controllers: [SmsController],
   providers: [
