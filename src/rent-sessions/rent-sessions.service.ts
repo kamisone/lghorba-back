@@ -130,25 +130,41 @@ export class RentSessionsService {
   ): Promise<RentPosition | null> {
     await this.findOne(id);
 
-    // Accept the first 3 positions unconditionally (bootstrapping phase).
-    // A single LIMIT-3 query is enough: length < 3 means we're still in the
-    // warm-up window; otherwise recent[0] is the last recorded position.
+    // Fetch a small history window to detect positional consistency.
     const recent = await this.positionRepo.find({
       where: { sessionId: id },
       order: { recordedAt: 'DESC' },
-      take: 3,
+      take: 5,
     });
 
-    if (recent.length >= 3) {
-      const dist = haversineKm(
-        Number(recent[0].lat), Number(recent[0].lng),
-        dto.lat, dto.lng,
+    // Bootstrap phase ends dynamically — not after an arbitrary fixed count,
+    // but as soon as at least one pair of consecutive stored fixes are within
+    // the jump limit of each other. Until a stable cluster forms we accept
+    // every point unconditionally so a slow GPS cold-start or early scatter
+    // doesn't trigger false rejections.
+    //
+    // Once consensus exists, a new fix is accepted if it is within
+    // MAX_POSITION_JUMP_KM of ANY stored fix. That prevents a single rogue
+    // fix (already stored) from poisoning subsequent valid positions.
+    const hasConsensus = recent.slice(0, -1).some((r, i) =>
+      haversineKm(
+        Number(r.lat), Number(r.lng),
+        Number(recent[i + 1].lat), Number(recent[i + 1].lng),
+      ) <= MAX_POSITION_JUMP_KM,
+    );
+
+    if (hasConsensus) {
+      const closeToAny = recent.some(r =>
+        haversineKm(Number(r.lat), Number(r.lng), dto.lat, dto.lng) <= MAX_POSITION_JUMP_KM,
       );
-      if (dist > MAX_POSITION_JUMP_KM) {
+      if (!closeToAny) {
+        const dists = recent.map(r =>
+          haversineKm(Number(r.lat), Number(r.lng), dto.lat, dto.lng).toFixed(1),
+        );
         this.logger.warn(
           `Position discarded for session ${id}: ` +
-          `jump of ${dist.toFixed(1)} km exceeds ${MAX_POSITION_JUMP_KM} km limit ` +
-          `(prev ${recent[0].lat},${recent[0].lng} → new ${dto.lat},${dto.lng})`,
+          `${MAX_POSITION_JUMP_KM} km limit exceeded against all ${recent.length} recent fixes ` +
+          `(distances: ${dists.join(', ')} km, new ${dto.lat},${dto.lng})`,
         );
         return null;
       }
