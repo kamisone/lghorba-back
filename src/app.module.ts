@@ -43,6 +43,23 @@ import { VehicleAvailability } from './vehicle-availability/vehicle-availability
 import { VehicleAvailabilityModule } from './vehicle-availability/vehicle-availability.module';
 import { IngestedEmail } from './email-ingestion/entities/ingested-email.entity';
 import { EmailIngestionModule } from './email-ingestion/email-ingestion.module';
+import { VehicleHealthRecord } from './vehicle-health/entities/vehicle-health-record.entity';
+import { VehicleHealthModule } from './vehicle-health/vehicle-health.module';
+import { MaintenanceRecord } from './maintenance/entities/maintenance-record.entity';
+import { MaintenanceType } from './maintenance/entities/maintenance-type.entity';
+import { MaintenanceSupplier } from './maintenance/entities/maintenance-supplier.entity';
+import { MaintenanceModule } from './maintenance/maintenance.module';
+import { OdometerReading } from './odometer/entities/odometer-reading.entity';
+import { OdometerModule } from './odometer/odometer.module';
+import { Inspection } from './inspections/entities/inspection.entity';
+import { InspectionChecklistItem } from './inspections/entities/inspection-checklist-item.entity';
+import { InspectionPhoto } from './inspections/entities/inspection-photo.entity';
+import { InspectionsModule } from './inspections/inspections.module';
+import { Incident } from './incidents/entities/incident.entity';
+import { IncidentPhoto } from './incidents/entities/incident-photo.entity';
+import { IncidentsModule } from './incidents/incidents.module';
+import { FleetAnalyticsModule } from './fleet-analytics/fleet-analytics.module';
+import { MaintenanceJobsModule } from './maintenance-jobs/maintenance-jobs.module';
 
 import { config } from 'dotenv';
 
@@ -57,7 +74,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -91,6 +108,13 @@ config();
     PageContentModule,
     VehicleAvailabilityModule,
     EmailIngestionModule,
+    VehicleHealthModule,
+    MaintenanceModule,
+    OdometerModule,
+    InspectionsModule,
+    IncidentsModule,
+    FleetAnalyticsModule,
+    MaintenanceJobsModule,
   ],
   controllers: [SmsController],
   providers: [

@@ -11,6 +11,7 @@ import { DataSource, EntityManager, LessThan, Repository } from 'typeorm';
 import { Car } from '../cars/car.entity';
 import { CarPricing } from '../cars/car-pricing.entity';
 import { CarDeliveryLocation } from '../cars/car-delivery-location.entity';
+import { VehicleHealthService } from '../vehicle-health/vehicle-health.service';
 import { haversineKm } from '../common/utils/map.util';
 import { DistributedLockService } from '../common/lock/distributed-lock.service';
 import { isTransientDbError, withRetry } from '../common/utils/retry.util';
@@ -64,6 +65,7 @@ export class BookingsService {
     private readonly lockService: DistributedLockService,
     private readonly usersService: UsersService,
     private readonly availabilityService: VehicleAvailabilityService,
+    private readonly vehicleHealthService: VehicleHealthService,
   ) {}
 
   // ── Date helpers ──────────────────────────────────────────────────────────
@@ -200,7 +202,7 @@ export class BookingsService {
     const car = await this.carRepo.findOne({ where: { id: carId } });
     if (!car) throw new NotFoundException(`Car ${carId} not found`);
 
-    const [conflict, block] = await Promise.all([
+    const [conflict, block, healthStatus] = await Promise.all([
       this.bookingRepo
         .createQueryBuilder('b')
         .where('b.carId = :carId',            { carId })
@@ -209,8 +211,12 @@ export class BookingsService {
         .andWhere('b.endDateTime   > :start', { start: startDateTime })
         .getOne(),
       this.availabilityService.isBlocked(carId, startDateTime, endDateTime),
+      this.vehicleHealthService.getHealthStatus(carId),
     ]);
 
+    if (healthStatus === 'unsafe' || healthStatus === 'critical') {
+      return { available: false, reason: 'Vehicle is currently unavailable for booking' };
+    }
     if (block)    return { available: false, reason: block.reason ? `Unavailable: ${block.reason}` : 'Vehicle unavailable for this period' };
     if (conflict) return { available: false, reason: 'A booking already overlaps with these dates' };
     return { available: true };

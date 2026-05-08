@@ -8,6 +8,7 @@ import { RentSession } from '../rent-sessions/rent-session.entity';
 import { TranslationsModule } from '../translations/translations.module';
 import { UsersModule } from '../users/users.module';
 import { VehicleAvailabilityModule } from '../vehicle-availability/vehicle-availability.module';
+import { VehicleHealthModule } from '../vehicle-health/vehicle-health.module';
 import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
@@ -28,6 +29,7 @@ import { PublicCarsController } from './public-cars.controller';
     UsersModule,
     TranslationsModule,
     VehicleAvailabilityModule,
+    VehicleHealthModule,
   ],
   controllers: [CarsController, PublicCarsController],
   providers: [CarsService],

@@ -8,6 +8,7 @@ import { GcsService } from '../gcs/gcs.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
 import { TranslationsService } from '../translations/translations.service';
 import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
+import { VehicleHealthService } from '../vehicle-health/vehicle-health.service';
 import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
@@ -34,20 +35,23 @@ export class CarsService {
     private readonly gcsService: GcsService,
     private readonly translationsService: TranslationsService,
     private readonly availabilityService: VehicleAvailabilityService,
+    private readonly vehicleHealthService: VehicleHealthService,
   ) {}
 
   async findAllPublic(lang?: string) {
     const today = new Date().toISOString().slice(0, 10);
-    const [cars, blockedIds] = await Promise.all([
+    const [cars, blockedIds, healthMap] = await Promise.all([
       this.findAll(),
       this.availabilityService.getBlockedCarIds(today),
+      this.vehicleHealthService.getHealthMap(),
     ]);
     const publicCars = cars.map((car) => ({
       id: car.id,
       name: car.name,
       description: car.description,
       hasPhoto: car.photo !== null,
-      isAvailable: !car.isCurrentlyRented && !blockedIds.has(car.id),
+      healthStatus: healthMap.get(car.id) ?? 'healthy',
+      isAvailable: !car.isCurrentlyRented && !blockedIds.has(car.id) && !['unsafe','critical'].includes(healthMap.get(car.id) ?? 'healthy'),
       brand: car.brand,
       model: car.model,
       finishing: car.finishing,
@@ -75,20 +79,23 @@ export class CarsService {
 
   async findOnePublic(id: string, lang?: string) {
     const today = new Date().toISOString().slice(0, 10);
-    const [car, blocked, deliveryLocations] = await Promise.all([
+    const [car, blocked, deliveryLocations, healthStatus] = await Promise.all([
       this.findOne(id),
       this.availabilityService.isBlocked(id, `${today}T00:00`, `${today}T23:59`),
       this.deliveryLocationRepo.find({ where: { carId: id }, order: { createdAt: 'ASC' } }),
+      this.vehicleHealthService.getHealthStatus(id),
     ]);
     const { immatriculation, phoneNumber, photo, isCurrentlyRented, isTrackingActive, ...rest } = car;
     const publicLocations = deliveryLocations.map(({ id: locId, label, address, lat, lng, radiusKm, price }) => ({
       id: locId, label, address, lat, lng, radiusKm, price: price !== null ? Number(price) : null,
     }));
+    const healthBlocking = healthStatus === 'unsafe' || healthStatus === 'critical';
     const publicCar = {
       ...rest,
       deliveryRadiusPrice: rest.deliveryRadiusPrice !== null ? Number(rest.deliveryRadiusPrice) : null,
       hasPhoto: photo !== null,
-      isAvailable: !isCurrentlyRented && !blocked,
+      isAvailable: !isCurrentlyRented && !blocked && !healthBlocking,
+      healthStatus,
       deliveryLocations: publicLocations,
     };
     if (!lang || lang === 'fr') return publicCar;
@@ -195,8 +202,13 @@ export class CarsService {
       })
       .getMany();
 
+    // Filter out health-blocking cars
+    const blockingHealthIds = await this.vehicleHealthService.getBlockingCarIds();
+    const healthFilteredCars = cars.filter(c => !blockingHealthIds.has(c.id));
+    const healthMap          = await this.vehicleHealthService.getHealthMap();
+
     // Load delivery locations for all available cars in one query
-    const carIds = cars.map(c => c.id);
+    const carIds = healthFilteredCars.map(c => c.id);
     const allLocations = carIds.length
       ? await this.deliveryLocationRepo.find({ where: carIds.map(id => ({ carId: id })) })
       : [];
@@ -206,7 +218,7 @@ export class CarsService {
     }
 
     // Build results with distance / delivery eligibility
-    const results = cars.map((car) => {
+    const results = healthFilteredCars.map((car) => {
       const distanceKm =
         hasAddress && car.parkingLat != null && car.parkingLng != null
           ? Math.round(haversineKm(addressLat!, addressLng!, car.parkingLat, car.parkingLng) * 10) / 10
