@@ -60,6 +60,7 @@ import { IncidentPhoto } from './incidents/entities/incident-photo.entity';
 import { IncidentsModule } from './incidents/incidents.module';
 import { FleetAnalyticsModule } from './fleet-analytics/fleet-analytics.module';
 import { MaintenanceJobsModule } from './maintenance-jobs/maintenance-jobs.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 import { config } from 'dotenv';
 
@@ -115,6 +116,7 @@ config();
     IncidentsModule,
     FleetAnalyticsModule,
     MaintenanceJobsModule,
+    AnalyticsModule,
   ],
   controllers: [SmsController],
   providers: [
