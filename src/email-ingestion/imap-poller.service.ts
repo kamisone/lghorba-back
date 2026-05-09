@@ -100,6 +100,8 @@ export class ImapPollerService implements OnApplicationShutdown {
         return;
       }
 
+      this.logger.log(msg);
+
       const parsed = await simpleParser(msg.source as Buffer);
       const messageId  = (parsed.messageId ?? `uid-${uid}-${Date.now()}`).replace(/[<>]/g, '');
       const fromAddr   = parsed.from?.value?.[0]?.address ?? '';
