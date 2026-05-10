@@ -70,6 +70,10 @@ export class TuroEmailParser implements ProviderEmailParser {
 
   private flattenHtml(html: string): string {
     return html
+      // Strip style/script blocks first — their content contains CSS hex colors (#5ED28B)
+      // that would be falsely matched as reservation numbers
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
       .replace(/<\/div>/gi, '\n')
@@ -86,10 +90,18 @@ export class TuroEmailParser implements ProviderEmailParser {
   private extractReservationNumber(body: string, subject: string): string | null {
     const targets = [subject, body];
     for (const t of targets) {
-      // "#12345678" or "Reservation #12345678" or "Réservation #12345678"
-      const m = t.match(/#\s*([A-Z0-9]{5,12})\b/i)
-             ?? t.match(/(?:r[eé]servation|trip|booking)\s*(?:no\.?|number|#|numéro)?\s*:?\s*([A-Z0-9]{5,12})\b/i);
-      if (m) return m[1].toUpperCase();
+      // Try labeled format first: "Numéro de réservation 57089279" or "Reservation #12345678"
+      // This must run before the bare "#XXXX" pattern to avoid matching CSS hex colors
+      const labeled = t.match(/(?:r[eé]servation|trip|booking)\s*(?:no\.?|number|#|num[eé]ro(?:\s+de\s+r[eé]servation)?)?\s*:?\s*([A-Z0-9]{5,12})\b/i);
+      if (labeled) return labeled[1].toUpperCase();
+
+      // "Numéro de réservation57089279" (no separator)
+      const numLabel = t.match(/num[eé]ro\s+de\s+r[eé]servation\s*:?\s*([A-Z0-9]{5,12})\b/i);
+      if (numLabel) return numLabel[1].toUpperCase();
+
+      // Bare "#12345678" — only after labeled patterns failed to avoid CSS color false-positives
+      const hash = t.match(/(?<![A-Z0-9])#\s*([A-Z0-9]{5,12})\b/i);
+      if (hash) return hash[1].toUpperCase();
     }
     return null;
   }
