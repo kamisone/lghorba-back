@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { DataSource, EntityManager, LessThan, Repository } from 'typeorm';
 import { Car } from '../cars/car.entity';
 import { CarPricing } from '../cars/car-pricing.entity';
@@ -17,10 +19,11 @@ import { DistributedLockService } from '../common/lock/distributed-lock.service'
 import { isTransientDbError, withRetry } from '../common/utils/retry.util';
 import { UsersService } from '../users/users.service';
 import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
-import { Booking, BookingSource, BookingStatus } from './booking.entity';
+import { Booking, BookingSource, BookingStatus, CANCELLED_STATUSES } from './booking.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { CreateBookingAdminDto } from './dto/create-booking-admin.dto';
 import { CreateCarPricingDto, UpdateCarPricingDto } from './dto/create-car-pricing.dto';
+import { BOOKING_EXPIRATION_QUEUE, PAYMENT_TIMEOUT_MS } from './booking-expiration.constants';
 
 // ── Public interfaces ────────────────────────────────────────────────────────
 
@@ -62,6 +65,8 @@ export class BookingsService {
     private readonly bookingRepo: Repository<Booking>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    @InjectQueue(BOOKING_EXPIRATION_QUEUE)
+    private readonly expirationQueue: Queue,
     private readonly lockService: DistributedLockService,
     private readonly usersService: UsersService,
     private readonly availabilityService: VehicleAvailabilityService,
@@ -205,10 +210,10 @@ export class BookingsService {
     const [conflict, block, healthStatus] = await Promise.all([
       this.bookingRepo
         .createQueryBuilder('b')
-        .where('b.carId = :carId',            { carId })
-        .andWhere('b.status != :cancelled',   { cancelled: BookingStatus.CANCELLED })
-        .andWhere('b.startDateTime < :end',   { end: endDateTime })
-        .andWhere('b.endDateTime   > :start', { start: startDateTime })
+        .where('b.carId = :carId',                          { carId })
+        .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+        .andWhere('b.startDateTime < :end',                 { end: endDateTime })
+        .andWhere('b.endDateTime   > :start',               { start: startDateTime })
         .getOne(),
       this.availabilityService.isBlocked(carId, startDateTime, endDateTime),
       this.vehicleHealthService.getHealthStatus(carId),
@@ -243,7 +248,7 @@ export class BookingsService {
 
     const lockKey = `booking:${dto.carId}`;
 
-    return this.lockService.withLock(
+    const booking = await this.lockService.withLock(
       lockKey,
       30_000,
       () =>
@@ -254,6 +259,24 @@ export class BookingsService {
           { maxAttempts: 3, isRetryable: isTransientDbError },
         ),
     );
+
+    // Schedule expiration after the transaction commits so the job is only
+    // queued once the booking row is durably persisted. The jobId ensures
+    // idempotency: a duplicate add is ignored by BullMQ.
+    await this.expirationQueue.add(
+      'expire',
+      { bookingId: booking.id },
+      {
+        delay:           PAYMENT_TIMEOUT_MS,
+        jobId:           `expire_${booking.id}`,
+        removeOnComplete: true,
+        removeOnFail:     false,
+        attempts:         3,
+        backoff:          { type: 'exponential', delay: 5_000 },
+      },
+    );
+
+    return booking;
   }
 
   private async createPendingPaymentBookingInTx(
@@ -269,10 +292,10 @@ export class BookingsService {
 
     const conflict = await bookingRepo
       .createQueryBuilder('b')
-      .where('b.carId = :carId',            { carId: dto.carId })
-      .andWhere('b.status != :cancelled',   { cancelled: BookingStatus.CANCELLED })
-      .andWhere('b.startDateTime < :end',   { end: dto.endDateTime })
-      .andWhere('b.endDateTime   > :start', { start: dto.startDateTime })
+      .where('b.carId = :carId',                          { carId: dto.carId })
+      .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+      .andWhere('b.startDateTime < :end',                 { end: dto.endDateTime })
+      .andWhere('b.endDateTime   > :start',               { start: dto.startDateTime })
       .setLock('pessimistic_read')
       .getOne();
 
@@ -347,6 +370,7 @@ export class BookingsService {
         deliveryAddress,
         deliveryAddressLat,
         deliveryAddressLng,
+        expiresAt:          new Date(Date.now() + PAYMENT_TIMEOUT_MS),
       });
       return await bookingRepo.save(booking);
     } catch (err: unknown) {
@@ -375,23 +399,78 @@ export class BookingsService {
   async cancelByPaymentIntent(paymentIntentId: string): Promise<void> {
     const booking = await this.bookingRepo.findOne({ where: { paymentIntentId } });
     if (!booking) return;
-    if (booking.status === BookingStatus.CANCELLED) return; // idempotent
-    await this.bookingRepo.update(booking.id, { status: BookingStatus.CANCELLED });
+    if (CANCELLED_STATUSES.includes(booking.status as typeof CANCELLED_STATUSES[number])) return; // idempotent
+    await this.bookingRepo.update(booking.id, {
+      status: BookingStatus.CANCELLED,
+      cancelledAt: new Date(),
+    });
   }
 
-  // ── TTL cleanup: expire stale pending_payment bookings ────────────────────
-  // Runs every 5 minutes. Bookings that have been in pending_payment for
-  // more than 30 minutes without a confirmed webhook are cancelled.
+  // ── Expire a single booking if still unpaid ───────────────────────────────
+  //
+  // Called by the BullMQ expiration processor. Returns the paymentIntentId if
+  // the booking was expired so the caller can cancel the Stripe PI; returns
+  // null if no action was needed (already paid / already cancelled).
+  //
+  // Uses optimistic locking (@VersionColumn) to be safe against concurrent
+  // webhook deliveries: if Stripe's succeeded webhook arrives and updates the
+  // booking between our read and write, the save() will throw
+  // OptimisticLockVersionMismatchError — we re-check the status and bail out.
+
+  async expireBookingIfUnpaid(bookingId: string): Promise<string | null> {
+    const booking = await this.bookingRepo.findOne({ where: { id: bookingId } });
+    if (!booking) {
+      this.logger.warn(`expireBookingIfUnpaid: booking ${bookingId} not found`);
+      return null;
+    }
+    if (booking.status !== BookingStatus.PENDING_PAYMENT) {
+      this.logger.log(
+        `expireBookingIfUnpaid: booking ${bookingId} already in status ${booking.status} — skipping`,
+      );
+      return null;
+    }
+
+    try {
+      await this.bookingRepo.save({
+        ...booking,
+        status:             BookingStatus.CANCELLED_PAYMENT_TIMEOUT,
+        cancellationReason: 'CANCELLED_PAYMENT_TIMEOUT',
+        cancelledAt:        new Date(),
+      });
+      this.logger.log(`Booking ${bookingId} auto-cancelled: payment timeout`);
+      return booking.paymentIntentId;
+    } catch (err: unknown) {
+      if ((err as { name?: string })?.name === 'OptimisticLockVersionMismatchError') {
+        // Concurrent update (e.g. webhook confirmed the payment simultaneously)
+        this.logger.log(
+          `expireBookingIfUnpaid: booking ${bookingId} updated concurrently — checking status`,
+        );
+        const current = await this.bookingRepo.findOne({ where: { id: bookingId } });
+        if (!current || current.status !== BookingStatus.PENDING_PAYMENT) return null;
+      }
+      throw err;
+    }
+  }
+
+  // ── Cron safety-net: expire bookings missed by BullMQ ────────────────────
+  //
+  // Runs every 5 minutes as a fallback for cases where the BullMQ job was
+  // never scheduled (e.g. server crashed between booking creation and queue
+  // enqueue). Cutoff is 20 minutes — 5 minutes beyond the BullMQ window —
+  // so BullMQ always gets first chance.
 
   @Cron('*/5 * * * *')
   async expireStalePendingPayments(): Promise<void> {
-    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+    const cutoff = new Date(Date.now() - 20 * 60 * 1_000);
     const stale  = await this.bookingRepo.find({
       where: { status: BookingStatus.PENDING_PAYMENT, createdAt: LessThan(cutoff) },
     });
     for (const booking of stale) {
-      this.logger.log(`Expiring stale pending_payment booking ${booking.id}`);
-      await this.bookingRepo.update(booking.id, { status: BookingStatus.CANCELLED });
+      this.logger.warn(`Cron safety-net: expiring stale booking ${booking.id}`);
+      await this.expireBookingIfUnpaid(booking.id);
+      // Stripe PI cancellation is skipped here (no Stripe access in this service).
+      // The PI auto-expires on Stripe's side after 24 h; the vehicle is unblocked
+      // immediately by the status change above.
     }
   }
 
@@ -431,10 +510,10 @@ export class BookingsService {
 
     const conflict = await bookingRepo
       .createQueryBuilder('b')
-      .where('b.carId = :carId',            { carId: dto.carId })
-      .andWhere('b.status != :cancelled',   { cancelled: BookingStatus.CANCELLED })
-      .andWhere('b.startDateTime < :end',   { end: dto.endDateTime })
-      .andWhere('b.endDateTime   > :start', { start: dto.startDateTime })
+      .where('b.carId = :carId',                          { carId: dto.carId })
+      .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+      .andWhere('b.startDateTime < :end',                 { end: dto.endDateTime })
+      .andWhere('b.endDateTime   > :start',               { start: dto.startDateTime })
       .setLock('pessimistic_read')
       .getOne();
 
@@ -516,11 +595,11 @@ export class BookingsService {
 
       const conflict = await this.bookingRepo
         .createQueryBuilder('b')
-        .where('b.carId = :carId',            { carId: booking.carId })
-        .andWhere('b.id != :id',              { id })
-        .andWhere('b.status != :cancelled',   { cancelled: BookingStatus.CANCELLED })
-        .andWhere('b.startDateTime < :end',   { end })
-        .andWhere('b.endDateTime   > :start', { start })
+        .where('b.carId = :carId',                          { carId: booking.carId })
+        .andWhere('b.id != :id',                            { id })
+        .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+        .andWhere('b.startDateTime < :end',                 { end })
+        .andWhere('b.endDateTime   > :start',               { start })
         .getOne();
       if (conflict) throw new ConflictException('Car is not available for the requested period');
     }
@@ -565,7 +644,7 @@ export class BookingsService {
         'b_hasSession',
       )
       .where('b.carId = :carId', { carId })
-      .andWhere('b.status != :cancelled', { cancelled: BookingStatus.CANCELLED })
+      .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
       .andWhere('rs.id IS NULL')
       .orderBy('b.startDateTime', 'ASC')
       .getRawAndEntities();

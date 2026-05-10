@@ -6,11 +6,17 @@ import { Car } from '../cars/car.entity';
 import { User } from '../users/user.entity';
 
 export enum BookingStatus {
-  PENDING_PAYMENT = 'pending_payment',
-  PENDING         = 'pending',
-  CONFIRMED       = 'confirmed',
-  CANCELLED       = 'cancelled',
+  PENDING_PAYMENT           = 'pending_payment',
+  PENDING                   = 'pending',
+  CONFIRMED                 = 'confirmed',
+  CANCELLED                 = 'cancelled',
+  CANCELLED_PAYMENT_TIMEOUT = 'cancelled_payment_timeout',
 }
+
+export const CANCELLED_STATUSES = [
+  BookingStatus.CANCELLED,
+  BookingStatus.CANCELLED_PAYMENT_TIMEOUT,
+] as const;
 
 export type BookingSource  = 'private' | 'turo' | 'getaround';
 export type GpsStopMode    = 'auto' | 'manual';
@@ -83,6 +89,16 @@ export class Booking {
 
   @Column({ type: 'varchar', nullable: true, unique: true })
   paymentIntentId: string | null;
+
+  // ── Expiration / cancellation audit ──────────────────────────────────────────
+  @Column({ type: 'varchar', nullable: true })
+  cancellationReason: string | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  cancelledAt: Date | null;
+
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  expiresAt: Date | null;
 
   /** Incremented automatically on every save — used for optimistic locking. */
   @VersionColumn() version: number;

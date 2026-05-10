@@ -18,6 +18,7 @@ import { Car } from './cars/car.entity';
 import { CarPricing } from './cars/car-pricing.entity';
 import { Booking } from './bookings/booking.entity';
 import { BookingsModule } from './bookings/bookings.module';
+import { BookingExpirationModule } from './bookings/booking-expiration.module';
 import { PaymentsModule } from './payments/payments.module';
 import { CarsModule } from './cars/cars.module';
 import { RedisModule } from './redis/redis.module';
@@ -103,6 +104,7 @@ config();
     ContactsModule,
     TranslationsModule,
     BookingsModule,
+    BookingExpirationModule,
     PaymentsModule,
     BillingModule,
     GuestAccessModule,
