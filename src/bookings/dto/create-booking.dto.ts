@@ -8,7 +8,7 @@ const CreateBookingBase = z.object({
   endDateTime:   z.string().regex(DATETIME_RE, 'Must be ISO datetime (YYYY-MM-DDTHH:mm)'),
   customerName:  z.string().min(1, 'Name is required').max(200),
   customerEmail: z.string().email('Enter a valid email address').optional(),
-  customerPhone: z.string().min(1, 'Phone number is required').max(30),
+  customerPhone: z.string().min(6, 'Phone number is too short').max(30).regex(/^\+?[\d\s\-().]{6,30}$/, 'Invalid phone number'),
   // ── Delivery
   deliveryRequested:    z.boolean().optional(),
   deliveryAddress:      z.string().max(500).optional(),

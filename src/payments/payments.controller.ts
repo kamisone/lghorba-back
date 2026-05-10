@@ -38,15 +38,19 @@ export class PaymentsController {
     @Body(new ZodValidationPipe(CreateBookingSchema)) dto: CreateBookingDto,
     @Req() req: Request,
   ) {
-    const idempotencyKey = (req.headers['idempotency-key'] as string | undefined)
-      ?? `booking:${dto.carId}:${dto.startDateTime}`;
-
     const booking = await this.bookingsService.createPendingPaymentBooking(dto);
+
+    // Stripe idempotency key is scoped to the booking ID so that reattempts
+    // for the same car/dates (after a cancellation) never reuse a key that
+    // Stripe already associates with different parameters.
+    const stripeIdempotencyKey = (req.headers['idempotency-key'] as string | undefined)
+      ? `pi:${req.headers['idempotency-key']}:${booking.id}`
+      : `pi:${booking.id}`;
 
     const { paymentIntentId, clientSecret } = await this.paymentsService.createPaymentIntent(
       Number(booking.totalPrice),
       booking.id,
-      `pi:${idempotencyKey}`,
+      stripeIdempotencyKey,
     );
 
     await this.bookingsService.setPaymentIntentId(booking.id, paymentIntentId);

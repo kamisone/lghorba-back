@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { extname } from 'path';
 import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { Booking, BookingStatus } from '../bookings/booking.entity';
+import { Booking, CANCELLED_STATUSES } from '../bookings/booking.entity';
 import { GcsService } from '../gcs/gcs.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
 import { TranslationsService } from '../translations/translations.service';
@@ -170,7 +170,7 @@ export class CarsService {
           .subQuery()
           .select('b.carId')
           .from(Booking, 'b')
-          .where('b.status != :cancelled')
+          .where('b.status NOT IN (:...cancelledStatuses)')
           .andWhere('b.startDateTime < :end')
           .andWhere('b.endDateTime > :start')
           .getQuery()}`,
@@ -193,10 +193,10 @@ export class CarsService {
           .getQuery()}`,
       )
       .setParameters({
-        cancelled: BookingStatus.CANCELLED,
-        start:     startDateTime,
-        end:       endDateTime,
-        active:    RentSessionStatus.ACTIVE,
+        cancelledStatuses: CANCELLED_STATUSES,
+        start:             startDateTime,
+        end:               endDateTime,
+        active:            RentSessionStatus.ACTIVE,
         startDate,
         endDate,
       })

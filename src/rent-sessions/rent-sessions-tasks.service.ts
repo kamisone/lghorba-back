@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Booking, BookingStatus } from '../bookings/booking.entity';
+import { Booking, CANCELLED_STATUSES } from '../bookings/booking.entity';
 import { Car } from '../cars/car.entity';
 import { SmsService } from '../sms/sms.service';
 import { addLocationInterval } from './rent-sessions.service';
@@ -57,7 +57,7 @@ export class RentSessionsTasksService {
     const bookings = await this.bookingRepo
       .createQueryBuilder('b')
       .where('b.autoStartTracking = true')
-      .andWhere('b.status != :cancelled', { cancelled: BookingStatus.CANCELLED })
+      .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
       .andWhere('b.startDateTime <= :now', { now })
       .andWhere('b.endDateTime > :now', { now })
       .getMany();
