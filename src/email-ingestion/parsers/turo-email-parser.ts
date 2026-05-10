@@ -7,9 +7,9 @@ const TURO_FROM  = 'noreply@mail.turo.com';
 
 // Subjects that indicate a booking confirmation
 const TURO_SUBJECT_EN = /\bis booked\b/i;
-const TURO_SUBJECT_FR = /\best r[eé]serv[eé](e)?\b/i;
+const TURO_SUBJECT_FR = /\best r[eé]serv[eé]e?(?!\w)/i;
 const TURO_BODY_EN    = /\btrip\s+is\s+confirmed\b|\bbooking\s+confirmed\b|\bbooked\b/i;
-const TURO_BODY_FR    = /\br[eé]servation\s+confirm[eé]e?\b|\best\s+r[eé]serv[eé]\b/i;
+const TURO_BODY_FR    = /\br[eé]servation\s+confirm[eé]e?(?!\w)|\best\s+r[eé]serv[eé]e?(?!\w)/i;
 
 @Injectable()
 export class TuroEmailParser implements ProviderEmailParser {
@@ -30,7 +30,7 @@ export class TuroEmailParser implements ProviderEmailParser {
     const lang   = isEn ? 'en' : 'fr';
 
     const reservationNumber = this.extractReservationNumber(body, email.subject);
-    const guestName         = this.extractGuestName(body, isEn);
+    const guestName         = this.extractGuestName(body, isEn, email.subject);
     const vehicleName       = this.extractVehicleName(body, email.subject, isEn);
     const { start, end }    = this.extractDates(body, isEn);
     const totalEarning      = this.extractEarning(body, isEn);
@@ -63,7 +63,7 @@ export class TuroEmailParser implements ProviderEmailParser {
 
   private detectLanguage(email: RawEmail): 'en' | 'fr' {
     const s = email.subject + ' ' + email.text;
-    const frScore = (s.match(/\b(réservé|confirmé|réservation|prise en charge|retour|gagnerez)\b/gi) ?? []).length;
+    const frScore = (s.match(/(?<!\w)(r[eé]serv[eé]|confirm[eé]|r[eé]servation|prise en charge|retour|gagnerez)(?!\w)/gi) ?? []).length;
     const enScore = (s.match(/\b(booked|confirmed|reservation|pickup|return|earn)\b/gi) ?? []).length;
     return frScore >= enScore ? 'fr' : 'en';
   }
@@ -94,11 +94,19 @@ export class TuroEmailParser implements ProviderEmailParser {
     return null;
   }
 
-  private extractGuestName(body: string, isEn: boolean): string | null {
+  private extractGuestName(body: string, isEn: boolean, subject?: string): string | null {
     if (isEn) {
       const m = body.match(/(?:booked by|driver|guest|renter)\s*:?\s*([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,50})/i);
       if (m) return m[1].trim();
     } else {
+      // "Le voyage de Sophia est réservé" — guest name in subject
+      if (subject) {
+        const subjectGuest = subject.match(/^le\s+voyage\s+de\s+(.+?)\s+est\s+r[eé]serv[eé]/i);
+        if (subjectGuest) return subjectGuest[1].trim();
+      }
+      // "À propos de l'invité Sophia" in body
+      const inviteM = body.match(/(?:à\s+propos\s+de\s+l['']invit[eé]e?|l['']invit[eé]e?)\s+([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,40})/i);
+      if (inviteM) return inviteM[1].trim();
       const m = body.match(/(?:réservé par|locataire|conducteur)\s*:?\s*([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,50})/i);
       if (m) return m[1].trim();
     }
@@ -112,10 +120,17 @@ export class TuroEmailParser implements ProviderEmailParser {
     const subjectEn = subject.match(/^your\s+(.+?)\s+is\s+booked/i);
     if (subjectEn) return subjectEn[1].trim();
 
-    const subjectFr = subject.match(/^(?:votre\s+)?(.+?)\s+est\s+r[eé]serv[eé]e?/i);
-    if (subjectFr) return subjectFr[1].trim();
+    // "Le voyage de NAME est réservé" — subject contains guest name, not vehicle; skip it
+    if (!/^le\s+voyage\s+de\s+/i.test(subject)) {
+      const subjectFr = subject.match(/^(?:votre\s+)?(.+?)\s+est\s+r[eé]serv[eé]e?/i);
+      if (subjectFr) return subjectFr[1].trim();
+    }
 
-    // From body: look for "Vehicle:" or "Véhicule:" labels
+    // From body: "dans votre Citroen C1" or "Votre Citroen C1"
+    const votreFr = body.match(/(?:dans\s+)?votre\s+([A-ZÀÂÄÉ][A-Za-zÀ-ÿ0-9\s\-]{2,50})/i);
+    if (votreFr) return votreFr[1].trim();
+
+    // From body: "Vehicle:" or "Véhicule:" labels
     const vehicleLine = body.match(/(?:v[eé]hicle|v[eé]hicule|car)\s*:?\s*([A-ZÀÂÄÉ][^\n]{3,60})/i);
     if (vehicleLine) return vehicleLine[1].trim();
 
@@ -133,8 +148,8 @@ export class TuroEmailParser implements ProviderEmailParser {
       if (pickupM) start = parseDateString(pickupM[1].replace(/\n/g, ' '));
       if (returnM) end   = parseDateString(returnM[1].replace(/\n/g, ' '));
     } else {
-      const pickupM = body.match(/(?:prise\s+en\s+charge|départ|début)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+)?)/i);
-      const returnM = body.match(/(?:retour|fin|restitution)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+)?)/i);
+      const pickupM = body.match(/(?:prise\s+en\s+charge|d[eé]but\s+du\s+voyage|d[eé]but|d[eé]part)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+)?)/i);
+      const returnM = body.match(/(?:retour|fin\s+du\s+voyage|fin|restitution)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+)?)/i);
       if (pickupM) start = parseDateString(pickupM[1].replace(/\n/g, ' '));
       if (returnM) end   = parseDateString(returnM[1].replace(/\n/g, ' '));
     }
@@ -161,6 +176,13 @@ export class TuroEmailParser implements ProviderEmailParser {
     const fr = body.matchAll(/(\d{1,2}\s+[a-zéèêîôûùàâäë]+\.?\s+\d{4}\s+(?:à\s+)?\d{1,2}h\d{2})/gi);
     for (const m of fr) {
       const d = parseDateString(m[1]);
+      if (d && !results.includes(d)) results.push(d);
+    }
+    // DD/MM/YYYY with optional time ("10/05/2026" or "10/05/2026 10:00" or "10/05/2026 à 10h00")
+    const slash = body.matchAll(/(\d{1,2}\/\d{2}\/\d{4}(?:\s+(?:à\s+)?\d{1,2}[h:]\d{2})?)/gi);
+    for (const m of slash) {
+      const normalised = m[1].replace(/(\d{1,2})h(\d{2})/, '$1:$2').replace(/à\s+/, '');
+      const d = parseDateString(normalised);
       if (d && !results.includes(d)) results.push(d);
     }
     return results;
@@ -200,7 +222,7 @@ export class TuroEmailParser implements ProviderEmailParser {
       const m = body.match(/(?:mileage|distance|miles?)\s*(?:included|allowance|limit)?\s*[:\-]?\s*(\d[\d,]*)\s*(?:km|miles?)/i);
       if (m) return parseInt(m[1].replace(/,/g, ''), 10);
     } else {
-      const m = body.match(/(?:kilom[eé]trage|distance)\s*(?:inclus|limit[eé]e?)?\s*[:\-]?\s*(\d[\d\s]*)\s*km/i);
+      const m = body.match(/(?:kilom[eé]trage|distance)(?:\s+\w+){0,2}\s*(?:inclus[e]?|limit[eé]e?)?\s*[:\-]?\s*(\d[\d\s]*)\s*km/i);
       if (m) return parseInt(m[1].replace(/\s/g, ''), 10);
     }
     return null;

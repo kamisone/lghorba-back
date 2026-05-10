@@ -67,6 +67,13 @@ function parseFrench(raw: string): string | null {
     return buildIso(+y, +mo, +d, +h, +mi);
   }
 
+  // "15/02/2025" bare date (no time) — default to 00:00
+  const slashDate = s.match(/^(\d{1,2})[\/\-](\d{2})[\/\-](\d{4})$/);
+  if (slashDate) {
+    const [, d, mo, y] = slashDate;
+    return buildIso(+y, +mo, +d, 0, 0);
+  }
+
   return null;
 }
 
