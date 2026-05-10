@@ -184,6 +184,26 @@ export class InvoiceService {
         }));
       }
 
+      const discountAmount = booking.discountAmount != null
+        ? Math.round(Number(booking.discountAmount) * 100) / 100
+        : 0;
+
+      if (discountAmount > 0) {
+        const promoDesc = booking.promoCode
+          ? `Réduction (${booking.promoCode})`
+          : 'Réduction promotionnelle';
+        lines.push(lineRepo.create({
+          invoiceId:   saved.id,
+          description: promoDesc,
+          quantity:    1,
+          unitPrice:   -discountAmount,
+          subtotal:    -discountAmount,
+          startDate,
+          endDate,
+          sortOrder:   2,
+        }));
+      }
+
       await lineRepo.save(lines);
 
       await auditRepo.save([

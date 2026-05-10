@@ -62,6 +62,9 @@ import { IncidentsModule } from './incidents/incidents.module';
 import { FleetAnalyticsModule } from './fleet-analytics/fleet-analytics.module';
 import { MaintenanceJobsModule } from './maintenance-jobs/maintenance-jobs.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { Promotion } from './promotions/promotion.entity';
+import { PromotionUsage } from './promotions/promotion-usage.entity';
+import { PromotionsModule } from './promotions/promotions.module';
 
 import { config } from 'dotenv';
 
@@ -76,7 +79,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -119,6 +122,7 @@ config();
     FleetAnalyticsModule,
     MaintenanceJobsModule,
     AnalyticsModule,
+    PromotionsModule,
   ],
   controllers: [SmsController],
   providers: [

@@ -21,6 +21,7 @@ import { UsersService } from '../users/users.service';
 import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
 import { Booking, BookingSource, BookingStatus, CANCELLED_STATUSES } from './booking.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { PromotionsService } from '../promotions/promotions.service';
 import { CreateBookingAdminDto } from './dto/create-booking-admin.dto';
 import { CreateCarPricingDto, UpdateCarPricingDto } from './dto/create-car-pricing.dto';
 import { BOOKING_EXPIRATION_QUEUE, PAYMENT_TIMEOUT_MS } from './booking-expiration.constants';
@@ -71,6 +72,7 @@ export class BookingsService {
     private readonly usersService: UsersService,
     private readonly availabilityService: VehicleAvailabilityService,
     private readonly vehicleHealthService: VehicleHealthService,
+    private readonly promotionsService: PromotionsService,
   ) {}
 
   // ── Date helpers ──────────────────────────────────────────────────────────
@@ -354,7 +356,39 @@ export class BookingsService {
       }
     }
 
-    const totalPrice = Math.round((priceResult.totalPrice + (deliveryFee ?? 0)) * 100) / 100;
+    const subtotal      = priceResult.totalPrice;
+    const deliveryTotal = deliveryFee ?? 0;
+    const days          = Math.max(1, Math.ceil(
+      (new Date(dto.endDateTime).getTime() - new Date(dto.startDateTime).getTime()) / 86_400_000,
+    ));
+
+    // Apply coupon if provided (pessimistic lock, throws on invalid code)
+    let promotionId: string | null    = null;
+    let promoCode: string | null      = null;
+    let discountAmount: number | null = null;
+    let originalPrice: number | null  = null;
+
+    if (dto.couponCode) {
+      const customerEmail = dto.customerEmail ?? null;
+      const applied = await this.promotionsService.applyPromoInTx(manager, {
+        code:          dto.couponCode,
+        carId:         dto.carId,
+        subtotal,
+        deliveryFee:   deliveryTotal,
+        days,
+        userId,
+        customerEmail,
+      });
+      promotionId    = applied.promotionId;
+      promoCode      = dto.couponCode.toUpperCase().trim();
+      discountAmount = applied.discountAmount;
+      originalPrice  = Math.round((subtotal + deliveryTotal) * 100) / 100;
+    }
+
+    const grossPrice = Math.round((subtotal + deliveryTotal) * 100) / 100;
+    const totalPrice = discountAmount != null
+      ? Math.max(0, Math.round((grossPrice - discountAmount) * 100) / 100)
+      : grossPrice;
 
     try {
       const booking = bookingRepo.create({
@@ -371,8 +405,26 @@ export class BookingsService {
         deliveryAddressLat,
         deliveryAddressLng,
         expiresAt:          new Date(Date.now() + PAYMENT_TIMEOUT_MS),
+        promotionId,
+        promoCode,
+        discountAmount,
+        originalPrice,
       });
-      return await bookingRepo.save(booking);
+      const saved = await bookingRepo.save(booking);
+
+      // Record usage atomically in the same transaction
+      if (promotionId && discountAmount != null && originalPrice != null) {
+        await this.promotionsService.recordUsageInTx(manager, {
+          promotionId,
+          bookingId:     saved.id,
+          userId,
+          customerEmail: dto.customerEmail ?? null,
+          discountAmount,
+          originalAmount: originalPrice,
+        });
+      }
+
+      return saved;
     } catch (err: unknown) {
       if ((err as { code?: string })?.code === '23P01') {
         this.logger.warn(`Exclusion constraint caught overlap for car ${dto.carId}`);

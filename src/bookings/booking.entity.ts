@@ -90,6 +90,21 @@ export class Booking {
   @Column({ type: 'varchar', nullable: true, unique: true })
   paymentIntentId: string | null;
 
+  // ── Promotion / discount snapshot ─────────────────────────────────────────────
+  @Column({ type: 'uuid', nullable: true })
+  promotionId: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  promoCode: string | null;
+
+  /** EUR amount discounted from the original price */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  discountAmount: number | null;
+
+  /** Price before discount was applied */
+  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  originalPrice: number | null;
+
   // ── Expiration / cancellation audit ──────────────────────────────────────────
   @Column({ type: 'varchar', nullable: true })
   cancellationReason: string | null;

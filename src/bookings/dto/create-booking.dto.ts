@@ -14,6 +14,8 @@ const CreateBookingBase = z.object({
   deliveryAddress:      z.string().max(500).optional(),
   deliveryAddressLat:   z.number().min(-90).max(90).optional(),
   deliveryAddressLng:   z.number().min(-180).max(180).optional(),
+  // ── Coupon
+  couponCode:           z.string().min(1).max(50).optional(),
 });
 
 export const CreateBookingSchema = CreateBookingBase.refine(
