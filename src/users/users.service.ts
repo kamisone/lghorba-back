@@ -6,6 +6,20 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './user.entity';
 
+interface FindAllParams {
+  search?: string;
+  limit?: number;
+  minRents?: number;
+  maxRents?: number;
+  minScore?: number;
+  maxScore?: number;
+  joinedFrom?: string;
+  joinedTo?: string;
+  rentFrom?: string;
+  rentTo?: string;
+  activeOnly?: boolean;
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -15,18 +29,22 @@ export class UsersService {
     private readonly sessionRepo: Repository<RentSession>,
   ) {}
 
-  async findAll(search?: string, limit = 20): Promise<(User & { rentCount: number })[]> {
+  async findAll(params: FindAllParams = {}): Promise<(User & { rentCount: number; hasActiveSession: boolean })[]> {
+    const { search, limit = 100, minRents, maxRents, minScore, maxScore, joinedFrom, joinedTo, rentFrom, rentTo, activeOnly } = params;
+
+    const rentCountSubquery = `COALESCE((
+      SELECT COUNT(DISTINCT sq.sid)::int FROM (
+        SELECT s.id AS sid FROM rent_sessions s WHERE s."userId" = u.id
+        UNION
+        SELECT s.id AS sid FROM rent_sessions s
+        JOIN bookings b ON s."bookingId" = b.id
+        WHERE b."userId" = u.id
+      ) sq
+    ), 0)`;
+
     const qb = this.repo
       .createQueryBuilder('u')
-      .addSelect(`(
-        SELECT COUNT(DISTINCT sq.sid)::int FROM (
-          SELECT s.id AS sid FROM rent_sessions s WHERE s."userId" = u.id
-          UNION
-          SELECT s.id AS sid FROM rent_sessions s
-          JOIN bookings b ON s."bookingId" = b.id
-          WHERE b."userId" = u.id
-        ) sq
-      )`, 'u_rentCount')
+      .addSelect(rentCountSubquery, 'u_rentCount')
       .addSelect(`(
         EXISTS (
           SELECT 1 FROM rent_sessions s WHERE s."userId" = u.id AND s.status = 'active'
@@ -38,9 +56,57 @@ export class UsersService {
       )`, 'u_hasActiveSession')
       .orderBy('u.createdAt', 'DESC')
       .take(limit);
+
     if (search) {
-      qb.where('u.name ILIKE :s OR u.phone ILIKE :s', { s: `%${search}%` });
+      qb.andWhere('u.name ILIKE :s OR u.phone ILIKE :s', { s: `%${search}%` });
     }
+
+    if (minRents !== undefined && !isNaN(minRents)) {
+      qb.andWhere(`${rentCountSubquery} >= :minRents`, { minRents });
+    }
+
+    if (maxRents !== undefined && !isNaN(maxRents)) {
+      qb.andWhere(`${rentCountSubquery} <= :maxRents`, { maxRents });
+    }
+
+    if (minScore !== undefined && !isNaN(minScore)) {
+      qb.andWhere('u.score >= :minScore', { minScore });
+    }
+
+    if (maxScore !== undefined && !isNaN(maxScore)) {
+      qb.andWhere('u.score <= :maxScore', { maxScore });
+    }
+
+    if (joinedFrom) {
+      qb.andWhere('u.createdAt >= :joinedFrom', { joinedFrom: new Date(joinedFrom) });
+    }
+
+    if (joinedTo) {
+      qb.andWhere('u.createdAt < :joinedTo', { joinedTo: new Date(`${joinedTo}T23:59:59`) });
+    }
+
+    if (rentFrom || rentTo) {
+      let activityCond = `EXISTS (
+        SELECT 1 FROM rent_sessions rs
+        LEFT JOIN bookings b2 ON rs."bookingId" = b2.id
+        WHERE (rs."userId" = u.id OR b2."userId" = u.id)`;
+      const activityParams: Record<string, Date> = {};
+      if (rentFrom) { activityCond += ` AND rs."startedAt" >= :rentFrom`; activityParams.rentFrom = new Date(rentFrom); }
+      if (rentTo) { activityCond += ` AND rs."startedAt" <= :rentTo`; activityParams.rentTo = new Date(`${rentTo}T23:59:59`); }
+      activityCond += ')';
+      qb.andWhere(activityCond, activityParams);
+    }
+
+    if (activeOnly) {
+      qb.andWhere(`EXISTS (
+        SELECT 1 FROM rent_sessions s WHERE s."userId" = u.id AND s.status = 'active'
+        UNION ALL
+        SELECT 1 FROM rent_sessions s
+        JOIN bookings b ON s."bookingId" = b.id
+        WHERE b."userId" = u.id AND s.status = 'active'
+      )`);
+    }
+
     const { entities, raw } = await qb.getRawAndEntities();
     return entities.map((u, i) => ({
       ...u,

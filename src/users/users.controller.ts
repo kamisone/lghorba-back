@@ -9,8 +9,33 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  findAll(@Query('search') search?: string, @Query('limit') limit?: string) {
-    return this.usersService.findAll(search, limit ? parseInt(limit, 10) : 20);
+  findAll(
+    @Query('search') search?: string,
+    @Query('limit') limit?: string,
+    @Query('minRents') minRents?: string,
+    @Query('maxRents') maxRents?: string,
+    @Query('minScore') minScore?: string,
+    @Query('maxScore') maxScore?: string,
+    @Query('joinedFrom') joinedFrom?: string,
+    @Query('joinedTo') joinedTo?: string,
+    @Query('rentFrom') rentFrom?: string,
+    @Query('rentTo') rentTo?: string,
+    @Query('activeOnly') activeOnly?: string,
+  ) {
+    const toInt = (v?: string) => (v !== undefined && v !== '' ? parseInt(v, 10) : undefined);
+    return this.usersService.findAll({
+      search,
+      limit: limit ? parseInt(limit, 10) : 100,
+      minRents: toInt(minRents),
+      maxRents: toInt(maxRents),
+      minScore: toInt(minScore),
+      maxScore: toInt(maxScore),
+      joinedFrom,
+      joinedTo,
+      rentFrom,
+      rentTo,
+      activeOnly: activeOnly === '1',
+    });
   }
 
   @Post()
