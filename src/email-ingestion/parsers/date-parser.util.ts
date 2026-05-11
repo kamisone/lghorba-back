@@ -37,8 +37,24 @@ function padTwo(n: number): string {
   return String(n).padStart(2, '0');
 }
 
+// Europe/Paris offset: CEST (+02:00) from last Sunday of March to last Sunday of October,
+// CET (+01:00) otherwise. We check by calendar day which is accurate for all practical booking times.
+function parisTzOffset(year: number, month: number, day: number): string {
+  const lastSunday = (y: number, m: number): number => {
+    const d = new Date(Date.UTC(y, m, 0)); // last day of month (m is 0-indexed here)
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // step back to Sunday
+    return d.getUTCDate();
+  };
+  const dstStart = lastSunday(year, 3);  // last Sunday of March
+  const dstEnd   = lastSunday(year, 10); // last Sunday of October
+  const inDst = (month > 3 || (month === 3 && day >= dstStart))
+             && (month < 10 || (month === 10 && day < dstEnd));
+  return inDst ? '+02:00' : '+01:00';
+}
+
 function buildIso(year: number, month: number, day: number, hour: number, minute: number): string {
-  return `${year}-${padTwo(month)}-${padTwo(day)}T${padTwo(hour)}:${padTwo(minute)}:00`;
+  const tz = parisTzOffset(year, month, day);
+  return `${year}-${padTwo(month)}-${padTwo(day)}T${padTwo(hour)}:${padTwo(minute)}:00${tz}`;
 }
 
 /**

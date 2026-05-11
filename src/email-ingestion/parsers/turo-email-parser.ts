@@ -225,8 +225,15 @@ export class TuroEmailParser implements ProviderEmailParser {
   }
 
   private extractPhone(body: string): string | null {
-    const m = body.match(/(?:phone|téléphone|mobile|tel)\.?\s*[:\-]?\s*(\+?[\d\s\-().]{7,20})/i);
-    return m ? m[1].trim() : null;
+    // Labeled: "Téléphone : +33 6 ..."
+    const labeled = body.match(/(?:phone|téléphone|mobile|tel)\.?\s*[:\-]?\s*(\+?[\d\s\-().]{7,20})/i);
+    if (labeled) return labeled[1].trim();
+
+    // Standalone international number (e.g. "+33 6 99 18 04 54" as a bare line)
+    const intl = body.match(/(\+\d{1,3}(?:[\s\-]?\d){8,12})/);
+    if (intl) return intl[1].trim();
+
+    return null;
   }
 
   private extractMileage(body: string, isEn: boolean): number | null {
