@@ -157,7 +157,7 @@ export class EmailIngestionService {
         source:            extracted.provider,
         status:            'confirmed',
         guestName:         extracted.guestName,
-        guestNumber:       extracted.guestPhone ?? undefined,
+        guestNumber:       extracted.guestPhone ?? '+33999999999',
         reservationNumber: extracted.reservationNumber,
         totalEarning:      extracted.totalEarning ?? undefined,
         autoStartTracking: false,
