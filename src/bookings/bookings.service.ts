@@ -25,6 +25,7 @@ import { PromotionsService } from '../promotions/promotions.service';
 import { CreateBookingAdminDto } from './dto/create-booking-admin.dto';
 import { CreateCarPricingDto, UpdateCarPricingDto } from './dto/create-car-pricing.dto';
 import { BOOKING_EXPIRATION_QUEUE, PAYMENT_TIMEOUT_MS } from './booking-expiration.constants';
+import { ReminderSchedulerService } from '../booking-reminders/reminder-scheduler.service';
 
 // ── Public interfaces ────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ export class BookingsService {
     private readonly availabilityService: VehicleAvailabilityService,
     private readonly vehicleHealthService: VehicleHealthService,
     private readonly promotionsService: PromotionsService,
+    private readonly reminderScheduler: ReminderSchedulerService,
   ) {}
 
   // ── Date helpers ──────────────────────────────────────────────────────────
@@ -446,6 +448,9 @@ export class BookingsService {
     }
     if (booking.status === BookingStatus.CONFIRMED) return; // idempotent
     await this.bookingRepo.update(booking.id, { status: BookingStatus.CONFIRMED });
+    this.reminderScheduler.scheduleReminder({ ...booking, status: BookingStatus.CONFIRMED }).catch(err =>
+      this.logger.warn(`Failed to schedule reminder for booking ${booking.id}: ${err?.message}`),
+    );
   }
 
   async cancelByPaymentIntent(paymentIntentId: string): Promise<void> {
@@ -456,6 +461,9 @@ export class BookingsService {
       status: BookingStatus.CANCELLED,
       cancelledAt: new Date(),
     });
+    this.reminderScheduler.cancelReminder(booking.id).catch(err =>
+      this.logger.warn(`Failed to cancel reminder for booking ${booking.id}: ${err?.message}`),
+    );
   }
 
   // ── Expire a single booking if still unpaid ───────────────────────────────
@@ -536,7 +544,7 @@ export class BookingsService {
     const userId = await this.resolveUser(dto);
 
     const lockKey = `booking:${dto.carId}`;
-    return this.lockService.withLock(
+    const booking = await this.lockService.withLock(
       lockKey,
       30_000,
       () =>
@@ -547,6 +555,10 @@ export class BookingsService {
           { maxAttempts: 3, isRetryable: isTransientDbError },
         ),
     );
+    this.reminderScheduler.scheduleReminder(booking).catch(err =>
+      this.logger.warn(`Failed to schedule reminder for booking ${booking.id}: ${err?.message}`),
+    );
+    return booking;
   }
 
   private async createBookingAdminInTx(
@@ -673,7 +685,17 @@ export class BookingsService {
     if (dto.gpsStopMode       !== undefined) update.gpsStopMode       = dto.gpsStopMode;
 
     await this.bookingRepo.update(id, update);
-    return this.findBooking(id);
+    const updated = await this.findBooking(id);
+
+    const datesChanged = dto.startDateTime || dto.endDateTime;
+    const statusChanged = dto.status;
+    if (datesChanged || statusChanged) {
+      this.reminderScheduler.rescheduleReminder(updated).catch(err =>
+        this.logger.warn(`Failed to reschedule reminder for booking ${id}: ${err?.message}`),
+      );
+    }
+
+    return updated;
   }
 
   // ── Calendar query — bookings visible on the admin calendar ──────────────
