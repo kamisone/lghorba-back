@@ -8,6 +8,7 @@ import {
 import { Cron } from '@nestjs/schedule';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Queue } from 'bullmq';
 import { DataSource, EntityManager, LessThan, Repository } from 'typeorm';
 import { Car } from '../cars/car.entity';
@@ -25,7 +26,13 @@ import { PromotionsService } from '../promotions/promotions.service';
 import { CreateBookingAdminDto } from './dto/create-booking-admin.dto';
 import { CreateCarPricingDto, UpdateCarPricingDto } from './dto/create-car-pricing.dto';
 import { BOOKING_EXPIRATION_QUEUE, PAYMENT_TIMEOUT_MS } from './booking-expiration.constants';
-import { ReminderSchedulerService } from '../booking-reminders/reminder-scheduler.service';
+import {
+  BookingEvents,
+  BookingCancelledEvent,
+  BookingConfirmedEvent,
+  BookingCreatedAdminEvent,
+  BookingUpdatedEvent,
+} from './booking.events';
 
 // ── Public interfaces ────────────────────────────────────────────────────────
 
@@ -74,7 +81,7 @@ export class BookingsService {
     private readonly availabilityService: VehicleAvailabilityService,
     private readonly vehicleHealthService: VehicleHealthService,
     private readonly promotionsService: PromotionsService,
-    private readonly reminderScheduler: ReminderSchedulerService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   // ── Date helpers ──────────────────────────────────────────────────────────
@@ -448,8 +455,13 @@ export class BookingsService {
     }
     if (booking.status === BookingStatus.CONFIRMED) return; // idempotent
     await this.bookingRepo.update(booking.id, { status: BookingStatus.CONFIRMED });
-    this.reminderScheduler.scheduleReminder({ ...booking, status: BookingStatus.CONFIRMED }).catch(err =>
-      this.logger.warn(`Failed to schedule reminder for booking ${booking.id}: ${err?.message}`),
+    this.eventEmitter.emit(
+      BookingEvents.CONFIRMED,
+      new BookingConfirmedEvent(booking.id, paymentIntentId, {
+        id: booking.id,
+        startDateTime: booking.startDateTime,
+        status: BookingStatus.CONFIRMED,
+      }),
     );
   }
 
@@ -461,8 +473,9 @@ export class BookingsService {
       status: BookingStatus.CANCELLED,
       cancelledAt: new Date(),
     });
-    this.reminderScheduler.cancelReminder(booking.id).catch(err =>
-      this.logger.warn(`Failed to cancel reminder for booking ${booking.id}: ${err?.message}`),
+    this.eventEmitter.emit(
+      BookingEvents.CANCELLED,
+      new BookingCancelledEvent(booking.id, paymentIntentId),
     );
   }
 
@@ -555,8 +568,13 @@ export class BookingsService {
           { maxAttempts: 3, isRetryable: isTransientDbError },
         ),
     );
-    this.reminderScheduler.scheduleReminder(booking).catch(err =>
-      this.logger.warn(`Failed to schedule reminder for booking ${booking.id}: ${err?.message}`),
+    this.eventEmitter.emit(
+      BookingEvents.CREATED_ADMIN,
+      new BookingCreatedAdminEvent({
+        id: booking.id,
+        startDateTime: booking.startDateTime,
+        status: booking.status,
+      }),
     );
     return booking;
   }
@@ -690,8 +708,13 @@ export class BookingsService {
     const datesChanged = dto.startDateTime || dto.endDateTime;
     const statusChanged = dto.status;
     if (datesChanged || statusChanged) {
-      this.reminderScheduler.rescheduleReminder(updated).catch(err =>
-        this.logger.warn(`Failed to reschedule reminder for booking ${id}: ${err?.message}`),
+      this.eventEmitter.emit(
+        BookingEvents.UPDATED,
+        new BookingUpdatedEvent({
+          id: updated.id,
+          startDateTime: updated.startDateTime,
+          status: updated.status,
+        }),
       );
     }
 

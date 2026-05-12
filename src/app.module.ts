@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { Admin } from './admins/admin.entity';
@@ -90,6 +91,7 @@ config();
       { name: 'auth', ttl: 15 * 60 * 1000, limit: 10 },
     ]),
     ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
     BullModule.forRootAsync({
       useFactory: () => ({
         connection: {

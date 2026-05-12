@@ -12,6 +12,7 @@ import { InvoicePdfService } from './invoice-pdf.service';
 import { InvoiceEmailService } from './invoice-email.service';
 import { InvoiceJobsProcessor } from './invoice-jobs.processor';
 import { InvoicesAdminController } from './invoices.admin.controller';
+import { BillingBookingListener } from './billing-booking.listener';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { InvoicesAdminController } from './invoices.admin.controller';
     InvoicePdfService,
     InvoiceEmailService,
     InvoiceJobsProcessor,
+    BillingBookingListener,
   ],
   exports: [InvoiceService],
 })

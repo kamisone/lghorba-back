@@ -10,7 +10,6 @@ import { UsersModule } from '../users/users.module';
 import { VehicleAvailabilityModule } from '../vehicle-availability/vehicle-availability.module';
 import { VehicleHealthModule } from '../vehicle-health/vehicle-health.module';
 import { PromotionsModule } from '../promotions/promotions.module';
-import { BookingRemindersModule } from '../booking-reminders/booking-reminders.module';
 import { Booking } from './booking.entity';
 import { BookingsService } from './bookings.service';
 import { BookingsAdminController, CarPricingsController, PublicBookingsController } from './bookings.controller';
@@ -24,7 +23,6 @@ import { BOOKING_EXPIRATION_QUEUE } from './booking-expiration.constants';
     VehicleAvailabilityModule,
     VehicleHealthModule,
     PromotionsModule,
-    BookingRemindersModule,
   ],
   controllers: [PublicBookingsController, BookingsAdminController, CarPricingsController],
   providers: [BookingsService, DistributedLockService, IdempotencyInterceptor],

@@ -152,7 +152,7 @@ export class CarsService {
   }
 
   async searchPublic(dto: SearchCarsDto) {
-    const { startDateTime, endDateTime, addressLat, addressLng } = dto;
+    const { startDateTime, endDateTime, addressLat, addressLng, lang } = dto;
     const hasAddress = addressLat != null && addressLng != null;
 
     if (new Date(endDateTime) <= new Date(startDateTime)) {
@@ -274,7 +274,12 @@ export class CarsService {
       return a.distanceKm - b.distanceKm;
     });
 
-    return results;
+    if (!lang || lang === 'fr') return results;
+    return this.translationsService.applyToEntities(
+      results as Record<string, unknown>[],
+      'car',
+      lang,
+    );
   }
 
   async findAll(): Promise<CarWithRentStatus[]> {

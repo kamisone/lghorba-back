@@ -9,6 +9,7 @@ import { ReminderLog } from './reminder-log.entity';
 import { ReminderSettingsService } from './reminder-settings.service';
 import { ReminderSchedulerService } from './reminder-scheduler.service';
 import { BookingReminderProcessor } from './booking-reminder.processor';
+import { BookingReminderListener } from './booking-reminder.listener';
 import { ReminderSettingsController } from './reminder-settings.controller';
 
 @Module({
@@ -22,6 +23,7 @@ import { ReminderSettingsController } from './reminder-settings.controller';
     ReminderSettingsService,
     ReminderSchedulerService,
     BookingReminderProcessor,
+    BookingReminderListener,
   ],
   exports: [ReminderSchedulerService],
 })

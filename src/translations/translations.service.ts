@@ -1,3 +1,8 @@
+// Translation system — domain split:
+// This service owns per-entity content translations (e.g. car name, description) stored in the DB.
+// Static UI strings (nav, forms, legal) live in the frontend translations.ts file — do not duplicate them here.
+// Call applyToEntities() / applyToEntity() after fetching entities whenever a `lang` param is present.
+
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
