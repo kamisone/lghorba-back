@@ -11,6 +11,7 @@ import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
 import { extractLatLng, extractMapsUrl, haversineKm } from '../common/utils/map.util';
+import { Booking } from '../bookings/booking.entity';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
@@ -30,6 +31,8 @@ export class RentSessionsService {
     private readonly sessionRepo: Repository<RentSession>,
     @InjectRepository(RentPosition)
     private readonly positionRepo: Repository<RentPosition>,
+    @InjectRepository(Booking)
+    private readonly bookingRepo: Repository<Booking>,
   ) {}
 
   async create(dto: CreateRentSessionDto): Promise<RentSession> {
@@ -96,9 +99,19 @@ export class RentSessionsService {
     if (dto.status) {
       update.status = dto.status;
       if (dto.status === RentSessionStatus.ENDED) {
-        update.endedAt = new Date();
+        const now = new Date();
+        update.endedAt = now;
         update.nextLocationAt = null;
         update.trackingPaused = false;
+
+        // Propagate early return to the booking so the frontend reflects the
+        // actual end time instead of the originally scheduled one.
+        if (session.bookingId) {
+          const booking = await this.bookingRepo.findOne({ where: { id: session.bookingId } });
+          if (booking && now < booking.endDateTime) {
+            await this.bookingRepo.update(session.bookingId, { endDateTime: now });
+          }
+        }
       }
     }
     if (dto.trackingPaused !== undefined) {
