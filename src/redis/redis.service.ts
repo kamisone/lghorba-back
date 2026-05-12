@@ -6,6 +6,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private _client: Redis;
 
+  // This client is used for cache, idempotency keys, MFA OTPs, and rate limiting.
+  // Recommended: maxmemory-policy allkeys-lru (stale cache can be evicted safely).
+  // BullMQ jobs use a separate connection — see BullModule.forRootAsync in app.module.ts.
   onModuleInit(): void {
     this._client = new Redis({
       host:     process.env.REDIS_HOST     ?? 'localhost',

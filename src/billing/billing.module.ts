@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { GcsModule } from '../gcs/gcs.module';
+import { DlqModule } from '../dlq/dlq.module';
 import { Booking } from '../bookings/booking.entity';
 import { Invoice } from './invoice.entity';
 import { InvoiceLine } from './invoice-line.entity';
@@ -19,6 +20,7 @@ import { BillingBookingListener } from './billing-booking.listener';
     TypeOrmModule.forFeature([Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, Booking]),
     BullModule.registerQueue({ name: INVOICE_QUEUE }),
     GcsModule,
+    DlqModule,
   ],
   controllers: [InvoicesAdminController],
   providers: [

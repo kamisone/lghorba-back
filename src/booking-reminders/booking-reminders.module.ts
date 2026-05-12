@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { DlqModule } from '../dlq/dlq.module';
 import { Booking } from '../bookings/booking.entity';
 import { SmsModule } from '../sms/sms.module';
 import { BOOKING_REMINDER_QUEUE } from './booking-reminders.constants';
@@ -16,6 +17,7 @@ import { ReminderSettingsController } from './reminder-settings.controller';
   imports: [
     TypeOrmModule.forFeature([NotificationSettings, ReminderLog, Booking]),
     BullModule.registerQueue({ name: BOOKING_REMINDER_QUEUE }),
+    DlqModule,
     SmsModule,
   ],
   controllers: [ReminderSettingsController],

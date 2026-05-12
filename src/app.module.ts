@@ -23,6 +23,7 @@ import { BookingExpirationModule } from './bookings/booking-expiration.module';
 import { PaymentsModule } from './payments/payments.module';
 import { CarsModule } from './cars/cars.module';
 import { RedisModule } from './redis/redis.module';
+import { DlqModule } from './dlq/dlq.module';
 import { RentPosition } from './rent-sessions/rent-position.entity';
 import { RentSession } from './rent-sessions/rent-session.entity';
 import { RentSessionsModule } from './rent-sessions/rent-sessions.module';
@@ -92,17 +93,22 @@ config();
     ]),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
+    // 3.6 — BullMQ uses its own Redis connection (BULLMQ_REDIS_*).
+    // For minimal separation, set BULLMQ_REDIS_DB=1 (different logical DB from the
+    // cache/idempotency Redis at DB 0). For full isolation, point BULLMQ_REDIS_HOST
+    // to a dedicated Redis instance with maxmemory-policy noeviction.
     BullModule.forRootAsync({
       useFactory: () => ({
         connection: {
-          host:     process.env.REDIS_HOST     ?? 'localhost',
-          port:     Number(process.env.REDIS_PORT ?? 6379),
-          password: process.env.REDIS_PASSWORD  ?? undefined,
-          db:       Number(process.env.REDIS_DB  ?? 0),
+          host:     process.env.BULLMQ_REDIS_HOST     ?? process.env.REDIS_HOST     ?? 'localhost',
+          port:     Number(process.env.BULLMQ_REDIS_PORT ?? process.env.REDIS_PORT ?? 6379),
+          password: process.env.BULLMQ_REDIS_PASSWORD ?? process.env.REDIS_PASSWORD ?? undefined,
+          db:       Number(process.env.BULLMQ_REDIS_DB  ?? 1),
         },
       }),
     }),
     RedisModule,
+    DlqModule,
     SmsModule,
     AuthModule,
     AdminsModule,

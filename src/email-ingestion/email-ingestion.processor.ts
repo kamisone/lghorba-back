@@ -1,14 +1,17 @@
 import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
+import { DlqService } from '../dlq/dlq.service';
 import { EMAIL_INGESTION_QUEUE, EmailIngestionService, ProcessEmailJobData } from './email-ingestion.service';
 
 @Processor(EMAIL_INGESTION_QUEUE)
-export class EmailIngestionProcessor extends WorkerHost {
+export class EmailIngestionProcessor extends DlqAwareWorker {
+  protected readonly queueName = EMAIL_INGESTION_QUEUE;
   private readonly logger = new Logger(EmailIngestionProcessor.name);
 
-  constructor(private readonly ingestionService: EmailIngestionService) {
-    super();
+  constructor(dlqService: DlqService, private readonly ingestionService: EmailIngestionService) {
+    super(dlqService);
   }
 
   async process(job: Job): Promise<void> {

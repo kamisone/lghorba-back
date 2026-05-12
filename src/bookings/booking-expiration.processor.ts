@@ -1,7 +1,9 @@
 import { Inject, Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import Stripe = require('stripe');
+import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
+import { DlqService } from '../dlq/dlq.service';
 import { BookingsService } from './bookings.service';
 import { BOOKING_EXPIRATION_QUEUE } from './booking-expiration.constants';
 import { STRIPE_CLIENT } from '../payments/stripe.provider';
@@ -11,14 +13,16 @@ export interface BookingExpirationJobData {
 }
 
 @Processor(BOOKING_EXPIRATION_QUEUE)
-export class BookingExpirationProcessor extends WorkerHost {
+export class BookingExpirationProcessor extends DlqAwareWorker {
+  protected readonly queueName = BOOKING_EXPIRATION_QUEUE;
   private readonly logger = new Logger(BookingExpirationProcessor.name);
 
   constructor(
+    dlqService: DlqService,
     private readonly bookingsService: BookingsService,
     @Inject(STRIPE_CLIENT) private readonly stripe: Stripe.Stripe,
   ) {
-    super();
+    super(dlqService);
   }
 
   async process(job: Job<BookingExpirationJobData>): Promise<void> {

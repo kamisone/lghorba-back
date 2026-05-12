@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { DlqModule } from '../dlq/dlq.module';
 import { Car } from '../cars/car.entity';
 import { SmsModule } from '../sms/sms.module';
 import { GuestToken } from './entities/guest-token.entity';
@@ -15,6 +16,7 @@ import { GuestTokensAdminController } from './guest-tokens.admin.controller';
   imports: [
     TypeOrmModule.forFeature([GuestToken, GuestTokenAuditLog, Car]),
     BullModule.registerQueue({ name: GUEST_ACTIONS_QUEUE }),
+    DlqModule,
     SmsModule,
   ],
   controllers: [GuestAccessController, GuestTokensAdminController],

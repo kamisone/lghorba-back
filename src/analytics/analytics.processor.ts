@@ -1,19 +1,23 @@
 import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
+import { Processor, InjectQueue } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { Cron } from '@nestjs/schedule';
+import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
+import { DlqService } from '../dlq/dlq.service';
 import { AnalyticsService } from './analytics.service';
 import { ANALYTICS_QUEUE } from './analytics.constants';
 
 @Processor(ANALYTICS_QUEUE)
-export class AnalyticsProcessor extends WorkerHost {
+export class AnalyticsProcessor extends DlqAwareWorker {
+  protected readonly queueName = ANALYTICS_QUEUE;
   private readonly logger = new Logger(AnalyticsProcessor.name);
 
   constructor(
+    dlqService: DlqService,
     private readonly analyticsService: AnalyticsService,
     @InjectQueue(ANALYTICS_QUEUE) private readonly queue: Queue,
   ) {
-    super();
+    super(dlqService);
   }
 
   async process(job: Job): Promise<void> {

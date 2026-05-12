@@ -1,8 +1,10 @@
 import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Job } from 'bullmq';
 import { Repository } from 'typeorm';
+import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
+import { DlqService } from '../dlq/dlq.service';
 import { Booking, CANCELLED_STATUSES } from '../bookings/booking.entity';
 import { SmsService } from '../sms/sms.service';
 import { ReminderLog, ReminderStatus } from './reminder-log.entity';
@@ -17,10 +19,12 @@ import { NotificationSettings } from './notification-settings.entity';
 import type { BookingReminderJobData } from './reminder-scheduler.service';
 
 @Processor(BOOKING_REMINDER_QUEUE)
-export class BookingReminderProcessor extends WorkerHost {
+export class BookingReminderProcessor extends DlqAwareWorker {
+  protected readonly queueName = BOOKING_REMINDER_QUEUE;
   private readonly logger = new Logger(BookingReminderProcessor.name);
 
   constructor(
+    dlqService: DlqService,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
     @InjectRepository(ReminderLog)
@@ -28,7 +32,7 @@ export class BookingReminderProcessor extends WorkerHost {
     private readonly settingsService: ReminderSettingsService,
     private readonly smsService: SmsService,
   ) {
-    super();
+    super(dlqService);
   }
 
   async process(job: Job<BookingReminderJobData>): Promise<void> {

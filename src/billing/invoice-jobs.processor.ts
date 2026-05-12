@@ -1,20 +1,24 @@
 import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
+import { DlqService } from '../dlq/dlq.service';
 import { InvoiceService, INVOICE_QUEUE, InvoiceJobData, PdfJobData, EmailJobData } from './invoice.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { InvoiceEmailService } from './invoice-email.service';
 
 @Processor(INVOICE_QUEUE)
-export class InvoiceJobsProcessor extends WorkerHost {
+export class InvoiceJobsProcessor extends DlqAwareWorker {
+  protected readonly queueName = INVOICE_QUEUE;
   private readonly logger = new Logger(InvoiceJobsProcessor.name);
 
   constructor(
+    dlqService: DlqService,
     private readonly invoiceService: InvoiceService,
     private readonly pdfService: InvoicePdfService,
     private readonly emailService: InvoiceEmailService,
   ) {
-    super();
+    super(dlqService);
   }
 
   async process(job: Job): Promise<void> {

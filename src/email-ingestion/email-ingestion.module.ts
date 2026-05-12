@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DlqModule } from '../dlq/dlq.module';
 import { IngestedEmail } from './entities/ingested-email.entity';
 import { Car } from '../cars/car.entity';
 import { BookingsModule } from '../bookings/bookings.module';
@@ -15,6 +16,7 @@ import { GetaroundEmailParser } from './parsers/getaround-email-parser';
   imports: [
     TypeOrmModule.forFeature([IngestedEmail, Car]),
     BullModule.registerQueue({ name: EMAIL_INGESTION_QUEUE }),
+    DlqModule,
     BookingsModule,
   ],
   controllers: [EmailIngestionAdminController],

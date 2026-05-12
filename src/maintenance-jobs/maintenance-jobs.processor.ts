@@ -1,11 +1,11 @@
 import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Processor, InjectQueue } from '@nestjs/bullmq';
+import { Job, Queue } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
+import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
+import { DlqService } from '../dlq/dlq.service';
 import { FLEET_MAINTENANCE_QUEUE } from './maintenance-jobs.constants';
 import { MaintenanceRecord } from '../maintenance/entities/maintenance-record.entity';
 import { MaintenanceType } from '../maintenance/entities/maintenance-type.entity';
@@ -16,10 +16,12 @@ import { MaintenanceService } from '../maintenance/maintenance.service';
 interface MileageThresholdJob { carId: string; currentKm: number }
 
 @Processor(FLEET_MAINTENANCE_QUEUE)
-export class MaintenanceJobsProcessor extends WorkerHost {
+export class MaintenanceJobsProcessor extends DlqAwareWorker {
+  protected readonly queueName = FLEET_MAINTENANCE_QUEUE;
   private readonly logger = new Logger(MaintenanceJobsProcessor.name);
 
   constructor(
+    dlqService: DlqService,
     @InjectRepository(MaintenanceRecord)
     private readonly maintenanceRepo: Repository<MaintenanceRecord>,
     @InjectRepository(MaintenanceType)
@@ -31,7 +33,7 @@ export class MaintenanceJobsProcessor extends WorkerHost {
     private readonly healthService: VehicleHealthService,
     private readonly maintenanceService: MaintenanceService,
   ) {
-    super();
+    super(dlqService);
   }
 
   async process(job: Job): Promise<void> {

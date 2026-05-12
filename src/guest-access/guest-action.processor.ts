@@ -1,15 +1,18 @@
 import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
+import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
+import { DlqService } from '../dlq/dlq.service';
 import { CarControlService } from './car-control.service';
 import { GUEST_ACTIONS_QUEUE, GuestActionJobData } from './guest-token.service';
 
 @Processor(GUEST_ACTIONS_QUEUE)
-export class GuestActionProcessor extends WorkerHost {
+export class GuestActionProcessor extends DlqAwareWorker {
+  protected readonly queueName = GUEST_ACTIONS_QUEUE;
   private readonly logger = new Logger(GuestActionProcessor.name);
 
-  constructor(private readonly carControl: CarControlService) {
-    super();
+  constructor(dlqService: DlqService, private readonly carControl: CarControlService) {
+    super(dlqService);
   }
 
   async process(job: Job<GuestActionJobData>): Promise<void> {
