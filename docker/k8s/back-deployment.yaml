@@ -57,6 +57,11 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: JWT_SECRET
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: JWT_REFRESH_SECRET
             - name: ADMIN_EMAIL
               valueFrom:
                 secretKeyRef:

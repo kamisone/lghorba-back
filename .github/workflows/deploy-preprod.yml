@@ -66,6 +66,7 @@ jobs:
             --from-literal TYPEORM_PASSWORD=${{ secrets.TYPEORM_PASSWORD }} \
             --from-literal TYPEORM_DATABASE=${{ secrets.TYPEORM_DATABASE }} \
             --from-literal JWT_SECRET=${{ secrets.JWT_SECRET }} \
+            --from-literal JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }} \
             --from-literal ADMIN_EMAIL=${{ secrets.ADMIN_EMAIL }} \
             --from-literal ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }} \
             --from-literal GCS_BUCKET_NAME=${{ secrets.GCS_BUCKET_NAME }} \
