@@ -5,6 +5,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
+import { LoggerModule } from 'nestjs-pino';
+import { HealthModule } from './health/health.module';
 import { Admin } from './admins/admin.entity';
 import { AdminsModule } from './admins/admins.module';
 import { AuthModule } from './auth/auth.module';
@@ -73,6 +75,7 @@ import { BookingRemindersModule } from './booking-reminders/booking-reminders.mo
 import { PlatformSettings } from './platform-settings/platform-settings.entity';
 import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { DateTimeModule } from './date-time/date-time.module';
+import { ErrorCollectorModule } from './common/error-collector/error-collector.module';
 
 import { config } from 'dotenv';
 
@@ -140,6 +143,21 @@ config();
     BookingRemindersModule,
     PlatformSettingsModule,
     DateTimeModule,
+    ErrorCollectorModule,
+    HealthModule,
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level:     process.env.LOG_LEVEL ?? (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
+        transport: process.env.NODE_ENV !== 'production'
+          ? { target: 'pino-pretty', options: { colorize: true, translateTime: 'SYS:HH:MM:ss', ignore: 'pid,hostname' } }
+          : undefined,
+        redact:    ['req.headers.authorization', 'req.headers.cookie'],
+        serializers: {
+          req: (req) => ({ method: req.method, url: req.url }),
+          res: (res) => ({ statusCode: res.statusCode }),
+        },
+      },
+    }),
   ],
   controllers: [SmsController],
   providers: [
