@@ -21,6 +21,6 @@ export class RentPosition {
   @Column({ type: 'text', nullable: true })
   rawMessage: string | null;
 
-  @Column({ type: 'timestamp' })
+  @Column({ type: 'timestamp with time zone' })
   recordedAt: Date;
 }

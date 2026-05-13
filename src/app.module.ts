@@ -70,6 +70,9 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { NotificationSettings } from './booking-reminders/notification-settings.entity';
 import { ReminderLog } from './booking-reminders/reminder-log.entity';
 import { BookingRemindersModule } from './booking-reminders/booking-reminders.module';
+import { PlatformSettings } from './platform-settings/platform-settings.entity';
+import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
+import { DateTimeModule } from './date-time/date-time.module';
 
 import { config } from 'dotenv';
 
@@ -84,7 +87,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -135,6 +138,8 @@ config();
     AnalyticsModule,
     PromotionsModule,
     BookingRemindersModule,
+    PlatformSettingsModule,
+    DateTimeModule,
   ],
   controllers: [SmsController],
   providers: [

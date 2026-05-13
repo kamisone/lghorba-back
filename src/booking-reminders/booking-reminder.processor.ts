@@ -7,6 +7,7 @@ import { DlqAwareWorker } from '../dlq/dlq-aware.worker';
 import { DlqService } from '../dlq/dlq.service';
 import { Booking, CANCELLED_STATUSES } from '../bookings/booking.entity';
 import { SmsService } from '../sms/sms.service';
+import { DateTimeService } from '../date-time/date-time.service';
 import { ReminderLog, ReminderStatus } from './reminder-log.entity';
 import { ReminderSettingsService } from './reminder-settings.service';
 import {
@@ -31,6 +32,7 @@ export class BookingReminderProcessor extends DlqAwareWorker {
     private readonly logRepo: Repository<ReminderLog>,
     private readonly settingsService: ReminderSettingsService,
     private readonly smsService: SmsService,
+    private readonly dateTimeService: DateTimeService,
   ) {
     super(dlqService);
   }
@@ -206,12 +208,7 @@ export class BookingReminderProcessor extends DlqAwareWorker {
   // ── Template vars ─────────────────────────────────────────────────────────
 
   private buildTemplateVars(booking: Booking, minutesBefore: number): Record<string, string> {
-    const fmt = (d: Date) =>
-      d.toLocaleString('fr-FR', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-        timeZone: 'Europe/Paris',
-      });
+    const fmt = (d: Date) => this.dateTimeService.format(d, 'fr-FR');
 
     const car  = booking.car;
     const user = booking.user;

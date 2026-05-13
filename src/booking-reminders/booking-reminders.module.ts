@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { DlqModule } from '../dlq/dlq.module';
+import { DateTimeModule } from '../date-time/date-time.module';
 import { Booking } from '../bookings/booking.entity';
 import { SmsModule } from '../sms/sms.module';
 import { BOOKING_REMINDER_QUEUE } from './booking-reminders.constants';
@@ -19,6 +20,7 @@ import { ReminderSettingsController } from './reminder-settings.controller';
     BullModule.registerQueue({ name: BOOKING_REMINDER_QUEUE }),
     DlqModule,
     SmsModule,
+    DateTimeModule,
   ],
   controllers: [ReminderSettingsController],
   providers: [

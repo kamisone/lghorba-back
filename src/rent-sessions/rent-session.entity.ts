@@ -51,13 +51,13 @@ export class RentSession {
   @CreateDateColumn()
   startedAt: Date;
 
-  @Column({ type: 'timestamp', nullable: true })
+  @Column({ type: 'timestamp with time zone', nullable: true })
   endedAt: Date | null;
 
-  @Column({ type: 'timestamp', nullable: true, default: null })
+  @Column({ type: 'timestamp with time zone', nullable: true, default: null })
   lastLocationRequestedAt: Date | null;
 
-  @Column({ type: 'timestamp', nullable: true, default: null })
+  @Column({ type: 'timestamp with time zone', nullable: true, default: null })
   nextLocationAt: Date | null;
 
   @OneToMany(() => RentPosition, (pos) => pos.session)

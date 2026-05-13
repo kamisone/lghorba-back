@@ -6,6 +6,7 @@ import { RentPosition } from '../rent-sessions/rent-position.entity';
 import { Booking } from '../bookings/booking.entity';
 import { Car } from '../cars/car.entity';
 import { RedisService } from '../redis/redis.service';
+import { DateTimeService } from '../date-time/date-time.service';
 import { CACHE_TTL, cacheKey } from './analytics.constants';
 
 export type Period = '7d' | '30d' | '90d';
@@ -93,6 +94,7 @@ export class AnalyticsService {
     @InjectRepository(Car)
     private readonly carRepo: Repository<Car>,
     private readonly redis: RedisService,
+    private readonly dateTimeService: DateTimeService,
   ) {}
 
   // ── Cache helpers ──────────────────────────────────────────────────────────
@@ -282,10 +284,11 @@ export class AnalyticsService {
 
   private async computeUtilization(period: Period): Promise<UtilizationResult> {
     const from = this.periodStart(period);
+    const tz   = this.dateTimeService.timezone;
 
     const rows = await this.bookingRepo
       .createQueryBuilder('b')
-      .select(`DATE(b."startDateTime" AT TIME ZONE 'UTC')`, 'day')
+      .select(`DATE(b."startDateTime" AT TIME ZONE '${tz}')`, 'day')
       .addSelect('b.source', 'source')
       .addSelect('COUNT(b.id)', 'count')
       .addSelect('COALESCE(SUM(b.totalEarning), 0)', 'revenue')
@@ -295,7 +298,7 @@ export class AnalyticsService {
       )
       .where('b.startDateTime >= :from', { from })
       .andWhere('b.status != :cancelled', { cancelled: 'cancelled' })
-      .groupBy(`DATE(b."startDateTime" AT TIME ZONE 'UTC'), b.source`)
+      .groupBy(`DATE(b."startDateTime" AT TIME ZONE '${tz}'), b.source`)
       .orderBy('day', 'ASC')
       .getRawMany<{ day: string; source: string; count: string; revenue: string; avgDurationDays: string }>();
 
@@ -329,13 +332,12 @@ export class AnalyticsService {
       sourceBreakdown[src] = (sourceBreakdown[src] ?? 0) + count;
     }
 
-    // Fill in missing days with zeros
+    // Fill in missing days with zeros — use business-TZ calendar date for consistency
     const days = this.periodDays(period);
     const dailyStats: DayStat[] = [];
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().slice(0, 10);
+      const d = new Date(Date.now() - i * 86_400_000);
+      const dateStr = this.dateTimeService.toLocalDT(d).slice(0, 10);
       dailyStats.push(dayMap.get(dateStr) ?? { date: dateStr, bookings: 0, revenue: 0, sources: {} });
     }
 
