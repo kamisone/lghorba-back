@@ -83,7 +83,9 @@ export class TuroEmailParser implements ProviderEmailParser {
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&#\d+;/g, ' ')
-      .replace(/\s{2,}/g, ' ')
+      // Collapse horizontal whitespace only — preserve structural \n from </div>, </p>, <br>
+      // so labeled date patterns (d[eé]but\s*[:\n]+) can still match.
+      .replace(/[^\S\n]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n');
   }
 
@@ -184,8 +186,8 @@ export class TuroEmailParser implements ProviderEmailParser {
       const d = parseDateString(m[1]);
       if (d) results.push(d);
     }
-    // French long form
-    const fr = body.matchAll(/(\d{1,2}\s+[a-zéèêîôûùàâäë]+\.?\s+\d{4}\s+(?:à\s+)?\d{1,2}h\d{2})/gi);
+    // French long form — accept both "12h00" and "12:00" (Turo prose uses colon)
+    const fr = body.matchAll(/(\d{1,2}\s+[a-zéèêîôûùàâäë]+\.?\s+\d{4}\s+(?:à\s+)?\d{1,2}[h:]\d{2})/gi);
     for (const m of fr) {
       const d = parseDateString(m[1]);
       if (d && !results.includes(d)) results.push(d);

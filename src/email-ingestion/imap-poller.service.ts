@@ -64,14 +64,15 @@ export class ImapPollerService implements OnApplicationShutdown {
     try {
       await client.mailboxOpen('INBOX');
 
-      // Build search: unseen emails from known provider senders
-      const searchCriteria: import('imapflow').SearchObject = {
-        seen: false,
-        or: PROVIDER_SENDERS.map(addr => ({ from: addr })) as any,
-      };
-
-      const rawUids = await client.search(searchCriteria, { uid: true });
-      const uids: number[] = Array.isArray(rawUids) ? rawUids : [];
+      // Search each provider separately — privateemail's Dovecot rejects compound
+      // `UID SEARCH UNSEEN OR FROM x FROM y` with BAD ("Command failed"). One
+      // SEARCH per sender is simpler and universally supported.
+      const uidSet = new Set<number>();
+      for (const sender of PROVIDER_SENDERS) {
+        const result = await client.search({ seen: false, from: sender }, { uid: true });
+        if (Array.isArray(result)) result.forEach(uid => uidSet.add(uid));
+      }
+      const uids = [...uidSet];
       this.logger.log(`Found ${uids.length} unread provider email(s)`);
 
       for (const uid of uids) {
@@ -99,8 +100,6 @@ export class ImapPollerService implements OnApplicationShutdown {
         this.logger.warn(`Empty source for UID ${uid}`);
         return;
       }
-
-      this.logger.log(msg);
 
       const parsed = await simpleParser(msg.source as Buffer);
       const messageId  = (parsed.messageId ?? `uid-${uid}-${Date.now()}`).replace(/[<>]/g, '');

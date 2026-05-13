@@ -67,8 +67,9 @@ function parseFrench(raw: string): string | null {
   const s = raw.trim().toLowerCase().replace(/\./g, '');
 
   // "15 février 2025 à 10h00" or "samedi 15 février 2025 à 10h00"
+  // Also accepts "15 mai 2026 12:00" (Turo prose uses colon, not h)
   const longFr = s.match(
-    /(?:\w+\s+)?(\d{1,2})\s+([a-zéèêîôûùàâäë]+)\s+(\d{4})\s+(?:à\s+)?(\d{1,2})h(\d{2})/,
+    /(?:\w+\s+)?(\d{1,2})\s+([a-zéèêîôûùàâäë]+)\s+(\d{4})\s+(?:à\s+)?(\d{1,2})[h:](\d{2})/,
   );
   if (longFr) {
     const [, d, mName, y, h, m] = longFr;
