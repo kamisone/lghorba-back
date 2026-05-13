@@ -21,6 +21,7 @@ import { isTransientDbError, withRetry } from '../common/utils/retry.util';
 import { UsersService } from '../users/users.service';
 import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
 import { Booking, BookingSource, BookingStatus, CANCELLED_STATUSES } from './booking.entity';
+import { assertValidTransition, isValidTransition } from './booking-state-machine';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { PromotionsService } from '../promotions/promotions.service';
 import { CreateBookingAdminDto } from './dto/create-booking-admin.dto';
@@ -457,6 +458,12 @@ export class BookingsService {
       return;
     }
     if (booking.status === BookingStatus.CONFIRMED) return; // idempotent
+    if (!isValidTransition(booking.status, BookingStatus.CONFIRMED)) {
+      this.logger.warn(
+        `confirmByPaymentIntent: invalid transition ${booking.status} → confirmed for booking ${booking.id} — skipping`,
+      );
+      return;
+    }
     booking.status = BookingStatus.CONFIRMED;
     await this.bookingRepo.save(booking);
     this.eventEmitter.emit(
@@ -473,6 +480,12 @@ export class BookingsService {
     const booking = await this.bookingRepo.findOne({ where: { paymentIntentId } });
     if (!booking) return;
     if (CANCELLED_STATUSES.includes(booking.status as typeof CANCELLED_STATUSES[number])) return; // idempotent
+    if (!isValidTransition(booking.status, BookingStatus.CANCELLED)) {
+      this.logger.warn(
+        `cancelByPaymentIntent: invalid transition ${booking.status} → cancelled for booking ${booking.id} — skipping`,
+      );
+      return;
+    }
     booking.status = BookingStatus.CANCELLED;
     booking.cancelledAt = new Date();
     await this.bookingRepo.save(booking);
@@ -696,7 +709,10 @@ export class BookingsService {
     if (dto.startDateTime)      booking.startDateTime     = new Date(dto.startDateTime);
     if (dto.endDateTime)        booking.endDateTime       = new Date(dto.endDateTime);
     if (dto.source)             booking.source            = dto.source as BookingSource;
-    if (dto.status)             booking.status            = dto.status as BookingStatus;
+    if (dto.status) {
+      assertValidTransition(booking.status, dto.status as BookingStatus);
+      booking.status = dto.status as BookingStatus;
+    }
     if (userId !== undefined)   booking.userId            = userId;
     if (dto.reservationNumber !== undefined) booking.reservationNumber = dto.reservationNumber ?? null;
     if (dto.totalEarning      !== undefined) booking.totalEarning      = dto.totalEarning != null ? Number(dto.totalEarning) : null;
