@@ -109,7 +109,8 @@ export class RentSessionsService {
         if (session.bookingId) {
           const booking = await this.bookingRepo.findOne({ where: { id: session.bookingId } });
           if (booking && now < booking.endDateTime) {
-            await this.bookingRepo.update(session.bookingId, { endDateTime: now });
+            booking.endDateTime = now;
+            await this.bookingRepo.save(booking);
           }
         }
       }

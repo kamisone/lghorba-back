@@ -444,7 +444,10 @@ export class BookingsService {
   }
 
   async setPaymentIntentId(bookingId: string, paymentIntentId: string): Promise<void> {
-    await this.bookingRepo.update(bookingId, { paymentIntentId });
+    const booking = await this.bookingRepo.findOne({ where: { id: bookingId } });
+    if (!booking) return;
+    booking.paymentIntentId = paymentIntentId;
+    await this.bookingRepo.save(booking);
   }
 
   async confirmByPaymentIntent(paymentIntentId: string): Promise<void> {
@@ -454,7 +457,8 @@ export class BookingsService {
       return;
     }
     if (booking.status === BookingStatus.CONFIRMED) return; // idempotent
-    await this.bookingRepo.update(booking.id, { status: BookingStatus.CONFIRMED });
+    booking.status = BookingStatus.CONFIRMED;
+    await this.bookingRepo.save(booking);
     this.eventEmitter.emit(
       BookingEvents.CONFIRMED,
       new BookingConfirmedEvent(booking.id, paymentIntentId, {
@@ -469,10 +473,9 @@ export class BookingsService {
     const booking = await this.bookingRepo.findOne({ where: { paymentIntentId } });
     if (!booking) return;
     if (CANCELLED_STATUSES.includes(booking.status as typeof CANCELLED_STATUSES[number])) return; // idempotent
-    await this.bookingRepo.update(booking.id, {
-      status: BookingStatus.CANCELLED,
-      cancelledAt: new Date(),
-    });
+    booking.status = BookingStatus.CANCELLED;
+    booking.cancelledAt = new Date();
+    await this.bookingRepo.save(booking);
     this.eventEmitter.emit(
       BookingEvents.CANCELLED,
       new BookingCancelledEvent(booking.id, paymentIntentId),
@@ -690,20 +693,19 @@ export class BookingsService {
       ? await this.resolveUser(dto)
       : undefined;
 
-    const update: Partial<Booking> = {};
-    if (dto.startDateTime)      update.startDateTime     = new Date(dto.startDateTime);
-    if (dto.endDateTime)        update.endDateTime       = new Date(dto.endDateTime);
-    if (dto.source)             update.source            = dto.source as BookingSource;
-    if (dto.status)             update.status            = dto.status as BookingStatus;
-    if (userId !== undefined)   update.userId            = userId;
-    if (dto.reservationNumber !== undefined) update.reservationNumber = dto.reservationNumber ?? null;
-    if (dto.totalEarning      !== undefined) update.totalEarning      = dto.totalEarning != null ? Number(dto.totalEarning) : null;
-    if (dto.color             !== undefined) update.color             = dto.color             ?? null;
-    if (dto.autoStartTracking !== undefined) update.autoStartTracking = dto.autoStartTracking;
-    if (dto.gpsStopMode       !== undefined) update.gpsStopMode       = dto.gpsStopMode;
+    if (dto.startDateTime)      booking.startDateTime     = new Date(dto.startDateTime);
+    if (dto.endDateTime)        booking.endDateTime       = new Date(dto.endDateTime);
+    if (dto.source)             booking.source            = dto.source as BookingSource;
+    if (dto.status)             booking.status            = dto.status as BookingStatus;
+    if (userId !== undefined)   booking.userId            = userId;
+    if (dto.reservationNumber !== undefined) booking.reservationNumber = dto.reservationNumber ?? null;
+    if (dto.totalEarning      !== undefined) booking.totalEarning      = dto.totalEarning != null ? Number(dto.totalEarning) : null;
+    if (dto.color             !== undefined) booking.color             = dto.color             ?? null;
+    if (dto.autoStartTracking !== undefined) booking.autoStartTracking = dto.autoStartTracking;
+    if (dto.gpsStopMode       !== undefined) booking.gpsStopMode       = dto.gpsStopMode;
 
-    await this.bookingRepo.update(id, update);
-    const updated = await this.findBooking(id);
+    await this.bookingRepo.save(booking);
+    const updated = await this.findBooking(booking.id);
 
     const datesChanged = dto.startDateTime || dto.endDateTime;
     const statusChanged = dto.status;
