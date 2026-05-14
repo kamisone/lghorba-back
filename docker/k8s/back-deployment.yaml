@@ -22,6 +22,11 @@ spec:
             requests:
               cpu: 200m
           env:
+            - name: ALLOWED_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: ALLOWED_ORIGINS 
             - name: BACK_PORT
               valueFrom:
                 secretKeyRef:
