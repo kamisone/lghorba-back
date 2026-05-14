@@ -76,6 +76,11 @@ import { PlatformSettings } from './platform-settings/platform-settings.entity';
 import { PlatformSettingsModule } from './platform-settings/platform-settings.module';
 import { DateTimeModule } from './date-time/date-time.module';
 import { ErrorCollectorModule } from './common/error-collector/error-collector.module';
+import { SupportModule } from './support/support.module';
+import { SupportConversation } from './support/entities/support-conversation.entity';
+import { SupportMessage } from './support/entities/support-message.entity';
+import { SupportNotificationLog } from './support/entities/support-notification-log.entity';
+import { SupportAuditLog } from './support/entities/support-audit-log.entity';
 
 import { config } from 'dotenv';
 
@@ -90,7 +95,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -144,6 +149,7 @@ config();
     PlatformSettingsModule,
     DateTimeModule,
     ErrorCollectorModule,
+    SupportModule,
     HealthModule,
     LoggerModule.forRoot({
       pinoHttp: {
