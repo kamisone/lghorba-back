@@ -43,7 +43,7 @@ export class InvoicePdfService {
       const doc    = new PDFDocument({ size: 'A4', margin: MARGIN, autoFirstPage: true });
       const chunks: Buffer[] = [];
       doc.on('data',  c => chunks.push(c));
-      doc.on('end',   () => resolve(Buffer.concat(chunks)));
+      doc.on('end',   () => resolve(Buffer.concat(chunks as Uint8Array[])));
       doc.on('error', reject);
 
       this.render(doc, invoice);

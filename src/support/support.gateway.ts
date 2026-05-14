@@ -63,7 +63,8 @@ export class SupportGateway implements OnGatewayConnection, OnGatewayDisconnect 
         socket.data.adminId    = payload.sub;
         socket.data.adminEmail = payload.email;
         await socket.join('admin');
-        socket.emit('connected', { role: 'admin' });
+        const unreadConvsCount = await this.convService.countConvsWithUnread();
+        socket.emit('connected', { role: 'admin', unreadConvsCount });
         this.logger.log(`Admin ${payload.email} connected [${socket.id}]`);
       } catch {
         socket.emit('error', { code: 'AUTH_INVALID' });
@@ -73,19 +74,24 @@ export class SupportGateway implements OnGatewayConnection, OnGatewayDisconnect 
     }
 
     // ── Guest (signed short-lived ticket containing guestToken) ───────────────
+    // Conversation is NOT created here — it is created lazily on first message:send.
     if (guestTicket) {
       try {
         const payload = this.jwtService.verify<{ guestToken: string; purpose: string }>(guestTicket);
         if (payload.purpose !== 'guest-ws') throw new Error('wrong purpose');
 
-        const guestToken = payload.guestToken;
-        const { conversation } = await this.convService.bootstrap(guestToken);
+        const guestToken   = payload.guestToken;
+        const conversation = await this.convService.getByGuestToken(guestToken);
 
-        socket.data.guestToken     = guestToken;
-        socket.data.conversationId = conversation.id;
-        await socket.join(`conv:${conversation.id}`);
-        socket.emit('connected', { role: 'guest', conversationId: conversation.id });
-        this.logger.log(`Guest connected conv=${conversation.id} [${socket.id}]`);
+        socket.data.guestToken = guestToken;
+        if (conversation) {
+          socket.data.conversationId = conversation.id;
+          await socket.join(`conv:${conversation.id}`);
+          this.logger.log(`Guest connected conv=${conversation.id} [${socket.id}]`);
+        } else {
+          this.logger.log(`Guest connected (no conversation yet) [${socket.id}]`);
+        }
+        socket.emit('connected', { role: 'guest', conversationId: conversation?.id ?? null });
       } catch {
         socket.emit('error', { code: 'AUTH_INVALID' });
         socket.disconnect(true);
@@ -109,12 +115,39 @@ export class SupportGateway implements OnGatewayConnection, OnGatewayDisconnect 
     @ConnectedSocket() socket: Socket,
     @MessageBody() data: { content: string; clientId?: string; guestName?: string },
   ): Promise<{ ok: boolean; message?: unknown; clientId?: string; error?: string }> {
-    if (!socket.data.conversationId) return { ok: false, error: 'NOT_JOINED' };
-    if (!checkRate(socket.id))       return { ok: false, error: 'RATE_LIMITED' };
+    if (!socket.data.guestToken) return { ok: false, error: 'NOT_JOINED' };
+    if (!checkRate(socket.id))   return { ok: false, error: 'RATE_LIMITED' };
 
     const content = sanitize(data?.content ?? '');
     if (!content) return { ok: false, error: 'EMPTY_MESSAGE' };
 
+    // ── First message: create conversation lazily ──────────────────────────────
+    if (!socket.data.conversationId) {
+      try {
+        const { conversation, message } = await this.convService.createConversationWithFirstMessage(
+          socket.data.guestToken,
+          data.guestName,
+          content,
+          data.clientId,
+        );
+        socket.data.conversationId = conversation.id;
+        await socket.join(`conv:${conversation.id}`);
+
+        this.server.to('admin').emit('conversation:new', conversation);
+        this.server.to(`conv:${conversation.id}`).emit('message:new', message);
+        this.server.to('admin').emit('conversation:update', {
+          id:               conversation.id,
+          unreadAdminCount: conversation.unreadAdminCount,
+          lastMessageAt:    conversation.lastMessageAt,
+          status:           conversation.status,
+        });
+        return { ok: true, message, clientId: data.clientId };
+      } catch {
+        return { ok: false, error: 'SERVER_ERROR' };
+      }
+    }
+
+    // ── Existing conversation ──────────────────────────────────────────────────
     try {
       const message = await this.convService.addMessage(
         socket.data.conversationId,
@@ -126,12 +159,20 @@ export class SupportGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
       const conv = await this.convService.getByGuestToken(socket.data.guestToken);
 
+      // Persist guest name if it is newly provided and not yet stored
+      const nameUpdate: Record<string, unknown> = {};
+      if (data.guestName && conv && !conv.guestName) {
+        await this.convService.updateGuestName(socket.data.conversationId, data.guestName);
+        nameUpdate.guestName = data.guestName;
+      }
+
       this.server.to(`conv:${socket.data.conversationId}`).emit('message:new', message);
       this.server.to('admin').emit('conversation:update', {
         id:               socket.data.conversationId,
         unreadAdminCount: conv?.unreadAdminCount ?? 1,
         lastMessageAt:    message.createdAt,
         status:           conv?.status,
+        ...nameUpdate,
       });
 
       return { ok: true, message, clientId: data.clientId };

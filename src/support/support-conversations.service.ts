@@ -44,22 +44,16 @@ export class SupportConversationsService {
 
   // ── Guest bootstrap ────────────────────────────────────────────────────────
 
+  // Returns existing conversation + history. Never creates a new conversation.
   async bootstrap(
     guestToken: string,
     guestName?: string,
     since?: string,
-  ): Promise<{ conversation: SupportConversation; messages: SupportMessage[] }> {
-    let conversation = await this.convRepo.findOne({ where: { guestToken } });
+  ): Promise<{ conversation: SupportConversation | null; messages: SupportMessage[] }> {
+    const conversation = await this.convRepo.findOne({ where: { guestToken } });
+    if (!conversation) return { conversation: null, messages: [] };
 
-    if (!conversation) {
-      conversation = await this.convRepo.save(
-        this.convRepo.create({
-          guestToken,
-          guestName: guestName ?? null,
-          status: ConversationStatus.WAITING_ADMIN,
-        }),
-      );
-    } else if (guestName && !conversation.guestName) {
+    if (guestName && !conversation.guestName) {
       await this.convRepo.update(conversation.id, { guestName });
       conversation.guestName = guestName;
     }
@@ -76,6 +70,38 @@ export class SupportConversationsService {
 
     const messages = await qb.getMany();
     return { conversation, messages };
+  }
+
+  // Creates a new conversation and its first message atomically.
+  // Called by the WebSocket gateway on the guest's first message:send event.
+  async createConversationWithFirstMessage(
+    guestToken: string,
+    guestName: string | undefined,
+    content: string,
+    clientId?: string,
+  ): Promise<{ conversation: SupportConversation; message: SupportMessage & { clientId?: string } }> {
+    const conversation = await this.convRepo.save(
+      this.convRepo.create({
+        guestToken,
+        guestName: guestName ?? null,
+        status:    ConversationStatus.WAITING_ADMIN,
+      }),
+    );
+    const message = await this.addMessage(conversation.id, SenderType.GUEST, content, undefined, clientId);
+    const updated = await this.convRepo.findOneOrFail({ where: { id: conversation.id } });
+    return { conversation: updated, message };
+  }
+
+  async countConvsWithUnread(): Promise<number> {
+    const result = await this.convRepo
+      .createQueryBuilder('c')
+      .where('c."unreadAdminCount" > 0')
+      .getCount();
+    return result;
+  }
+
+  async updateGuestName(conversationId: string, guestName: string): Promise<void> {
+    await this.convRepo.update(conversationId, { guestName });
   }
 
   // ── Messaging ──────────────────────────────────────────────────────────────
