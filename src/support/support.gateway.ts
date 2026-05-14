@@ -326,6 +326,28 @@ export class SupportGateway implements OnGatewayConnection, OnGatewayDisconnect 
     return { ok: true, messages };
   }
 
+  // ── Typing indicator ──────────────────────────────────────────────────────
+
+  @SubscribeMessage('typing')
+  handleTyping(
+    @ConnectedSocket() socket: Socket,
+    @MessageBody() data: { isTyping: boolean; conversationId?: string },
+  ): void {
+    const isTyping = !!data?.isTyping;
+
+    if (socket.data.adminId) {
+      const cid = data?.conversationId;
+      if (!cid) return;
+      socket.to(`conv:${cid}`).emit('user:typing', { conversationId: cid, senderType: 'admin', isTyping });
+    } else if (socket.data.conversationId) {
+      socket.to('admin').emit('user:typing', {
+        conversationId: socket.data.conversationId,
+        senderType:     'guest',
+        isTyping,
+      });
+    }
+  }
+
   // ── Utility (REST layer pushes updates via this) ───────────────────────────
 
   emitConversationUpdate(conversationId: string, payload: Record<string, unknown>): void {
