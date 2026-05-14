@@ -59,6 +59,7 @@ jobs:
           script: |
             kubectl delete secret back-envs --ignore-not-found=true
             kubectl create secret generic back-envs \
+            --from-literal NODE_ENV=${{ secrets.NODE_ENV }} \
             --from-literal ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }} \
             --from-literal BACK_PORT=${{ secrets.BACK_PORT }} \
             --from-literal TYPEORM_HOST=${{ secrets.TYPEORM_HOST }} \
