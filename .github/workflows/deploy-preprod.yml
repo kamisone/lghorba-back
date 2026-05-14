@@ -61,6 +61,7 @@ jobs:
             kubectl create secret generic back-envs \
             --from-literal NODE_ENV=${{ secrets.NODE_ENV }} \
             --from-literal ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }} \
+            --from-literal APP_URL=${{ secrets.APP_URL }} \
             --from-literal BACK_PORT=${{ secrets.BACK_PORT }} \
             --from-literal TYPEORM_HOST=${{ secrets.TYPEORM_HOST }} \
             --from-literal TYPEORM_PORT=${{ secrets.TYPEORM_PORT }} \

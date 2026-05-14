@@ -51,11 +51,11 @@ export class SupportNotificationProcessor extends DlqAwareWorker {
       return;
     }
 
+    const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
     const message =
       `[Support] Nouveau message client\n` +
       `${conv.guestName ? `De: ${conv.guestName}\n` : ''}` +
-      `Conv: ${conversationId.slice(0, 8).toUpperCase()}\n` +
-      `/admin/support`;
+      `${appUrl}/admin/support?conv=${conversationId}`;
 
     try {
       for (const phone of settings.smsPhones) {
