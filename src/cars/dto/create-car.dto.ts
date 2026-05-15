@@ -53,6 +53,9 @@ export const CreateCarSchema = z.object({
   deliveryRadiusKm:     z.number().positive().nullish(),
   deliveryRadiusPrice:  z.number().min(0).nullish(),
   deliveryLocations:    z.array(DeliveryLocationSchema).max(10, 'Maximum 10 delivery locations').nullish(),
+  // ── Platform links
+  turoLink:       z.string().max(2048).regex(/^https?:\/\/.+/, 'Must be a valid URL').nullish(),
+  getaroundLink:  z.string().max(2048).regex(/^https?:\/\/.+/, 'Must be a valid URL').nullish(),
 });
 
 export type CreateCarDto = z.infer<typeof CreateCarSchema>;

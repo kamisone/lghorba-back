@@ -102,6 +102,14 @@ export class Car {
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   deliveryRadiusPrice: number | null;
 
+  /* ── External platform links ─────────────────────────────────────────── */
+
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  turoLink: string | null;
+
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  getaroundLink: string | null;
+
   @OneToMany(() => CarDeliveryLocation, (l) => l.car)
   deliveryLocations: Relation<CarDeliveryLocation>[];
 
