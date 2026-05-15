@@ -12,10 +12,11 @@ export const MILEAGE_RANGES = ['0-50', '50-100', '100-150', '150-200', '200-250'
 const DeliveryLocationSchema = z.object({
   label:    z.string().min(1).max(200),
   address:  z.string().min(1).max(500),
-  lat:      z.number().min(-90).max(90),
-  lng:      z.number().min(-180).max(180),
-  radiusKm: z.number().positive().max(50).optional(),
-  price:    z.number().min(0).nullish(),
+  // pg driver returns DECIMAL/NUMERIC as strings — coerce handles both string and number
+  lat:      z.coerce.number().min(-90).max(90),
+  lng:      z.coerce.number().min(-180).max(180),
+  radiusKm: z.coerce.number().positive().max(50).optional(),
+  price:    z.coerce.number().min(0).nullish(),
 });
 
 export type DeliveryLocationInput = z.infer<typeof DeliveryLocationSchema>;
