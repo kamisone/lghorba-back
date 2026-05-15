@@ -110,12 +110,21 @@ export class TuroEmailParser implements ProviderEmailParser {
 
   private extractGuestName(body: string, isEn: boolean, subject?: string): string | null {
     if (isEn) {
-      const m = body.match(/(?:booked by|driver|guest|renter)\s*:?\s*([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,50})/i);
+      // From subject: "Fwd: mazarine's trip with your Peugeot 208 is booked!"
+      if (subject) {
+        const subjectEn = subject.match(/^(?:fwd:\s+)*(.+?)'s\s+trip\s+(?:with\s+.+?\s+)?is\s+booked/i);
+        if (subjectEn) return subjectEn[1].trim();
+      }
+      // Guest names may be all-lowercase — relax first-char requirement
+      const m = body.match(/(?:booked by|driver|guest|renter)\s*:?\s*([a-zA-ZÀ-ÿ][a-zA-ZÀ-ÿ\s\-']{1,50})/i);
       if (m) return m[1].trim();
     } else {
-      // "Le voyage de Sophia est réservé" — guest name in subject
+      // Subject formats:
+      //   old: "Le voyage de Sophia est réservé"
+      //   new: "Le voyage de Karine dans votre Peugeot 208 est réservé."
+      // Stop at "dans" to avoid capturing the vehicle name.
       if (subject) {
-        const subjectGuest = subject.match(/^le\s+voyage\s+de\s+(.+?)\s+est\s+r[eé]serv[eé]/i);
+        const subjectGuest = subject.match(/^le\s+voyage\s+de\s+(.+?)\s+(?:est\s+r[eé]serv[eé]|dans\b)/i);
         if (subjectGuest) return subjectGuest[1].trim();
       }
       // "À propos de l'invité Sophia" in body
@@ -130,9 +139,13 @@ export class TuroEmailParser implements ProviderEmailParser {
   }
 
   private extractVehicleName(body: string, subject: string, isEn: boolean): string | null {
-    // From subject: "Your Peugeot 208 is booked" → "Peugeot 208"
-    const subjectEn = subject.match(/^your\s+(.+?)\s+is\s+booked/i);
+    // From subject: "Your Peugeot 208 is booked" or "Fwd: mazarine's trip with your Peugeot 208 is booked!"
+    const subjectEn = subject.match(/\byour\s+(.+?)\s+is\s+booked/i);
     if (subjectEn) return subjectEn[1].trim();
+
+    // "Le voyage de NAME dans votre Peugeot 208 est réservé." → "Peugeot 208"
+    const subjectDans = subject.match(/dans\s+votre\s+(.+?)\s+est\s+r[eé]serv[eé]/i);
+    if (subjectDans) return subjectDans[1].trim();
 
     // "Le voyage de NAME est réservé" — subject contains guest name, not vehicle; skip it
     if (!/^le\s+voyage\s+de\s+/i.test(subject)) {
@@ -140,8 +153,9 @@ export class TuroEmailParser implements ProviderEmailParser {
       if (subjectFr) return subjectFr[1].trim();
     }
 
-    // From body: "dans votre Citroen C1" or "Votre Citroen C1"
-    const votreFr = body.match(/(?:dans\s+)?votre\s+([A-ZÀÂÄÉ][A-Za-zÀ-ÿ0-9\s\-]{2,50})/i);
+    // From body: "dans votre Peugeot 208" — limit to make + model (no \s in char class
+    // to prevent greedy capture of surrounding sentence words)
+    const votreFr = body.match(/(?:dans\s+)?votre\s+([A-ZÀÂÄÉ][A-Za-zÀ-ÿ0-9\-]+(?:\s+[A-Za-zÀ-ÿ0-9\-]+){0,2})/i);
     if (votreFr) return votreFr[1].trim();
 
     // From body: "Vehicle:" or "Véhicule:" labels
@@ -199,12 +213,18 @@ export class TuroEmailParser implements ProviderEmailParser {
       const d = parseDateString(normalised);
       if (d && !results.includes(d)) results.push(d);
     }
+    // English long form: "Sunday, April 26, 2026, 5:30 AM" or "April 26, 2026 5:30 AM"
+    const en = body.matchAll(/((?:[A-Z][a-z]+,\s+)?[A-Z][a-z]+\s+\d{1,2},\s+\d{4},?\s+\d{1,2}:\d{2}\s*(?:AM|PM))/gi);
+    for (const m of en) {
+      const d = parseDateString(m[1]);
+      if (d && !results.includes(d)) results.push(d);
+    }
     return results;
   }
 
   private extractEarning(body: string, isEn: boolean): number | null {
     if (isEn) {
-      const m = body.match(/(?:you(?:'ll|'ll)?\s+earn|earnings?|revenue)\s*:?\s*\$?\s*([\d\s,.]+)/i);
+      const m = body.match(/(?:you(?:'ll|'ll)?\s+earn|earnings?|revenue)\s*:?\s*[$€]?\s*([\d\s,.]+)/i);
       if (m) return this.parseAmount(m[1]);
     } else {
       const m = body.match(/(?:vous\s+gagn|revenu|r[eé]mun[eé]ration)\w*\s*:?\s*([\d\s,.]+)\s*€/i);

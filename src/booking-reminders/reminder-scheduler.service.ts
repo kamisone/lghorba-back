@@ -34,7 +34,7 @@ export class ReminderSchedulerService {
   async scheduleReminder(booking: SchedulableBooking): Promise<void> {
     const settings = await this.settingsService.getSettings();
 
-    if (!settings.enabled) return;
+    if (!settings.enabled && !settings.emailEnabled) return;
     if (CANCELLED_STATUSES.includes(booking.status as typeof CANCELLED_STATUSES[number])) return;
 
     const fireAt = new Date(

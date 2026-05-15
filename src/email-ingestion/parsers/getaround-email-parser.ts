@@ -17,7 +17,7 @@ export class GetaroundEmailParser implements ProviderEmailParser {
   parse(email: RawEmail): ExtractedBooking {
     const body = this.flattenHtml(email.html) || email.text;
 
-    const reservationNumber = this.extractReservationNumber(body, email.subject);
+    const reservationNumber = this.extractReservationNumber(body, email.subject, email.html);
     const guestName         = this.extractGuestName(body);
     const vehicleName       = this.extractVehicleName(body);
     const { start, end }    = this.extractDates(body);
@@ -65,22 +65,34 @@ export class GetaroundEmailParser implements ProviderEmailParser {
       .replace(/\n{3,}/g, '\n\n');
   }
 
-  private extractReservationNumber(body: string, subject: string): string | null {
+  private extractReservationNumber(body: string, subject: string, rawHtml?: string): string | null {
+    // Highest priority: rental ID from the Getaround dashboard URL in raw HTML
+    if (rawHtml) {
+      const urlM = rawHtml.match(/\/(?:dashboard\/)?rentals\/(\d{5,12})/);
+      if (urlM) return urlM[1];
+    }
+
     const targets = [subject, body];
     for (const t of targets) {
-      // Getaround references: "B123456789", "#123456", "Réservation 123456"
+      // "B123456789", "#123456", or explicit label "Réservation 123456"
       const m = t.match(/\bB(\d{7,12})\b/)
-             ?? t.match(/#\s*([A-Z0-9]{5,12})\b/i)
-             ?? t.match(/(?:r[eé]f[eé]rence|r[eé]servation|location)\s*(?:n[o°]\.?|:)?\s*([A-Z0-9]{5,12})\b/i);
+             ?? t.match(/#\s*(\d{5,12})\b/)
+             ?? t.match(/(?:r[eé]f[eé]rence|r[eé]servation)\s*(?:n[o°]\.?|:)?\s*([A-Z0-9]{5,12})\b/i);
       if (m) return m[1].toUpperCase();
     }
     return null;
   }
 
   private extractGuestName(body: string): string | null {
-    // "Conducteur : Jean Dupont" or "Locataire : Jean Dupont"
-    const m = body.match(/(?:conducteur|locataire|client|driver)\s*[:\-]\s*([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,50})/i)
-           ?? body.match(/(?:réservé par|loué par)\s+([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,50})/i);
+    const m =
+      // "Conducteur : Jean Dupont" or "Locataire : Jean Dupont"
+      body.match(/(?:conducteur|locataire|client|driver)\s*[:\-]\s*([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,50})/i)
+      // "réservé par Jean Dupont"
+      ?? body.match(/(?:r[eé]serv[eé] par|lou[eé] par)\s+([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']{1,50})/i)
+      // "Félicitations, Jean Dupont a confirmé la location."
+      ?? body.match(/f[eé]licitations,\s+([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']+?)\s+a\s+confirm[eé]/i)
+      // Generic fallback: "Name a confirmé la location"
+      ?? body.match(/([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ\s\-']+?)\s+a\s+confirm[eé]\s+la\s+location/i);
     return m ? m[1].trim() : null;
   }
 

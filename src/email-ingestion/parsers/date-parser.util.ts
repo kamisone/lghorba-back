@@ -103,9 +103,9 @@ function parseFrench(raw: string): string | null {
 function parseEnglish(raw: string): string | null {
   const s = raw.trim().toLowerCase().replace(/\./g, '');
 
-  // "february 15, 2025 at 10:00 am"
+  // "february 15, 2025 at 10:00 am" or "sunday, april 26, 2026, 5:30 am" (comma after year)
   const longEn = s.match(
-    /(?:\w+,\s+)?([a-z]+)\s+(\d{1,2}),?\s+(\d{4})\s+(?:at\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?/,
+    /(?:\w+,\s+)?([a-z]+)\s+(\d{1,2}),?\s+(\d{4}),?\s+(?:at\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?/,
   );
   if (longEn) {
     const [, mName, d, y, hRaw, mi, ampm] = longEn;
@@ -123,6 +123,18 @@ function parseEnglish(raw: string): string | null {
   if (isoLike) {
     const [, y, mo, d, h, mi] = isoLike;
     return buildIso(+y, +mo, +d, +h, +mi);
+  }
+
+  // American M/D/YY[YY] — "4/26/26" or "4/26/2026 5:30 PM"
+  const usSlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})\s*(am|pm)?)?/);
+  if (usSlash) {
+    const [, mo, d, yRaw, hStr, miStr, ampm] = usSlash;
+    const y = +yRaw < 100 ? 2000 + +yRaw : +yRaw;
+    let h = hStr ? +hStr : 0;
+    const mi = miStr ? +miStr : 0;
+    if (ampm === 'pm' && h < 12) h += 12;
+    if (ampm === 'am' && h === 12) h = 0;
+    return buildIso(y, +mo, +d, h, mi);
   }
 
   return null;
