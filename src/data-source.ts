@@ -11,6 +11,7 @@ import { RentSession } from './rent-sessions/rent-session.entity';
 import { SmsMessage } from './sms/sms-message.entity';
 import { User } from './users/user.entity';
 
+import { VehicleFaq } from './vehicle-faqs/vehicle-faq.entity';
 import { config } from 'dotenv';
 
 config();
@@ -22,6 +23,6 @@ export const AppDataSource = new DataSource({
   username: process.env.TYPEORM_USERNAME || 'postgres',
   password: process.env.TYPEORM_PASSWORD || '',
   database: process.env.TYPEORM_DATABASE || 'lghorba',
-  entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Booking],
+  entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Booking, VehicleFaq],
   migrations: ['src/migrations/*.ts'],
 });

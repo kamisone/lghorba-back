@@ -81,6 +81,8 @@ import { SupportConversation } from './support/entities/support-conversation.ent
 import { SupportMessage } from './support/entities/support-message.entity';
 import { SupportNotificationLog } from './support/entities/support-notification-log.entity';
 import { SupportAuditLog } from './support/entities/support-audit-log.entity';
+import { VehicleFaq } from './vehicle-faqs/vehicle-faq.entity';
+import { VehicleFaqsModule } from './vehicle-faqs/vehicle-faqs.module';
 
 import { config } from 'dotenv';
 
@@ -95,7 +97,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
     }),
@@ -150,6 +152,7 @@ config();
     DateTimeModule,
     ErrorCollectorModule,
     SupportModule,
+    VehicleFaqsModule,
     HealthModule,
     LoggerModule.forRoot({
       pinoHttp: {
