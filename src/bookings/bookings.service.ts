@@ -239,6 +239,48 @@ export class BookingsService {
     return { available: true };
   }
 
+  // ── Public month calendar ─────────────────────────────────────────────────
+
+  async getMonthCalendar(carId: string, year: number, month: number): Promise<{
+    isHealthBlocked: boolean;
+    blockedRanges: { start: string; end: string; kind: 'booking' | 'admin_block' }[];
+  }> {
+    // month is 1-based; build inclusive YYYY-MM-DD bounds for the month
+    const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDayDate = new Date(Date.UTC(year, month, 0)); // day 0 of next month = last day of this month
+    const lastDay = lastDayDate.toISOString().slice(0, 10);
+
+    const [bookings, adminBlocks, healthStatus] = await Promise.all([
+      this.bookingRepo
+        .createQueryBuilder('b')
+        .select(['b.startDateTime', 'b.endDateTime'])
+        .where('b.carId = :carId', { carId })
+        .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+        .andWhere('b.startDateTime < :end', { end: `${lastDay}T23:59:59Z` })
+        .andWhere('b.endDateTime   > :start', { start: `${firstDay}T00:00:00Z` })
+        .getMany(),
+      this.availabilityService.findByCarAndRange(carId, firstDay, lastDay),
+      this.vehicleHealthService.getHealthStatus(carId),
+    ]);
+
+    const isHealthBlocked = healthStatus === 'unsafe' || healthStatus === 'critical';
+
+    const blockedRanges: { start: string; end: string; kind: 'booking' | 'admin_block' }[] = [
+      ...bookings.map(b => ({
+        start: b.startDateTime.toISOString().slice(0, 10),
+        end:   b.endDateTime.toISOString().slice(0, 10),
+        kind:  'booking' as const,
+      })),
+      ...adminBlocks.map(ab => ({
+        start: ab.startDate,
+        end:   ab.endDate,
+        kind:  'admin_block' as const,
+      })),
+    ];
+
+    return { isHealthBlocked, blockedRanges };
+  }
+
   // ── Create booking (public) — full concurrency protection ─────────────────
   //
   //  Layer 1 — Redis distributed lock  (per-car, reduces DB contention)

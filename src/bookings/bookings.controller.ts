@@ -44,6 +44,21 @@ export class PublicBookingsController {
   getBooking(@Param('id') id: string) {
     return this.svc.findBooking(id);
   }
+
+  @Public()
+  @Get('cars/:carId/calendar')
+  getMonthCalendar(
+    @Param('carId') carId: string,
+    @Query('year')  yearStr: string,
+    @Query('month') monthStr: string,
+  ) {
+    const year  = parseInt(yearStr,  10);
+    const month = parseInt(monthStr, 10);
+    if (!year || !month || month < 1 || month > 12) {
+      throw new BadRequestException('year and month (1-12) are required');
+    }
+    return this.svc.getMonthCalendar(carId, year, month);
+  }
 }
 
 // ── Admin routes ─────────────────────────────────────────────────────────────
