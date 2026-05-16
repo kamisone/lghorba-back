@@ -44,6 +44,7 @@ export class GetaroundEmailParser implements ProviderEmailParser {
       guestPhone: guestPhone ?? null,
       includedMileageKm: mileage,
       detectedLanguage: 'fr',
+      platformProfileUrl: null, // will be added when Getaround email is analysed
     };
   }
 

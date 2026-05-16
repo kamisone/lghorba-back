@@ -24,6 +24,9 @@ export class User {
   @Column({ type: 'date', nullable: true })
   getaroundJoinDate: string | null;
 
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  platformProfileUrl: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

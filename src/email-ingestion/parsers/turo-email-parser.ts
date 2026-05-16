@@ -29,14 +29,15 @@ export class TuroEmailParser implements ProviderEmailParser {
     const isEn   = this.detectLanguage(email) === 'en';
     const lang   = isEn ? 'en' : 'fr';
 
-    const reservationNumber = this.extractReservationNumber(body, email.subject);
-    const guestName         = this.extractGuestName(body, isEn, email.subject);
-    const vehicleName       = this.extractVehicleName(body, email.subject, isEn);
-    const { start, end }    = this.extractDates(body, isEn);
-    const totalEarning      = this.extractEarning(body, isEn);
-    const pickupLocation    = this.extractPickup(body, isEn);
-    const guestPhone        = this.extractPhone(body);
-    const mileage           = this.extractMileage(body, isEn);
+    const reservationNumber  = this.extractReservationNumber(body, email.subject);
+    const guestName          = this.extractGuestName(body, isEn, email.subject);
+    const vehicleName        = this.extractVehicleName(body, email.subject, isEn);
+    const { start, end }     = this.extractDates(body, isEn);
+    const totalEarning       = this.extractEarning(body, isEn);
+    const pickupLocation     = this.extractPickup(body, isEn);
+    const guestPhone         = this.extractPhone(body);
+    const mileage            = this.extractMileage(body, isEn);
+    const platformProfileUrl = this.extractProfileUrl(email.html);
 
     if (!reservationNumber) throw new Error('Could not extract Turo reservation number');
     if (!guestName)         throw new Error('Could not extract Turo guest name');
@@ -56,6 +57,7 @@ export class TuroEmailParser implements ProviderEmailParser {
       guestPhone: guestPhone ?? null,
       includedMileageKm: mileage,
       detectedLanguage: lang,
+      platformProfileUrl,
     };
   }
 
@@ -267,6 +269,14 @@ export class TuroEmailParser implements ProviderEmailParser {
       if (m) return parseInt(m[1].replace(/\s/g, ''), 10);
     }
     return null;
+  }
+
+  private extractProfileUrl(html: string): string | null {
+    // Matches both locale formats: fr/fr and us/en
+    //   https://turo.com/fr/fr/drivers/50580494
+    //   https://turo.com/us/en/drivers/54100707
+    const m = html.match(/https:\/\/turo\.com\/[a-z-]+\/[a-z-]+\/drivers\/\d+/i);
+    return m ? m[0] : null;
   }
 
   private parseAmount(raw: string): number | null {

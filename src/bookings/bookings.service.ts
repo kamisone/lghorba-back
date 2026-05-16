@@ -696,19 +696,20 @@ export class BookingsService {
     guestEmail?: string | null;
     turoJoinDate?: string | null;
     getaroundJoinDate?: string | null;
+    guestPlatformProfileUrl?: string | null;
     customerName?: string | null;
     customerPhone?: string | null;
     customerEmail?: string | null;
   }): Promise<string | null> {
     if (dto.userId) {
-      await this.usersService.patchPlatformDates(dto.userId, dto.turoJoinDate, dto.getaroundJoinDate, dto.guestEmail);
+      await this.usersService.patchPlatformDates(dto.userId, dto.turoJoinDate, dto.getaroundJoinDate, dto.guestEmail, dto.guestPlatformProfileUrl);
       return dto.userId;
     }
     if (dto.guestName && dto.guestNumber) {
       const user = await this.usersService.findOrCreate(
         dto.guestName,
         dto.guestNumber,
-        { email: dto.guestEmail, turoJoinDate: dto.turoJoinDate, getaroundJoinDate: dto.getaroundJoinDate },
+        { email: dto.guestEmail, turoJoinDate: dto.turoJoinDate, getaroundJoinDate: dto.getaroundJoinDate, platformProfileUrl: dto.guestPlatformProfileUrl },
       );
       return user.id;
     }

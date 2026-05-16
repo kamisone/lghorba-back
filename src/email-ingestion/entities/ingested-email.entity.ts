@@ -25,6 +25,7 @@ export interface ExtractedBooking {
   guestPhone: string | null;
   includedMileageKm: number | null;
   detectedLanguage: 'fr' | 'en';
+  platformProfileUrl: string | null;
 }
 
 @Entity('ingested_emails')

@@ -151,17 +151,18 @@ export class EmailIngestionService {
     // 5. Create booking
     try {
       const booking = await this.bookingsService.createBookingAdmin({
-        carId:             car.id,
-        startDateTime:     extracted.startDateTime,
-        endDateTime:       extracted.endDateTime,
-        source:            extracted.provider,
-        status:            'confirmed',
-        guestName:         extracted.guestName,
-        guestNumber:       extracted.guestPhone ?? '+33999999999',
-        reservationNumber: extracted.reservationNumber,
-        totalEarning:      extracted.totalEarning ?? undefined,
-        autoStartTracking: false,
-        gpsStopMode:       'auto',
+        carId:                    car.id,
+        startDateTime:            extracted.startDateTime,
+        endDateTime:              extracted.endDateTime,
+        source:                   extracted.provider,
+        status:                   'confirmed',
+        guestName:                extracted.guestName,
+        guestNumber:              extracted.guestPhone ?? '+33999999999',
+        reservationNumber:        extracted.reservationNumber,
+        totalEarning:             extracted.totalEarning ?? undefined,
+        guestPlatformProfileUrl:  extracted.platformProfileUrl ?? undefined,
+        autoStartTracking:        false,
+        gpsStopMode:              'auto',
       });
 
       await this.repo.update(id, { status: 'booked', bookingId: booking.id });

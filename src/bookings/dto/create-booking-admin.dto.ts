@@ -12,8 +12,9 @@ export const CreateBookingAdminBaseSchema = z.object({
   guestName:              z.string().nullish(),
   guestNumber:            z.string().nullish(),
   guestEmail:             z.string().email().nullish(),
-  turoJoinDate:           z.string().nullish(),
-  getaroundJoinDate:      z.string().nullish(),
+  turoJoinDate:              z.string().nullish(),
+  getaroundJoinDate:         z.string().nullish(),
+  guestPlatformProfileUrl:   z.string().max(2048).regex(/^https?:\/\/.+/, 'Must be a valid URL').nullish(),
   // Private booking customer (required when source='private', used to create/find User)
   customerName:           z.string().nullish(),
   customerPhone:          z.string().nullish(),

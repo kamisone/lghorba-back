@@ -137,6 +137,7 @@ export class UsersService {
         score: dto.score ?? null,
         turoJoinDate: dto.turoJoinDate ?? null,
         getaroundJoinDate: dto.getaroundJoinDate ?? null,
+        platformProfileUrl: dto.platformProfileUrl ?? null,
       }),
     );
 
@@ -193,6 +194,7 @@ export class UsersService {
     if (dto.score !== undefined) user.score = dto.score ?? null;
     if (dto.turoJoinDate !== undefined) user.turoJoinDate = dto.turoJoinDate ?? null;
     if (dto.getaroundJoinDate !== undefined) user.getaroundJoinDate = dto.getaroundJoinDate ?? null;
+    if (dto.platformProfileUrl !== undefined) user.platformProfileUrl = dto.platformProfileUrl ?? null;
     return this.repo.save(user);
   }
 
@@ -206,7 +208,7 @@ export class UsersService {
   async findOrCreate(
     name: string,
     phone: string,
-    extras?: { email?: string | null; turoJoinDate?: string | null; getaroundJoinDate?: string | null },
+    extras?: { email?: string | null; turoJoinDate?: string | null; getaroundJoinDate?: string | null; platformProfileUrl?: string | null },
   ): Promise<User> {
     const existing = await this.repo
       .createQueryBuilder('u')
@@ -218,6 +220,7 @@ export class UsersService {
       if (extras?.email) { existing.email = extras.email; changed = true; }
       if (extras?.turoJoinDate) { existing.turoJoinDate = extras.turoJoinDate; changed = true; }
       if (extras?.getaroundJoinDate) { existing.getaroundJoinDate = extras.getaroundJoinDate; changed = true; }
+      if (extras?.platformProfileUrl) { existing.platformProfileUrl = extras.platformProfileUrl; changed = true; }
       if (changed) await this.repo.save(existing);
       return existing;
     }
@@ -228,6 +231,7 @@ export class UsersService {
         email: extras?.email ?? null,
         turoJoinDate: extras?.turoJoinDate ?? null,
         getaroundJoinDate: extras?.getaroundJoinDate ?? null,
+        platformProfileUrl: extras?.platformProfileUrl ?? null,
       }),
     );
   }
@@ -237,6 +241,7 @@ export class UsersService {
     turoJoinDate?: string | null,
     getaroundJoinDate?: string | null,
     email?: string | null,
+    platformProfileUrl?: string | null,
   ): Promise<void> {
     const user = await this.repo.findOne({ where: { id } });
     if (!user) return;
@@ -244,6 +249,7 @@ export class UsersService {
     if (email) { user.email = email; changed = true; }
     if (turoJoinDate) { user.turoJoinDate = turoJoinDate; changed = true; }
     if (getaroundJoinDate) { user.getaroundJoinDate = getaroundJoinDate; changed = true; }
+    if (platformProfileUrl) { user.platformProfileUrl = platformProfileUrl; changed = true; }
     if (changed) await this.repo.save(user);
   }
 }

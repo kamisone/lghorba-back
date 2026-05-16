@@ -4,6 +4,7 @@ import { Admin } from './admins/admin.entity';
 import { Contact } from './contacts/contact.entity';
 import { CarPhoto } from './cars/car-photo.entity';
 import { Car } from './cars/car.entity';
+import { CarDeliveryLocation } from './cars/car-delivery-location.entity';
 import { CarPricing } from './cars/car-pricing.entity';
 import { Booking } from './bookings/booking.entity';
 import { RentPosition } from './rent-sessions/rent-position.entity';
@@ -23,6 +24,6 @@ export const AppDataSource = new DataSource({
   username: process.env.TYPEORM_USERNAME || 'postgres',
   password: process.env.TYPEORM_PASSWORD || '',
   database: process.env.TYPEORM_DATABASE || 'lghorba',
-  entities: [SmsMessage, Car, CarPhoto, CarPricing, RentSession, RentPosition, User, Admin, Contact, Booking, VehicleFaq],
+  entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Booking, VehicleFaq],
   migrations: ['src/migrations/*.ts'],
 });
