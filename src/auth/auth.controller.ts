@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthService } from './auth.service';
@@ -18,6 +18,11 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly mfaService: MfaService,
   ) {}
+
+  @Get('me')
+  me(@Request() req: { user: { id: number; email: string } }) {
+    return req.user;
+  }
 
   @Public()
   @Post('login')
