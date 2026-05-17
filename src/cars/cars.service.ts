@@ -176,11 +176,16 @@ export class CarsService {
           .getQuery()}`,
       )
       .andWhere(qb =>
+        // Block cars whose active session has no booking (unknown return time)
+        // or whose booking has already ended (late return). Cars with active sessions
+        // tied to an ongoing booking are already handled by the booking overlap filter above.
         `c.id NOT IN ${qb
           .subQuery()
           .select('rs.carId')
           .from(RentSession, 'rs')
+          .leftJoin(Booking, 'rsb', 'rsb.id = rs.bookingId')
           .where('rs.status = :active')
+          .andWhere('(rs.bookingId IS NULL OR rsb.endDateTime <= NOW())')
           .getQuery()}`,
       )
       .andWhere(qb =>
