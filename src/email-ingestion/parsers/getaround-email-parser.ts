@@ -19,7 +19,7 @@ export class GetaroundEmailParser implements ProviderEmailParser {
 
     const reservationNumber = this.extractReservationNumber(body, email.subject, email.html);
     const guestName         = this.extractGuestName(body);
-    const vehicleName       = this.extractVehicleName(body);
+    const vehicleName       = this.extractVehicleName(body, email.subject, email.html);
     const { start, end }    = this.extractDates(body);
     const totalEarning      = this.extractEarning(body);
     const pickupLocation    = this.extractPickupLocation(body);
@@ -97,8 +97,20 @@ export class GetaroundEmailParser implements ProviderEmailParser {
     return m ? m[1].trim() : null;
   }
 
-  private extractVehicleName(body: string): string | null {
-    // "Véhicule : Peugeot 208" or "Votre Renault Clio"
+  private extractVehicleName(body: string, subject?: string, rawHtml?: string): string | null {
+    // Subject format: "Peugeot 208 (DL914AP): location confirmée..."
+    if (subject) {
+      const m = subject.match(/^([A-ZÀÂÄÉ][a-zA-ZÀ-ÿ0-9\s]{2,40}?)\s*\([A-Z0-9]+\)/i);
+      if (m) return m[1].trim();
+    }
+
+    // Raw HTML: car image alt inside mail-card__image-container
+    if (rawHtml) {
+      const m = rawHtml.match(/mail-card__image-container[\s\S]{0,300}?alt="([^"]+)"/i);
+      if (m) return m[1].trim();
+    }
+
+    // Labelled patterns: "Véhicule : Peugeot 208" or "votre Renault Clio"
     const m = body.match(/(?:v[eé]hicule|voiture|car)\s*[:\-]\s*([A-ZÀÂÄÉ][^\n]{3,60})/i)
            ?? body.match(/votre\s+([A-ZÀÂÄÉ][a-zA-ZÀ-ÿ0-9\s]{2,40})/i);
     return m ? m[1].trim() : null;
