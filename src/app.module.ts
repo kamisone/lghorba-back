@@ -100,6 +100,7 @@ config();
       entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
+      migrationsTransactionMode: 'each',
       // TypeORM 0.3 serializes Date objects using local getHours() — forcing the
       // PostgreSQL session to UTC ensures the server and DB always agree on time,
       // regardless of the OS timezone of the Node.js process.

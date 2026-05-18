@@ -2,6 +2,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddBookingExpirationFields1777921000000 implements MigrationInterface {
   name = 'AddBookingExpirationFields1777921000000';
+  transaction = false; // ALTER TYPE ADD VALUE must autocommit before CREATE INDEX can reference the new value
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

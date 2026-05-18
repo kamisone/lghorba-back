@@ -1,6 +1,9 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export class AddPaymentFields1777302000000 implements MigrationInterface {
+  name = 'AddPaymentFields1777302000000';
+  transaction = false; // ALTER TYPE ADD VALUE must autocommit before subsequent DDL can use the value
+
   public async up(queryRunner: QueryRunner): Promise<void> {
     // ALTER TYPE ... ADD VALUE is non-transactional in PostgreSQL — safe to re-run with IF NOT EXISTS
     await queryRunner.query(`

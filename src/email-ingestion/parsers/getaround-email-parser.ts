@@ -104,10 +104,10 @@ export class GetaroundEmailParser implements ProviderEmailParser {
       if (m) return m[1].trim();
     }
 
-    // Raw HTML: car image alt inside mail-card__image-container
+    // Raw HTML: alt attribute on the car photo (class="mail-card__image-container" → img alt)
     if (rawHtml) {
-      const m = rawHtml.match(/mail-card__image-container[\s\S]{0,300}?alt="([^"]+)"/i);
-      if (m) return m[1].trim();
+      const m = rawHtml.match(/class="mail-card__image-container"[\s\S]{0,500}?<img\b[^>]*\balt="([^"]+)"/i);
+      if (m && m[1].trim()) return m[1].trim();
     }
 
     // Labelled patterns: "Véhicule : Peugeot 208" or "votre Renault Clio"

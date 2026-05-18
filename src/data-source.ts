@@ -26,4 +26,5 @@ export const AppDataSource = new DataSource({
   database: process.env.TYPEORM_DATABASE || 'lghorba',
   entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Booking, VehicleFaq],
   migrations: ['src/migrations/*.ts'],
+  migrationsTransactionMode: 'each', // allows per-migration transaction = false for ALTER TYPE ADD VALUE
 });
