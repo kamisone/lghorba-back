@@ -262,6 +262,8 @@ export class CarsService {
         vehicleCondition: car.vehicleCondition,
         basePricePerDay:  car.basePricePerDay,
         parkingAddress:   car.parkingAddress,
+        parkingLat:       car.parkingLat,
+        parkingLng:       car.parkingLng,
         deliveryEnabled:      car.deliveryEnabled,
         deliveryType:         car.deliveryType,
         deliveryRadiusKm:     car.deliveryRadiusKm,
