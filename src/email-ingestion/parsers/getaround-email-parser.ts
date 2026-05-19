@@ -20,7 +20,7 @@ export class GetaroundEmailParser implements ProviderEmailParser {
     const reservationNumber = this.extractReservationNumber(body, email.subject, email.html);
     const guestName         = this.extractGuestName(body);
     const vehicleName       = this.extractVehicleName(body, email.subject, email.html);
-    const { start, end }    = this.extractDates(body);
+    const { start, end }    = this.extractDates(body, email.html);
     const totalEarning      = this.extractEarning(body);
     const pickupLocation    = this.extractPickupLocation(body);
     const guestPhone        = this.extractPhone(body);
@@ -98,36 +98,62 @@ export class GetaroundEmailParser implements ProviderEmailParser {
   }
 
   private extractVehicleName(body: string, subject?: string, rawHtml?: string): string | null {
-    // Subject format: "Peugeot 208 (DL914AP): location confirmée..."
+    // 1. Subject: "Renault Mégane (DQ589PJ): location confirmée..." (no ^ anchor — subject may have prefix)
     if (subject) {
-      const m = subject.match(/^([A-ZÀÂÄÉ][a-zA-ZÀ-ÿ0-9\s]{2,40}?)\s*\([A-Z0-9]+\)/i);
+      const m = subject.match(/([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ0-9\s]{2,40}?)\s*\([A-Z0-9]{4,10}\)/i);
       if (m) return m[1].trim();
     }
 
-    // Raw HTML: alt attribute on the car photo (class="mail-card__image-container" → img alt)
     if (rawHtml) {
-      const m = rawHtml.match(/class="mail-card__image-container"[\s\S]{0,500}?<img\b[^>]*\balt="([^"]+)"/i);
-      if (m && m[1].trim()) return m[1].trim();
+      // 2. <body aria-label="Renault Mégane (DQ589PJ): location confirmée...">
+      const ariaM = rawHtml.match(/<body[^>]*\baria-label="([^"]+)"/i);
+      if (ariaM) {
+        const m = ariaM[1].match(/^([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ0-9\s]{2,40}?)\s*\(/i);
+        if (m) return m[1].trim();
+      }
+
+      // 3. Text immediately before <span class="car-plate-number"> inside mail-card__title
+      const plateM = rawHtml.match(/>([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ0-9\s\n\r]{2,60}?)\s*<span[^>]*car-plate-number/i);
+      if (plateM) {
+        const name = plateM[1].replace(/\s+/g, ' ').trim();
+        if (name.length >= 3) return name;
+      }
+
+      // 4. img alt near mail-card__image-container (extended range for heavy inline-style emails)
+      const imgM = rawHtml.match(/class="mail-card__image-container"[\s\S]{0,3000}?<img\b[^>]*\balt="([^"]{3,60})"/i);
+      if (imgM && imgM[1].trim()) return imgM[1].trim();
     }
 
-    // Labelled patterns: "Véhicule : Peugeot 208" or "votre Renault Clio"
-    const m = body.match(/(?:v[eé]hicule|voiture|car)\s*[:\-]\s*([A-ZÀÂÄÉ][^\n]{3,60})/i)
-           ?? body.match(/votre\s+([A-ZÀÂÄÉ][a-zA-ZÀ-ÿ0-9\s]{2,40})/i);
+    // 5. Labelled patterns in flattened body
+    const m = body.match(/(?:v[eé]hicule|voiture|car)\s*[:\-]\s*([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][^\n]{3,60})/i)
+           ?? body.match(/votre\s+([A-ZÀÂÄÉÈÊËÎÏÔÙÛÜŸ][a-zA-ZÀ-ÿ0-9\s]{2,40})/i);
     return m ? m[1].trim() : null;
   }
 
-  private extractDates(body: string): { start: string | null; end: string | null } {
+  private extractDates(body: string, rawHtml?: string): { start: string | null; end: string | null } {
     let start: string | null = null;
     let end: string | null   = null;
 
-    // "Début : lundi 15 février 2025 à 10h00"
-    const startM = body.match(/(?:d[eé]but|prise\s+en\s+charge|d[eé]part|du)\s*[:\-\n]+\s*([^\n]{5,80})/i);
-    const endM   = body.match(/(?:fin|retour|restitution|au)\s*[:\-\n]+\s*([^\n]{5,80})/i);
+    // 1. Prefer aria-label on <body> — it always contains the year.
+    //    "...location confirmée du dim 26 juil. 2026 à 20:00 au dim 02 août 2026 à 22:00"
+    if (rawHtml) {
+      const ariaM = rawHtml.match(/<body[^>]*\baria-label="([^"]+)"/i);
+      if (ariaM) {
+        const allDates = this.extractAllFrDates(ariaM[1]);
+        if (allDates[0]) start = allDates[0];
+        if (allDates[1]) end   = allDates[1];
+      }
+    }
 
-    if (startM) start = parseDateString(startM[1]);
-    if (endM)   end   = parseDateString(endM[1]);
+    // 2. Labelled patterns in flattened body: "Début : lundi 15 février 2025 à 10h00"
+    if (!start || !end) {
+      const startM = body.match(/(?:d[eé]but|prise\s+en\s+charge|d[eé]part|du)\s*[:\-\n]+\s*([^\n]{5,80})/i);
+      const endM   = body.match(/(?:fin|retour|restitution|au)\s*[:\-\n]+\s*([^\n]{5,80})/i);
+      if (!start && startM) start = parseDateString(startM[1]);
+      if (!end   && endM)   end   = parseDateString(endM[1]);
+    }
 
-    // Fallback: grab all French date strings
+    // 3. Fallback: scan body for any French date strings
     if (!start || !end) {
       const allDates = this.extractAllFrDates(body);
       if (!start && allDates[0]) start = allDates[0];
@@ -139,7 +165,7 @@ export class GetaroundEmailParser implements ProviderEmailParser {
 
   private extractAllFrDates(body: string): string[] {
     const results: string[] = [];
-    const re = /\d{1,2}\s+[a-zéèêîôûùàâäë]+\.?\s+\d{4}\s+(?:à\s+)?\d{1,2}h\d{2}/gi;
+    const re = /\d{1,2}\s+[a-zéèêîôûùàâäë]+\.?\s+\d{4}\s+(?:à\s+)?\d{1,2}[h:]\d{2}/gi;
     for (const m of body.matchAll(re)) {
       const d = parseDateString(m[0]);
       if (d) results.push(d);
