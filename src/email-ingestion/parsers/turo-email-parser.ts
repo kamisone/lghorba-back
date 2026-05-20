@@ -172,16 +172,16 @@ export class TuroEmailParser implements ProviderEmailParser {
     let end: string | null   = null;
 
     if (isEn) {
-      // "Pickup\nDate/time text" or "Trip start: date"
-      // Capture up to 3 lines: Turo HTML tables place the date and time in separate <td>/<tr>
-      // elements which flatten to separate lines (date on one line, time on the next).
-      const pickupM = body.match(/(?:pickup|trip\s+start|start)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,2})/i);
-      const returnM = body.match(/(?:return|trip\s+end|end)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,2})/i);
+      // Capture up to 9 lines: Turo HTML tables put the date in one <tr> and the time in the
+      // next <tr>. After flattenHtml each tag boundary produces a literal newline, so date and
+      // time can be separated by ~6 whitespace-only lines in the flattened body.
+      const pickupM = body.match(/(?:pickup|trip\s+start|start)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,8})/i);
+      const returnM = body.match(/(?:return|trip\s+end|end)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,8})/i);
       if (pickupM) start = parseDateString(pickupM[1].replace(/\n/g, ' '));
       if (returnM) end   = parseDateString(returnM[1].replace(/\n/g, ' '));
     } else {
-      const pickupM = body.match(/(?:prise\s+en\s+charge|d[eé]but\s+du\s+voyage|d[eé]but|d[eé]part)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,2})/i);
-      const returnM = body.match(/(?:retour|fin\s+du\s+voyage|fin|restitution)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,2})/i);
+      const pickupM = body.match(/(?:prise\s+en\s+charge|d[eé]but\s+du\s+voyage|d[eé]but|d[eé]part)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,8})/i);
+      const returnM = body.match(/(?:retour|fin\s+du\s+voyage|fin|restitution)\s*[:\n]+\s*([^\n]+(?:\n[^\n]+){0,8})/i);
       if (pickupM) start = parseDateString(pickupM[1].replace(/\n/g, ' '));
       if (returnM) end   = parseDateString(returnM[1].replace(/\n/g, ' '));
     }

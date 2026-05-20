@@ -77,20 +77,15 @@ function parseFrench(raw: string): string | null {
     if (month) return buildIso(+y, month, +d, +h, +m);
   }
 
-  // "15/02/2025 10:00" or "15-02-2025 10:00"
-  const slashFr = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+(\d{1,2}):(\d{2})/);
+  // "15/02/2025 10:00", "15-02-2025 10:00", or "15/02/2025 10h00" (French h separator)
+  const slashFr = s.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\s+(\d{1,2})[h:](\d{2})/);
   if (slashFr) {
     const [, d, mo, y, h, mi] = slashFr;
     return buildIso(+y, +mo, +d, +h, +mi);
   }
 
-  // "15/02/2025" bare date (no time) — default to 00:00
-  const slashDate = s.match(/^(\d{1,2})[\/\-](\d{2})[\/\-](\d{4})$/);
-  if (slashDate) {
-    const [, d, mo, y] = slashDate;
-    return buildIso(+y, +mo, +d, 0, 0);
-  }
-
+  // Bare date with no time — return null so callers fall back to richer patterns.
+  // Defaulting to 00:00 would silently create midnight bookings on parse failures.
   return null;
 }
 
@@ -125,13 +120,14 @@ function parseEnglish(raw: string): string | null {
     return buildIso(+y, +mo, +d, +h, +mi);
   }
 
-  // American M/D/YY[YY] — "4/26/26" or "4/26/2026 5:30 PM"
+  // American M/D/YY[YY] — "4/26/2026 5:30 PM" (time required; bare dates return null)
   const usSlash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+(\d{1,2}):(\d{2})\s*(am|pm)?)?/);
   if (usSlash) {
     const [, mo, d, yRaw, hStr, miStr, ampm] = usSlash;
+    if (!hStr) return null; // bare date without explicit time — let callers use a richer fallback
     const y = +yRaw < 100 ? 2000 + +yRaw : +yRaw;
-    let h = hStr ? +hStr : 0;
-    const mi = miStr ? +miStr : 0;
+    let h = +hStr;
+    const mi = +miStr;
     if (ampm === 'pm' && h < 12) h += 12;
     if (ampm === 'am' && h === 12) h = 0;
     return buildIso(y, +mo, +d, h, mi);
