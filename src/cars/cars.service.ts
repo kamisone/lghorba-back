@@ -9,6 +9,7 @@ import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.en
 import { TranslationsService } from '../translations/translations.service';
 import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
 import { VehicleHealthService } from '../vehicle-health/vehicle-health.service';
+import { Parking } from '../parkings/parking.entity';
 import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
@@ -32,6 +33,8 @@ export class CarsService {
     private readonly bookingRepo: Repository<Booking>,
     @InjectRepository(CarDeliveryLocation)
     private readonly deliveryLocationRepo: Repository<CarDeliveryLocation>,
+    @InjectRepository(Parking)
+    private readonly parkingRepo: Repository<Parking>,
     private readonly gcsService: GcsService,
     private readonly translationsService: TranslationsService,
     private readonly availabilityService: VehicleAvailabilityService,
@@ -317,9 +320,35 @@ export class CarsService {
     return Object.assign(car, { isCurrentlyRented: rentedCount > 0, isTrackingActive: trackingCount > 0 });
   }
 
+  private async resolveParkingFields(
+    dto: Pick<CreateCarDto, 'parkingId' | 'parkingAddress' | 'parkingLat' | 'parkingLng'>,
+  ): Promise<{ parkingId: string | null; parkingAddress: string | null; parkingLat: number | null; parkingLng: number | null }> {
+    if (dto.parkingId) {
+      const parking = await this.parkingRepo.findOne({ where: { id: dto.parkingId } });
+      if (!parking) throw new NotFoundException(`Parking ${dto.parkingId} not found`);
+      return {
+        parkingId:      parking.id,
+        parkingAddress: parking.address,
+        parkingLat:     parking.latitude,
+        parkingLng:     parking.longitude,
+      };
+    }
+    // parkingId explicitly null/undefined means "unassign"
+    if (dto.parkingId === null) {
+      return { parkingId: null, parkingAddress: null, parkingLat: null, parkingLng: null };
+    }
+    return {
+      parkingId:      dto.parkingId      ?? undefined as any,
+      parkingAddress: dto.parkingAddress ?? undefined as any,
+      parkingLat:     dto.parkingLat     ?? undefined as any,
+      parkingLng:     dto.parkingLng     ?? undefined as any,
+    };
+  }
+
   async create(dto: CreateCarDto): Promise<Car> {
-    const { deliveryLocations, ...carFields } = dto;
-    const car = await this.repo.save(this.repo.create(carFields));
+    const { deliveryLocations, parkingId, ...carFields } = dto;
+    const parkingResolved = await this.resolveParkingFields({ parkingId, ...carFields });
+    const car = await this.repo.save(this.repo.create({ ...carFields, ...parkingResolved }));
     if (deliveryLocations?.length) {
       await this.syncDeliveryLocations(car.id, deliveryLocations);
     }
@@ -328,8 +357,9 @@ export class CarsService {
 
   async update(id: string, dto: UpdateCarDto): Promise<CarWithRentStatus> {
     await this.findOne(id);
-    const { deliveryLocations, ...carFields } = dto;
-    await this.repo.update(id, carFields);
+    const { deliveryLocations, parkingId, ...carFields } = dto;
+    const parkingResolved = await this.resolveParkingFields({ parkingId, ...carFields });
+    await this.repo.update(id, { ...carFields, ...parkingResolved });
     if (deliveryLocations !== undefined) {
       await this.syncDeliveryLocations(id, deliveryLocations ?? []);
     }

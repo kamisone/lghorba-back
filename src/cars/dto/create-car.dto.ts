@@ -44,6 +44,7 @@ export const CreateCarSchema = z.object({
   mileage:          z.enum(MILEAGE_RANGES).nullish(),
   vehicleCondition: z.string().nullish(),
   // ── Parking
+  parkingId:        z.string().uuid().nullish(),
   parkingAddress:   z.string().max(500).nullish(),
   parkingLat:       z.number().min(-90).max(90).nullish(),
   parkingLng:       z.number().min(-180).max(180).nullish(),

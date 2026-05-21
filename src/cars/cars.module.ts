@@ -9,6 +9,7 @@ import { TranslationsModule } from '../translations/translations.module';
 import { UsersModule } from '../users/users.module';
 import { VehicleAvailabilityModule } from '../vehicle-availability/vehicle-availability.module';
 import { VehicleHealthModule } from '../vehicle-health/vehicle-health.module';
+import { Parking } from '../parkings/parking.entity';
 import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { CarPhoto } from './car-photo.entity';
 import { Car } from './car.entity';
@@ -18,7 +19,7 @@ import { PublicCarsController } from './public-cars.controller';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Car, CarPhoto, CarDeliveryLocation, RentSession, Booking]),
+    TypeOrmModule.forFeature([Car, CarPhoto, CarDeliveryLocation, RentSession, Booking, Parking]),
     MulterModule.register({
       storage: memoryStorage(),
       fileFilter: (_req, file, cb) => {

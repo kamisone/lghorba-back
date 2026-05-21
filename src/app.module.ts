@@ -83,6 +83,10 @@ import { SupportNotificationLog } from './support/entities/support-notification-
 import { SupportAuditLog } from './support/entities/support-audit-log.entity';
 import { VehicleFaq } from './vehicle-faqs/vehicle-faq.entity';
 import { VehicleFaqsModule } from './vehicle-faqs/vehicle-faqs.module';
+import { Parking } from './parkings/parking.entity';
+import { ParkingOwnerPhone } from './parkings/parking-owner-phone.entity';
+import { ParkingDocument } from './parkings/parking-document.entity';
+import { ParkingModule } from './parkings/parking.module';
 
 import { config } from 'dotenv';
 
@@ -97,7 +101,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, Parking, ParkingOwnerPhone, ParkingDocument],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
       migrationsTransactionMode: 'each',
@@ -158,6 +162,7 @@ config();
     ErrorCollectorModule,
     SupportModule,
     VehicleFaqsModule,
+    ParkingModule,
     HealthModule,
     LoggerModule.forRoot({
       pinoHttp: {

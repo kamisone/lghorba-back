@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
   Relation,
@@ -10,6 +11,7 @@ import {
 import { CarPricing } from './car-pricing.entity';
 import { CarDeliveryLocation } from './car-delivery-location.entity';
 import { Booking } from '../bookings/booking.entity';
+import type { Parking } from '../parkings/parking.entity';
 
 @Entity('cars')
 export class Car {
@@ -118,6 +120,14 @@ export class Car {
 
   @OneToMany(() => Booking, (b) => b.car)
   bookings: Relation<Booking>[];
+
+  /* ── Parking assignment ───────────────────────────────────────────────── */
+
+  @Column({ type: 'uuid', nullable: true })
+  parkingId: string | null;
+
+  @ManyToOne('Parking', { onDelete: 'SET NULL', nullable: true })
+  parking: Relation<Parking> | null;
 
   @CreateDateColumn()
   createdAt: Date;
