@@ -224,4 +224,9 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: IMAP_PASSWORD
+            - name: TURNSTILE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: TURNSTILE_SECRET_KEY
             

@@ -98,7 +98,8 @@ jobs:
             --from-literal IMAP_HOST=${{ secrets.IMAP_HOST }} \
             --from-literal IMAP_PORT=${{ secrets.IMAP_PORT }} \
             --from-literal IMAP_USER=${{ secrets.IMAP_USER }} \
-            --from-literal IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }}
+            --from-literal IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }} \
+            --from-literal TURNSTILE_SECRET_KEY=${{ secrets.TURNSTILE_SECRET_KEY }}
             kubectl apply -f /srv/k8s/back
             minikube addons enable ingress
             echo ${{ secrets.SERVER_SECOND_USER_PASSWORD }} | sudo -S systemctl restart nginx
