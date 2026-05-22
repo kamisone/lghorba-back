@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Incident, IncidentSeverity, IncidentType } from './entities/incident.entity';
 import { IncidentPhoto } from './entities/incident-photo.entity';
 import { GcsService } from '../gcs/gcs.service';
+import { AssetUrlService } from '../asset-url/asset-url.service';
 import { VehicleHealthService } from '../vehicle-health/vehicle-health.service';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class IncidentsService {
     @InjectRepository(IncidentPhoto)
     private readonly photoRepo: Repository<IncidentPhoto>,
     private readonly gcsService: GcsService,
+    private readonly assetUrlService: AssetUrlService,
     private readonly healthService: VehicleHealthService,
   ) {}
 
@@ -102,20 +104,21 @@ export class IncidentsService {
       this.photoRepo.create({ incidentId, gcsObjectName: objectName, caption: caption ?? null }),
     );
 
-    const url = await this.gcsService.signedUrl(objectName);
+    const url = await this.assetUrlService.resolve(objectName);
     return { id: photo.id, url };
   }
 
   async getPhotoUrl(photoId: string): Promise<string> {
     const photo = await this.photoRepo.findOne({ where: { id: photoId } });
     if (!photo) throw new NotFoundException(`IncidentPhoto ${photoId} not found`);
-    return this.gcsService.signedUrl(photo.gcsObjectName);
+    return this.assetUrlService.resolve(photo.gcsObjectName);
   }
 
   async removePhoto(photoId: string): Promise<void> {
     const photo = await this.photoRepo.findOne({ where: { id: photoId } });
     if (!photo) throw new NotFoundException(`IncidentPhoto ${photoId} not found`);
     await this.gcsService.delete(photo.gcsObjectName);
+    await this.assetUrlService.invalidate(photo.gcsObjectName);
     await this.photoRepo.delete(photoId);
   }
 

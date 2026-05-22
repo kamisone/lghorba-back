@@ -25,6 +25,7 @@ import { BookingExpirationModule } from './bookings/booking-expiration.module';
 import { PaymentsModule } from './payments/payments.module';
 import { CarsModule } from './cars/cars.module';
 import { RedisModule } from './redis/redis.module';
+import { AssetUrlModule } from './asset-url/asset-url.module';
 import { DlqModule } from './dlq/dlq.module';
 import { RentPosition } from './rent-sessions/rent-position.entity';
 import { RentSession } from './rent-sessions/rent-session.entity';
@@ -88,6 +89,10 @@ import { Parking } from './parkings/parking.entity';
 import { ParkingOwnerPhone } from './parkings/parking-owner-phone.entity';
 import { ParkingDocument } from './parkings/parking-document.entity';
 import { ParkingModule } from './parkings/parking.module';
+import { BlogPost } from './blog/entities/blog-post.entity';
+import { BlogCategory } from './blog/entities/blog-category.entity';
+import { BlogTag } from './blog/entities/blog-tag.entity';
+import { BlogModule } from './blog/blog.module';
 
 import { config } from 'dotenv';
 
@@ -102,7 +107,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument, BlogPost, BlogCategory, BlogTag],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
       migrationsTransactionMode: 'each',
@@ -132,6 +137,7 @@ config();
       }),
     }),
     RedisModule,
+    AssetUrlModule,
     DlqModule,
     SmsModule,
     AuthModule,
@@ -165,6 +171,7 @@ config();
     SupportModule,
     VehicleFaqsModule,
     ParkingModule,
+    BlogModule,
     HealthModule,
     LoggerModule.forRoot({
       pinoHttp: {

@@ -10,7 +10,7 @@ import { DataSource, Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Booking } from '../bookings/booking.entity';
-import { GcsService } from '../gcs/gcs.service';
+import { AssetUrlService } from '../asset-url/asset-url.service';
 import { Invoice, InvoiceStatus } from './invoice.entity';
 import { InvoiceLine } from './invoice-line.entity';
 import { TaxRate } from './tax-rate.entity';
@@ -50,7 +50,7 @@ export class InvoiceService {
     private readonly dataSource: DataSource,
     @InjectQueue(INVOICE_QUEUE)
     private readonly invoiceQueue: Queue,
-    private readonly gcsService: GcsService,
+    private readonly assetUrlService: AssetUrlService,
   ) {}
 
   // ── Queue entry point ────────────────────────────────────────────────────
@@ -286,7 +286,7 @@ export class InvoiceService {
     if (!invoice.pdfStoragePath) {
       throw new ConflictException('PDF not yet generated for this invoice');
     }
-    return this.gcsService.signedUrl(invoice.pdfStoragePath);
+    return this.assetUrlService.resolve(invoice.pdfStoragePath);
   }
 
   // ── Queries ───────────────────────────────────────────────────────────────

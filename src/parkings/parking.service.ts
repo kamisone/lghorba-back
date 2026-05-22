@@ -3,7 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Parking, ParkingStatus } from './parking.entity';
 import { ParkingOwnerPhone } from './parking-owner-phone.entity';
+import { ParkingDocument } from './parking-document.entity';
 import { Car } from '../cars/car.entity';
+import { AssetUrlService } from '../asset-url/asset-url.service';
 
 export interface CreateParkingDto {
   label: string;
@@ -44,7 +46,14 @@ export class ParkingService {
     private readonly phoneRepo: Repository<ParkingOwnerPhone>,
     @InjectRepository(Car)
     private readonly carRepo: Repository<Car>,
+    private readonly assetUrlService: AssetUrlService,
   ) {}
+
+  private async resolveDocumentUrls(docs: ParkingDocument[]): Promise<(ParkingDocument & { url: string })[]> {
+    if (!docs.length) return [];
+    const urlMap = await this.assetUrlService.resolveBatch(docs.map(d => d.gcsKey));
+    return docs.map(d => Object.assign(d, { url: urlMap.get(d.gcsKey) ?? '' }));
+  }
 
   async findAll(filters: ParkingFilters = {}): Promise<Parking[]> {
     const qb = this.parkingRepo.createQueryBuilder('p')
@@ -68,7 +77,13 @@ export class ParkingService {
       );
     }
 
-    return qb.getMany();
+    const parkings = await qb.getMany();
+    await Promise.all(parkings.map(async p => {
+      if (p.documents?.length) {
+        p.documents = await this.resolveDocumentUrls(p.documents) as any;
+      }
+    }));
+    return parkings;
   }
 
   async findOne(id: string): Promise<Parking & { cars: Car[] }> {
@@ -79,6 +94,10 @@ export class ParkingService {
       .getOne();
 
     if (!parking) throw new NotFoundException('Parking not found');
+
+    if (parking.documents?.length) {
+      parking.documents = await this.resolveDocumentUrls(parking.documents) as any;
+    }
 
     const cars = await this.carRepo.find({ where: { parkingId: id } });
 

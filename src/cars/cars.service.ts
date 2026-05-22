@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Booking, CANCELLED_STATUSES } from '../bookings/booking.entity';
 import { GcsService } from '../gcs/gcs.service';
+import { AssetUrlService } from '../asset-url/asset-url.service';
 import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
 import { TranslationsService } from '../translations/translations.service';
 import { VehicleAvailabilityService } from '../vehicle-availability/vehicle-availability.service';
@@ -36,6 +37,7 @@ export class CarsService {
     @InjectRepository(Parking)
     private readonly parkingRepo: Repository<Parking>,
     private readonly gcsService: GcsService,
+    private readonly assetUrlService: AssetUrlService,
     private readonly translationsService: TranslationsService,
     private readonly availabilityService: VehicleAvailabilityService,
     private readonly vehicleHealthService: VehicleHealthService,
@@ -393,7 +395,10 @@ export class CarsService {
 
   async setPhoto(id: string, file: Express.Multer.File): Promise<CarWithRentStatus> {
     const car = await this.findOne(id);
-    if (car.photo) await this.gcsService.delete(car.photo);
+    if (car.photo) {
+      await this.gcsService.delete(car.photo);
+      await this.assetUrlService.invalidate(car.photo);
+    }
     const objectName = `cars/${uuidv4()}${extname(file.originalname)}`;
     await this.gcsService.upload(file.buffer, objectName, file.mimetype);
     await this.repo.update(id, { photo: objectName });
@@ -401,7 +406,7 @@ export class CarsService {
   }
 
   getPhotoUrl(objectName: string): Promise<string> {
-    return this.gcsService.signedUrl(objectName);
+    return this.assetUrlService.resolve(objectName);
   }
 
   async removePhoto(id: string): Promise<CarWithRentStatus> {
@@ -427,7 +432,7 @@ export class CarsService {
   async getPhotoByIdUrl(carId: string, photoId: string): Promise<string> {
     const photo = await this.photoRepo.findOne({ where: { id: photoId, carId } });
     if (!photo) throw new NotFoundException(`Photo ${photoId} not found`);
-    return this.gcsService.signedUrl(photo.objectName);
+    return this.assetUrlService.resolve(photo.objectName);
   }
 
   async deletePhotoById(carId: string, photoId: string): Promise<void> {

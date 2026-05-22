@@ -38,4 +38,9 @@ export class GcsService {
       });
     return url;
   }
+
+  /** Public CDN URL — only valid when the GCS object has allUsers:objectViewer IAM. */
+  publicUrl(objectName: string): string {
+    return `https://storage.googleapis.com/${this.bucketName}/${objectName}`;
+  }
 }
