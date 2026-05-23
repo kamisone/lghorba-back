@@ -22,6 +22,7 @@ export class BlogPublicController {
     @Query('featured')   featured?: string,
     @Query('limit')      limit?: string,
     @Query('offset')     offset?: string,
+    @Query('lang')       lang?: string,
   ) {
     return this.postService.publicList({
       locale,
@@ -31,12 +32,13 @@ export class BlogPublicController {
       featured: featured === 'true' ? true : undefined,
       limit:    limit  ? Math.min(parseInt(limit,  10), 50) : undefined,
       offset:   offset ? parseInt(offset, 10) : undefined,
+      lang,
     });
   }
 
   @Get('posts/slug/:slug')
-  getBySlug(@Param('slug') slug: string) {
-    return this.postService.publicFindBySlug(slug);
+  getBySlug(@Param('slug') slug: string, @Query('lang') lang?: string) {
+    return this.postService.publicFindBySlug(slug, lang);
   }
 
   @Get('posts/:id/related')

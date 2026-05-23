@@ -1,0 +1,19 @@
+import {
+  Column, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn,
+} from 'typeorm';
+
+@Entity('shop_inventory_items')
+@Index(['variantId'], { unique: true })
+export class InventoryItem {
+  @PrimaryGeneratedColumn('uuid') id: string;
+
+  @Column({ type: 'uuid' }) variantId: string;
+  @Column({ type: 'uuid' }) productId: string;
+
+  @Column({ type: 'int', default: 0 }) available: number;
+  @Column({ type: 'int', default: 0 }) reserved: number;
+  @Column({ type: 'int', default: 0 }) incoming: number;
+  @Column({ type: 'int', default: 5 }) lowStockThreshold: number;
+
+  @UpdateDateColumn() updatedAt: Date;
+}

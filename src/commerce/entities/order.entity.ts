@@ -1,0 +1,71 @@
+import {
+  Column, CreateDateColumn, Entity, Index, JoinColumn,
+  ManyToOne, OneToMany, PrimaryGeneratedColumn, Relation, UpdateDateColumn,
+} from 'typeorm';
+import { UserPaymentMethod } from './user-payment-method.entity';
+import { ShippingMethod } from './shipping-method.entity';
+
+export type OrderStatus =
+  | 'draft' | 'pending' | 'awaiting_payment' | 'paid' | 'processing'
+  | 'shipped' | 'delivered' | 'cancelled' | 'refunded';
+
+@Entity('shop_orders')
+@Index(['status'])
+@Index(['customerEmail'])
+export class Order {
+  @PrimaryGeneratedColumn('uuid') id: string;
+
+  @Column({ type: 'varchar', length: 50, unique: true }) orderNumber: string;
+  @Column({ type: 'varchar', length: 20, default: 'pending' }) status: OrderStatus;
+
+  @Column({ type: 'uuid', nullable: true }) userId: string | null;
+  @Column({ type: 'uuid', nullable: true }) customerId: string | null;
+
+  @Column({ type: 'varchar', length: 300 })          customerEmail: string;
+  @Column({ type: 'varchar', length: 300, nullable: true }) customerName: string | null;
+  @Column({ type: 'varchar', length: 50, nullable: true })  customerPhone: string | null;
+
+  @Column({ type: 'jsonb' }) shippingAddressSnapshot: Record<string, string>;
+  @Column({ type: 'jsonb', nullable: true }) billingAddressSnapshot: Record<string, string> | null;
+
+  @Column({ type: 'int', default: 0 }) subtotalCents: number;
+  @Column({ type: 'int', default: 0 }) shippingCents: number;
+  @Column({ type: 'int', default: 0 }) categoryDiscountCents: number;
+  @Column({ type: 'int', default: 0 }) discountCents: number;
+  @Column({ type: 'int', default: 0 }) taxCents: number;
+  @Column({ type: 'int', default: 0 }) totalCents: number;
+
+  @Column({ type: 'jsonb', nullable: true }) pricingSnapshot: Record<string, unknown> | null;
+
+  @Column({ type: 'int', default: 1000 }) platformFeeBps: number;
+
+  @Column({ type: 'varchar', length: 100, nullable: true }) couponCode: string | null;
+  @Column({ type: 'uuid', nullable: true }) shippingMethodId: string | null;
+
+  @ManyToOne(() => ShippingMethod, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'shippingMethodId' })
+  shippingMethod: Relation<ShippingMethod> | null;
+
+  /** Saved payment method used for this order */
+  @Column({ type: 'uuid', nullable: true })
+  @Index()
+  paymentMethodId: string | null;
+
+  @ManyToOne(() => UserPaymentMethod, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'paymentMethodId' })
+  paymentMethod: Relation<UserPaymentMethod> | null;
+
+  @Column({ type: 'varchar', length: 100, nullable: true }) cartToken: string | null;
+  @Column({ type: 'varchar', length: 500, nullable: true }) paymentIntentId: string | null;
+  @Column({ type: 'timestamptz', nullable: true }) reservationExpiresAt: Date | null;
+  @Column({ type: 'text', nullable: true }) notes: string | null;
+
+  @OneToMany('OrderItem', 'order', { cascade: ['insert'] })
+  items: Relation<any>[];
+
+  @OneToMany('OrderStatusHistory', 'order', { cascade: ['insert'] })
+  statusHistory: Relation<any>[];
+
+  @CreateDateColumn() createdAt: Date;
+  @UpdateDateColumn() updatedAt: Date;
+}

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { z } from 'zod';
@@ -7,6 +7,8 @@ import { BlogPost, BlogPostStatus } from '../entities/blog-post.entity';
 import { BlogTag } from '../entities/blog-tag.entity';
 import { calculateReadingTime, slugify } from './blog-slug.util';
 import { AssetUrlService } from '../../asset-url/asset-url.service';
+import { TranslationsService } from '../../translations/translations.service';
+import { ET_BLOG_POST } from '../../commerce/shared/entity-types';
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -57,6 +59,7 @@ export interface PublicListFilter {
   featured?:   boolean;
   limit?:      number;
   offset?:     number;
+  lang?:       string;
 }
 
 @Injectable()
@@ -66,6 +69,7 @@ export class BlogPostService {
     @InjectRepository(BlogCategory) private readonly categoryRepo: Repository<BlogCategory>,
     @InjectRepository(BlogTag)      private readonly tagRepo:      Repository<BlogTag>,
     private readonly assetUrlService: AssetUrlService,
+    @Optional() private readonly translationsService: TranslationsService,
   ) {}
 
   private async enrichPost<T extends BlogPost>(post: T): Promise<T & { featuredImageUrl: string | null }> {
@@ -251,7 +255,7 @@ export class BlogPostService {
 
   // ── Public ────────────────────────────────────────────────────────────────
 
-  async publicList(filter: PublicListFilter = {}): Promise<{ items: BlogPost[]; total: number }> {
+  async publicList(filter: PublicListFilter = {}): Promise<{ items: any[]; total: number }> {
     const qb = this.postRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.categories', 'cat')
       .leftJoinAndSelect('p.tags', 'tag')
@@ -275,23 +279,31 @@ export class BlogPostService {
     const limit  = Math.min(filter.limit  ?? 12, 50);
     const offset = filter.offset ?? 0;
 
-    const items = await qb
+    const raw = await qb
       .orderBy('p.featured',    'DESC')
       .addOrderBy('p.publishedAt', 'DESC')
       .limit(limit)
       .offset(offset)
       .getMany();
 
-    return { items: await this.enrichPosts(items), total };
+    let items: any[] = await this.enrichPosts(raw);
+    if (filter.lang && this.translationsService) {
+      items = await this.translationsService.applyToEntities(items, ET_BLOG_POST, filter.lang);
+    }
+    return { items, total };
   }
 
-  async publicFindBySlug(slug: string): Promise<BlogPost> {
+  async publicFindBySlug(slug: string, lang?: string): Promise<any> {
     const post = await this.postRepo.findOne({
       where: { slug, status: 'published' },
       relations: ['categories', 'tags'],
     });
     if (!post) throw new NotFoundException(`Post "${slug}" not found`);
-    return this.enrichPost(post);
+    let result: any = await this.enrichPost(post);
+    if (lang && this.translationsService) {
+      result = await this.translationsService.applyToEntity(result, ET_BLOG_POST, lang);
+    }
+    return result;
   }
 
   async publicRelated(postId: string, limit = 3): Promise<BlogPost[]> {

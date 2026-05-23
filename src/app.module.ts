@@ -93,6 +93,50 @@ import { BlogPost } from './blog/entities/blog-post.entity';
 import { BlogCategory } from './blog/entities/blog-category.entity';
 import { BlogTag } from './blog/entities/blog-tag.entity';
 import { BlogModule } from './blog/blog.module';
+import { CommerceModule } from './commerce/commerce.module';
+import { Product } from './commerce/entities/product.entity';
+import { ProductVariant } from './commerce/entities/product-variant.entity';
+import { ProductCategory } from './commerce/entities/product-category.entity';
+import { ProductTag } from './commerce/entities/product-tag.entity';
+import { VariantAttribute } from './commerce/entities/variant-attribute.entity';
+import { VariantOption } from './commerce/entities/variant-option.entity';
+import { InventoryItem } from './commerce/entities/inventory-item.entity';
+import { InventoryMovement } from './commerce/entities/inventory-movement.entity';
+import { Cart } from './commerce/entities/cart.entity';
+import { CartItem } from './commerce/entities/cart-item.entity';
+import { Order } from './commerce/entities/order.entity';
+import { OrderItem } from './commerce/entities/order-item.entity';
+import { OrderStatusHistory } from './commerce/entities/order-status-history.entity';
+import { PaymentTransaction } from './commerce/entities/payment-transaction.entity';
+import { ShippingZone } from './commerce/entities/shipping-zone.entity';
+import { ShippingMethod } from './commerce/entities/shipping-method.entity';
+import { Shipment } from './commerce/entities/shipment.entity';
+import { ProductReview } from './commerce/entities/product-review.entity';
+import { ShopPromotion } from './commerce/entities/shop-promotion.entity';
+import { ShopCustomer } from './commerce/entities/shop-customer.entity';
+import { ShopCustomerAddress } from './commerce/entities/shop-customer-address.entity';
+import { ShopCollection } from './commerce/entities/shop-collection.entity';
+import { ShopCollectionProduct } from './commerce/entities/shop-collection-product.entity';
+import { ShopWishlistItem } from './commerce/entities/shop-wishlist-item.entity';
+import { ShopPriceRule } from './commerce/entities/shop-price-rule.entity';
+import { BlogProductReference } from './commerce/entities/blog-product-reference.entity';
+import { ShopVendor } from './commerce/entities/shop-vendor.entity';
+import { ShopVendorPayout } from './commerce/entities/shop-vendor-payout.entity';
+import { CommerceEventLog } from './commerce/events/commerce-event-log.entity';
+import { VariationOptionValue } from './commerce/entities/variation-option-value.entity';
+import { Address } from './commerce/entities/address.entity';
+import { Country } from './commerce/entities/country.entity';
+import { PaymentType } from './commerce/entities/payment-type.entity';
+import { UserPaymentMethod } from './commerce/entities/user-payment-method.entity';
+import { PromotionCategory } from './commerce/entities/promotion-category.entity';
+import { PromotionProduct } from './commerce/entities/promotion-product.entity';
+import { OrderStatusRef } from './commerce/entities/order-status-ref.entity';
+import { ShopCustomerGroup } from './commerce/entities/shop-customer-group.entity';
+import { MediaAsset } from './media/media-asset.entity';
+import { MediaUsage } from './media/media-usage.entity';
+import { MediaModule } from './media/media.module';
+import { VendorModule } from './commerce/vendor/vendor.module';
+import { MeilisearchModule } from './meilisearch/meilisearch.module';
 
 import { config } from 'dotenv';
 
@@ -107,7 +151,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument, BlogPost, BlogCategory, BlogTag],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument, BlogPost, BlogCategory, BlogTag, Product, ProductVariant, ProductCategory, ProductTag, VariantAttribute, VariantOption, InventoryItem, InventoryMovement, Cart, CartItem, Order, OrderItem, OrderStatusHistory, PaymentTransaction, ShippingZone, ShippingMethod, Shipment, ProductReview, ShopPromotion, ShopCustomer, ShopCustomerAddress, Address, Country, ShopCollection, ShopCollectionProduct, ShopWishlistItem, ShopPriceRule, BlogProductReference, ShopVendor, ShopVendorPayout, CommerceEventLog, VariationOptionValue, PaymentType, UserPaymentMethod, PromotionCategory, PromotionProduct, OrderStatusRef, ShopCustomerGroup, MediaAsset, MediaUsage],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
       migrationsTransactionMode: 'each',
@@ -172,6 +216,10 @@ config();
     VehicleFaqsModule,
     ParkingModule,
     BlogModule,
+    MeilisearchModule,
+    CommerceModule,
+    MediaModule,
+    VendorModule,
     HealthModule,
     LoggerModule.forRoot({
       pinoHttp: {
