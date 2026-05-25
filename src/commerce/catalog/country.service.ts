@@ -30,8 +30,17 @@ export class CountryService {
     return this.countryRepo.find({ order: { name: 'ASC' } });
   }
 
-  async patch(isoCode: string, dto: Partial<Pick<Country, 'isActive' | 'isShippingEnabled'>>): Promise<Country> {
+  async create(dto: Partial<Country> & { isoCode: string; name: string }): Promise<Country> {
+    const country = this.countryRepo.create({ isActive: true, isShippingEnabled: false, isEuVat: false, ...dto });
+    return this.countryRepo.save(country);
+  }
+
+  async patch(isoCode: string, dto: Partial<Omit<Country, 'isoCode'>>): Promise<Country> {
     await this.countryRepo.update({ isoCode }, dto);
     return this.countryRepo.findOneByOrFail({ isoCode });
+  }
+
+  async remove(isoCode: string): Promise<void> {
+    await this.countryRepo.delete({ isoCode });
   }
 }

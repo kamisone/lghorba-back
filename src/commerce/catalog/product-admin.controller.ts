@@ -4,7 +4,7 @@ import {
 import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
-  CreateProductSchema, CreateVariantSchema, ProductService, UpdateProductSchema,
+  CreateProductSchema, CreateVariantSchema, ProductService, UpdateProductSchema, UpdateVariantSchema,
 } from './product.service';
 
 @Controller('admin/shop/products')
@@ -95,7 +95,7 @@ export class ProductAdminController {
   @Patch(':id/variants/:variantId')
   updateVariant(
     @Param('variantId') variantId: string,
-    @Body() dto: any,
+    @Body(new ZodValidationPipe(UpdateVariantSchema)) dto: z.infer<typeof UpdateVariantSchema>,
   ) {
     return this.products.updateVariant(variantId, dto);
   }
@@ -104,6 +104,39 @@ export class ProductAdminController {
   @HttpCode(204)
   deleteVariant(@Param('variantId') variantId: string) {
     return this.products.deleteVariant(variantId);
+  }
+
+  // ── Product-level attribute scoping ────────────────────────────────────────
+
+  @Get(':id/attributes')
+  getAttributes(@Param('id') id: string) {
+    return this.products.getProductAttributes(id);
+  }
+
+  @Post(':id/attributes')
+  addAttribute(
+    @Param('id') productId: string,
+    @Body() dto: { attributeId: string; defaultOptionValueId?: string | null; sortOrder?: number },
+  ) {
+    return this.products.addProductAttribute(productId, dto.attributeId, dto.defaultOptionValueId, dto.sortOrder);
+  }
+
+  @Patch(':id/attributes/:attributeId')
+  updateAttribute(
+    @Param('id') productId: string,
+    @Param('attributeId') attributeId: string,
+    @Body() dto: { defaultOptionValueId: string | null },
+  ) {
+    return this.products.updateProductAttribute(productId, attributeId, dto.defaultOptionValueId);
+  }
+
+  @Delete(':id/attributes/:attributeId')
+  @HttpCode(204)
+  removeAttribute(
+    @Param('id') productId: string,
+    @Param('attributeId') attributeId: string,
+  ) {
+    return this.products.removeProductAttribute(productId, attributeId);
   }
 
 }

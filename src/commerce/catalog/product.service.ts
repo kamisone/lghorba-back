@@ -1,11 +1,15 @@
 import {
-  ConflictException, Injectable, Logger, NotFoundException, Optional,
+  BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { z } from 'zod';
 import { Product } from '../entities/product.entity';
 import { ProductVariant } from '../entities/product-variant.entity';
+import { VariantOption } from '../entities/variant-option.entity';
+import { VariationOptionValue } from '../entities/variation-option-value.entity';
+import { VariantAttribute } from '../entities/variant-attribute.entity';
+import { ProductVariantAttribute } from '../entities/product-variant-attribute.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { ProductCategory } from '../entities/product-category.entity';
 import { ProductTag } from '../entities/product-tag.entity';
@@ -13,7 +17,7 @@ import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { MediaService } from '../../media/media.service';
 import { ProductSearchService } from './product-search.service';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_SHOP_PRODUCT } from '../shared/entity-types';
+import { ET_SHOP_PRODUCT, ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../shared/entity-types';
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
 
@@ -46,22 +50,69 @@ export const UpdateProductSchema = CreateProductSchema.omit({ priceCents: true, 
 }).partial();
 
 export const CreateVariantSchema = z.object({
-  sku:                z.string().min(1).max(200),
-  title:              z.string().min(1).max(500),
-  priceCents:         z.number().int().min(0),
+  /** Omit to auto-generate from product + options (e.g. TSHIRT-BLK-M) */
+  sku:                z.string().min(1).max(200).optional(),
+  /** Omit to auto-generate from selected option values (e.g. "Black / M") */
+  title:              z.string().min(1).max(500).optional(),
+  priceCents:          z.number().int().min(0),
   compareAtPriceCents: z.number().int().min(0).nullish(),
-  barcode:            z.string().max(200).nullish(),
-  weightGrams:        z.number().int().nullish(),
-  mediaKeys:          z.array(z.string().max(1000)).optional(),
-  isDefault:          z.boolean().optional(),
-  sortOrder:          z.number().int().optional(),
-  initialStock:       z.number().int().min(0).optional(),
-  options:            z.array(z.object({ attributeId: z.string().uuid(), value: z.string().max(200) })).optional(),
+  barcode:             z.string().max(200).nullish(),
+  weightGrams:         z.number().int().nullish(),
+  mediaKeys:           z.array(z.string().max(1000)).optional(),
+  /** Variant-specific hero image — overrides product featured image in PDP */
+  featuredMediaKey:    z.string().max(1000).nullish(),
+  isDefault:           z.boolean().optional(),
+  sortOrder:           z.number().int().optional(),
+  initialStock:        z.number().int().min(0).optional(),
+  options:             z.array(z.object({ optionValueId: z.string().uuid() })).optional(),
 });
+
+export const UpdateVariantSchema = CreateVariantSchema.omit({ initialStock: true }).extend({
+  priceCents: z.number().int().min(0).optional(),
+}).partial();
 
 export type CreateProductDto   = z.infer<typeof CreateProductSchema>;
 export type UpdateProductDto   = z.infer<typeof UpdateProductSchema>;
 export type CreateVariantDto   = z.infer<typeof CreateVariantSchema>;
+export type UpdateVariantDto   = z.infer<typeof UpdateVariantSchema>;
+
+// ── Variant generation helpers (pure) ─────────────────────────────────────────
+
+/**
+ * Returns a stable hash string for a set of option value IDs.
+ * Sorted so order of selection doesn't matter.
+ * Returns null for zero-option (single-SKU) variants so the partial unique
+ * index does not block multiple default variants during product creation.
+ */
+function buildCombinationHash(optionValueIds: string[]): string | null {
+  if (!optionValueIds.length) return null;
+  return [...optionValueIds].sort().join('|');
+}
+
+/** "Black / M"  — sorted by attribute.sortOrder */
+function buildVariantTitle(sorted: VariationOptionValue[]): string {
+  return sorted.map(v => v.displayValue ?? v.value).join(' / ');
+}
+
+/** "black-m"  — URL-safe slug from option values */
+function buildVariantSlug(sorted: VariationOptionValue[]): string | null {
+  if (!sorted.length) return null;
+  return sorted
+    .map(v => (v.displayValue ?? v.value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
+    .join('-');
+}
+
+/**
+ * Generates a base SKU from product SKU/slug + abbreviated option values.
+ * Example: product.sku="TSHIRT" + Black/M → "TSHIRT-BLK-M"
+ */
+function buildVariantSkuBase(product: Product, sorted: VariationOptionValue[]): string {
+  const prefix = (product.sku ?? product.slug)
+    .toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  if (!sorted.length) return prefix;
+  const parts = sorted.map(v => v.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4));
+  return `${prefix}-${parts.join('-')}`;
+}
 
 export interface ProductListFilter {
   status?:     string;
@@ -83,11 +134,14 @@ export class ProductService {
   private readonly logger = new Logger(ProductService.name);
 
   constructor(
-    @InjectRepository(Product)         private readonly productRepo:   Repository<Product>,
-    @InjectRepository(ProductVariant)  private readonly variantRepo:   Repository<ProductVariant>,
-    @InjectRepository(InventoryItem)   private readonly inventoryRepo: Repository<InventoryItem>,
-    @InjectRepository(ProductCategory) private readonly categoryRepo:  Repository<ProductCategory>,
-    @InjectRepository(ProductTag)      private readonly tagRepo:       Repository<ProductTag>,
+    @InjectRepository(Product)                  private readonly productRepo:      Repository<Product>,
+    @InjectRepository(ProductVariant)           private readonly variantRepo:      Repository<ProductVariant>,
+    @InjectRepository(VariantOption)            private readonly variantOptionRepo: Repository<VariantOption>,
+    @InjectRepository(VariationOptionValue)     private readonly optionValueRepo:  Repository<VariationOptionValue>,
+    @InjectRepository(ProductVariantAttribute)  private readonly productAttrRepo:  Repository<ProductVariantAttribute>,
+    @InjectRepository(InventoryItem)            private readonly inventoryRepo:    Repository<InventoryItem>,
+    @InjectRepository(ProductCategory)          private readonly categoryRepo:     Repository<ProductCategory>,
+    @InjectRepository(ProductTag)               private readonly tagRepo:          Repository<ProductTag>,
     private readonly assetUrlService:  AssetUrlService,
     private readonly dataSource:       DataSource,
     @Optional() private readonly searchService: ProductSearchService,
@@ -347,9 +401,20 @@ export class ProductService {
     }
 
     await this.productRepo.save(product);
+
+    // Keep the default variant's price in sync when caller provides priceCents
+    if (dto.priceCents !== undefined) {
+      await this.variantRepo.update({ productId: id, isDefault: true }, { priceCents: dto.priceCents });
+    }
+    if (dto.compareAtPriceCents !== undefined) {
+      await this.variantRepo.update(
+        { productId: id, isDefault: true },
+        { compareAtPriceCents: dto.compareAtPriceCents ?? null },
+      );
+    }
+
     this.scheduleIndex(product);
     this.syncProductMediaUsage(product);
-    // Reload with all relations + resolved URLs so the response matches findById
     return this.findById(id);
   }
 
@@ -391,27 +456,129 @@ export class ProductService {
 
   // ── Variants ────────────────────────────────────────────────────────────────
 
+  // ── Private variant helpers ────────────────────────────────────────────────
+
+  /**
+   * Resolves and validates option value IDs.
+   * Returns values sorted by their attribute's sortOrder for deterministic
+   * title / slug / hash generation.
+   */
+  private async resolveOptionValues(optionValueIds: string[]): Promise<VariationOptionValue[]> {
+    if (!optionValueIds.length) return [];
+    const rows = await this.optionValueRepo.find({
+      where: { id: In(optionValueIds) },
+      relations: ['attribute'],
+    });
+    if (rows.length !== optionValueIds.length) {
+      throw new BadRequestException('One or more option value IDs are invalid');
+    }
+    const attrIds = rows.map(r => r.attributeId);
+    if (new Set(attrIds).size !== attrIds.length) {
+      throw new BadRequestException('Duplicate attributes in variant options');
+    }
+    // Sort by attribute.sortOrder for deterministic output
+    return rows.sort((a, b) =>
+      ((a.attribute as VariantAttribute).sortOrder ?? 0) -
+      ((b.attribute as VariantAttribute).sortOrder ?? 0),
+    );
+  }
+
+  /** Throws ConflictException if combinationHash already exists for another variant of this product. */
+  private async checkCombinationUniqueness(
+    productId: string, hash: string | null, excludeVariantId?: string,
+  ): Promise<void> {
+    if (!hash) return;
+    const existing = await this.variantRepo.findOneBy({ productId, combinationHash: hash });
+    if (existing && existing.id !== excludeVariantId) {
+      throw new ConflictException('A variant with this combination of options already exists');
+    }
+  }
+
+  /** Finds a unique SKU by appending a counter suffix when needed. */
+  private async generateUniqueVariantSku(
+    base: string, em: EntityManager, excludeId?: string,
+  ): Promise<string> {
+    let sku = base.slice(0, 200);
+    let n   = 2;
+    while (true) {
+      const hit = await em.findOneBy(ProductVariant, { sku });
+      if (!hit || hit.id === excludeId) return sku;
+      sku = `${base.slice(0, 196)}-${n++}`;
+    }
+  }
+
+  /** Finds a unique variantSlug per product by appending a counter suffix when needed. */
+  private async generateUniqueVariantSlug(
+    productId: string, base: string | null, em: EntityManager, excludeId?: string,
+  ): Promise<string | null> {
+    if (!base) return null;
+    let slug = base.slice(0, 300);
+    let n    = 2;
+    while (true) {
+      const hit = await em.findOneBy(ProductVariant, { productId, variantSlug: slug });
+      if (!hit || hit.id === excludeId) return slug;
+      slug = `${base.slice(0, 296)}-${n++}`;
+    }
+  }
+
+  /** Persists VariantOption rows and syncs the product-level attribute scoping table. */
+  private async saveVariantOptions(
+    variantId: string, productId: string,
+    optionValues: VariationOptionValue[], em: EntityManager,
+  ): Promise<void> {
+    for (const ov of optionValues) {
+      await em.save(VariantOption, em.create(VariantOption, {
+        variantId,
+        attributeId:   ov.attributeId,
+        optionValueId: ov.id,
+        value:         ov.value,
+      }));
+      await em.query(
+        `INSERT INTO "shop_product_variant_attributes" ("productId", "attributeId", "sortOrder")
+         VALUES ($1, $2, 0)
+         ON CONFLICT ("productId", "attributeId") DO NOTHING`,
+        [productId, ov.attributeId],
+      );
+    }
+  }
+
+  // ── Variant CRUD ──────────────────────────────────────────────────────────
+
   async addVariant(productId: string, dto: CreateVariantDto): Promise<ProductVariant> {
     const product = await this.productRepo.findOneBy({ id: productId });
     if (!product) throw new NotFoundException('Product not found');
 
-    const existing = await this.variantRepo.findOneBy({ sku: dto.sku });
-    if (existing) throw new ConflictException(`SKU "${dto.sku}" already in use`);
+    if (dto.sku) {
+      const conflict = await this.variantRepo.findOneBy({ sku: dto.sku });
+      if (conflict) throw new ConflictException(`SKU "${dto.sku}" already in use`);
+    }
+
+    const optionValues    = await this.resolveOptionValues((dto.options ?? []).map(o => o.optionValueId));
+    const combinationHash = buildCombinationHash(optionValues.map(v => v.id));
+    await this.checkCombinationUniqueness(productId, combinationHash);
 
     return this.dataSource.transaction(async (em) => {
-      const variant = em.create(ProductVariant, {
+      const sku         = dto.sku         ?? await this.generateUniqueVariantSku(buildVariantSkuBase(product, optionValues), em);
+      const title       = dto.title       ?? (optionValues.length ? buildVariantTitle(optionValues) : sku);
+      const variantSlug = await this.generateUniqueVariantSlug(productId, buildVariantSlug(optionValues), em);
+
+      const saved = await em.save(ProductVariant, em.create(ProductVariant, {
         productId,
-        sku:                 dto.sku,
-        title:               dto.title,
+        sku,
+        title,
+        combinationHash,
+        variantSlug,
         priceCents:          dto.priceCents,
         compareAtPriceCents: dto.compareAtPriceCents ?? null,
         barcode:             dto.barcode ?? null,
         weightGrams:         dto.weightGrams ?? null,
         mediaKeys:           dto.mediaKeys ?? [],
+        featuredMediaKey:    dto.featuredMediaKey ?? null,
         isDefault:           dto.isDefault ?? false,
         sortOrder:           dto.sortOrder ?? 0,
-      });
-      const saved = await em.save(ProductVariant, variant);
+      }));
+
+      await this.saveVariantOptions(saved.id, productId, optionValues, em);
 
       await em.save(InventoryItem, em.create(InventoryItem, {
         variantId: saved.id,
@@ -419,12 +586,15 @@ export class ProductService {
         available: dto.initialStock ?? 0,
       }));
 
-      return saved;
+      return em.findOne(ProductVariant, {
+        where: { id: saved.id },
+        relations: ['options', 'options.optionValue', 'options.attribute'],
+      }) as Promise<ProductVariant>;
     });
   }
 
-  async updateVariant(variantId: string, dto: Partial<CreateVariantDto>): Promise<ProductVariant> {
-    const variant = await this.variantRepo.findOneBy({ id: variantId });
+  async updateVariant(variantId: string, dto: UpdateVariantDto): Promise<ProductVariant> {
+    const variant = await this.variantRepo.findOne({ where: { id: variantId }, relations: ['options'] });
     if (!variant) throw new NotFoundException('Variant not found');
 
     if (dto.sku && dto.sku !== variant.sku) {
@@ -432,24 +602,222 @@ export class ProductService {
       if (conflict && conflict.id !== variantId) throw new ConflictException('SKU already in use');
     }
 
-    Object.assign(variant, {
-      sku:                 dto.sku                ?? variant.sku,
-      title:               dto.title              ?? variant.title,
-      priceCents:          dto.priceCents         ?? variant.priceCents,
-      compareAtPriceCents: dto.compareAtPriceCents !== undefined ? dto.compareAtPriceCents ?? null : variant.compareAtPriceCents,
-      barcode:             dto.barcode            !== undefined ? dto.barcode ?? null : variant.barcode,
-      weightGrams:         dto.weightGrams        !== undefined ? dto.weightGrams ?? null : variant.weightGrams,
-      mediaKeys:           dto.mediaKeys          ?? variant.mediaKeys,
-      isDefault:           dto.isDefault          !== undefined ? dto.isDefault : variant.isDefault,
-      sortOrder:           dto.sortOrder          !== undefined ? dto.sortOrder : variant.sortOrder,
+    const optionValues = dto.options !== undefined
+      ? await this.resolveOptionValues(dto.options?.map(o => o.optionValueId) ?? [])
+      : null;
+
+    if (optionValues !== null) {
+      const newHash = buildCombinationHash(optionValues.map(v => v.id));
+      await this.checkCombinationUniqueness(variant.productId, newHash, variantId);
+    }
+
+    return this.dataSource.transaction(async (em) => {
+      const newOptionValues = optionValues ?? [];
+      const combinationHash = optionValues !== null ? buildCombinationHash(optionValues.map(v => v.id)) : variant.combinationHash;
+      const variantSlug     = optionValues !== null
+        ? await this.generateUniqueVariantSlug(variant.productId, buildVariantSlug(optionValues), em, variantId)
+        : variant.variantSlug;
+
+      // Auto-update title only when options explicitly changed and no manual title given
+      const title = dto.title
+        ?? (optionValues !== null && optionValues.length ? buildVariantTitle(optionValues) : variant.title);
+
+      const sku = dto.sku ?? variant.sku;
+      const finalSku = (sku !== variant.sku)
+        ? await this.generateUniqueVariantSku(sku, em, variantId)
+        : sku;
+
+      Object.assign(variant, {
+        sku:                 finalSku,
+        title,
+        combinationHash,
+        variantSlug,
+        priceCents:          dto.priceCents          ?? variant.priceCents,
+        compareAtPriceCents: dto.compareAtPriceCents  !== undefined ? dto.compareAtPriceCents ?? null : variant.compareAtPriceCents,
+        barcode:             dto.barcode             !== undefined ? dto.barcode ?? null : variant.barcode,
+        weightGrams:         dto.weightGrams         !== undefined ? dto.weightGrams ?? null : variant.weightGrams,
+        mediaKeys:           dto.mediaKeys           ?? variant.mediaKeys,
+        featuredMediaKey:    dto.featuredMediaKey    !== undefined ? dto.featuredMediaKey ?? null : variant.featuredMediaKey,
+        isDefault:           dto.isDefault           !== undefined ? dto.isDefault : variant.isDefault,
+        sortOrder:           dto.sortOrder           !== undefined ? dto.sortOrder : variant.sortOrder,
+      });
+      await em.save(ProductVariant, variant);
+
+      if (optionValues !== null) {
+        await em.delete(VariantOption, { variantId });
+        await this.saveVariantOptions(variantId, variant.productId, optionValues, em);
+      }
+
+      return em.findOne(ProductVariant, {
+        where: { id: variantId },
+        relations: ['options', 'options.optionValue', 'options.attribute'],
+      }) as Promise<ProductVariant>;
     });
-    return this.variantRepo.save(variant);
   }
 
   async deleteVariant(variantId: string): Promise<void> {
     const variant = await this.variantRepo.findOneBy({ id: variantId });
     if (!variant) throw new NotFoundException('Variant not found');
     await this.variantRepo.remove(variant);
+  }
+
+  // ── Product-level attribute scoping ────────────────────────────────────────
+
+  async getProductAttributes(productId: string): Promise<ProductVariantAttribute[]> {
+    const product = await this.productRepo.findOneBy({ id: productId });
+    if (!product) throw new NotFoundException('Product not found');
+    return this.productAttrRepo.find({
+      where: { productId },
+      relations: ['attribute', 'attribute.optionValues'],
+      order: { sortOrder: 'ASC' },
+    });
+  }
+
+  async addProductAttribute(
+    productId: string,
+    attributeId: string,
+    defaultOptionValueId?: string | null,
+    sortOrder = 0,
+  ): Promise<ProductVariantAttribute> {
+    const product = await this.productRepo.findOneBy({ id: productId });
+    if (!product) throw new NotFoundException('Product not found');
+    const existing = await this.productAttrRepo.findOneBy({ productId, attributeId });
+    if (existing) throw new ConflictException('Attribute already assigned to this product');
+    const row = this.productAttrRepo.create({ productId, attributeId, sortOrder, defaultOptionValueId: defaultOptionValueId ?? null });
+    return this.productAttrRepo.save(row);
+  }
+
+  async updateProductAttribute(
+    productId: string,
+    attributeId: string,
+    defaultOptionValueId: string | null,
+  ): Promise<ProductVariantAttribute> {
+    const row = await this.productAttrRepo.findOneBy({ productId, attributeId });
+    if (!row) throw new NotFoundException('Attribute not linked to this product');
+    row.defaultOptionValueId = defaultOptionValueId;
+    return this.productAttrRepo.save(row);
+  }
+
+  async removeProductAttribute(productId: string, attributeId: string): Promise<void> {
+    await this.productAttrRepo.delete({ productId, attributeId });
+  }
+
+  // ── Variant resolution (PDP option picker → specific SKU) ──────────────────
+
+  async resolveVariant(productId: string, optionValueIds: string[]): Promise<ProductVariant> {
+    if (!optionValueIds.length) throw new BadRequestException('At least one option value is required');
+    const hash = buildCombinationHash(optionValueIds);
+    if (!hash) throw new BadRequestException('Invalid option values');
+    const variant = await this.variantRepo.findOne({
+      where: { productId, combinationHash: hash },
+      relations: ['options', 'options.optionValue'],
+    });
+    if (!variant) throw new NotFoundException('No variant matches the selected options');
+    return variant;
+  }
+
+  // ── Variant availability matrix (PDP option picker state) ──────────────────
+
+  /**
+   * Returns all variants with their option combinations and stock levels.
+   * The frontend uses this to disable unavailable option choices and
+   * resolve which variant is selected given current option picks.
+   */
+  async getVariantAvailabilityMatrix(productId: string, lang?: string): Promise<{
+    attributes: Array<{
+      id: string; name: string; slug: string;
+      displayType: 'swatch' | 'button' | 'dropdown'; sortOrder: number;
+      defaultOptionValueId: string | null;
+      optionValues: Array<{
+        id: string; value: string; displayValue: string | null;
+        swatchValue: string | null; swatchType: 'color' | 'image' | null; sortOrder: number;
+      }>;
+    }>;
+    variants: Array<{
+      id: string; sku: string; title: string;
+      priceCents: number; compareAtPriceCents: number | null;
+      variantSlug: string | null; featuredMediaUrl: string | null;
+      optionValueIds: string[];
+      available: number; inStock: boolean;
+    }>;
+  }> {
+    const product = await this.productRepo.findOneBy({ id: productId });
+    if (!product) throw new NotFoundException('Product not found');
+
+    // Source attributes from the product's linked variations (not from existing variants)
+    const productAttrs = await this.productAttrRepo.find({
+      where: { productId },
+      relations: ['attribute', 'attribute.optionValues'],
+      order: { sortOrder: 'ASC' },
+    });
+
+    const variants = await this.variantRepo.find({
+      where: { productId },
+      relations: ['options'],
+    });
+
+    const inventoryRows = await this.inventoryRepo.findBy({ productId });
+    const stockMap      = new Map(inventoryRows.map(i => [i.variantId, i.available]));
+
+    const mediaKeys = variants.map(v => v.featuredMediaKey).filter(Boolean) as string[];
+    const urlMap    = mediaKeys.length ? await this.assetUrlService.resolveBatch(mediaKeys) : new Map<string, string>();
+
+    let attributes: any[] = productAttrs.map(pa => ({
+      id:                   pa.attribute.id,
+      name:                 pa.attribute.name,
+      slug:                 pa.attribute.slug,
+      displayType:          pa.attribute.displayType,
+      sortOrder:            pa.sortOrder,
+      defaultOptionValueId: pa.defaultOptionValueId,
+      optionValues: [...pa.attribute.optionValues]
+        .filter(ov => ov.isActive)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map(ov => ({
+          id:           ov.id,
+          value:        ov.value,
+          displayValue: ov.displayValue,
+          swatchValue:  ov.swatchValue,
+          swatchType:   ov.swatchType,
+          sortOrder:    ov.sortOrder,
+        })),
+    }));
+
+    if (lang && this.translationsService) {
+      attributes = await this.translationsService.applyToEntities(attributes, ET_SHOP_VARIANT_ATTR, lang);
+      for (const attr of attributes) {
+        if (attr.optionValues?.length) {
+          attr.optionValues = await this.translationsService.applyToEntities(
+            attr.optionValues, ET_SHOP_VARIATION_OPTION, lang,
+          );
+        }
+      }
+    }
+
+    return {
+      attributes,
+      variants: variants.map(v => ({
+        id:                  v.id,
+        sku:                 v.sku,
+        title:               v.title,
+        priceCents:          v.priceCents,
+        compareAtPriceCents: v.compareAtPriceCents,
+        variantSlug:         v.variantSlug,
+        featuredMediaUrl:    v.featuredMediaKey ? (urlMap.get(v.featuredMediaKey) ?? null) : null,
+        optionValueIds:      (v.options ?? []).map(o => o.optionValueId).filter(Boolean) as string[],
+        available:           stockMap.get(v.id) ?? 0,
+        inStock:             (stockMap.get(v.id) ?? 0) > 0,
+      })),
+    };
+  }
+
+  /** Finds a variant by its URL slug within a product. */
+  async getVariantBySlug(productId: string, variantSlug: string): Promise<ProductVariant> {
+    const variant = await this.variantRepo.findOne({
+      where: { productId, variantSlug },
+      relations: ['options', 'options.optionValue', 'options.attribute'],
+    });
+    if (!variant) throw new NotFoundException('Variant not found');
+    return variant;
   }
 
   async getCategories(): Promise<any[]> {

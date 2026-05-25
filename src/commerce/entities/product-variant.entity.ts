@@ -27,6 +27,19 @@ export class ProductVariant {
 
   @Column({ type: 'text', array: true, default: '{}' }) mediaKeys: string[];
 
+  /** Variant-specific hero image — overrides product featured image in PDP */
+  @Column({ type: 'varchar', length: 1000, nullable: true }) featuredMediaKey: string | null;
+
+  /**
+   * Sorted "|"-joined optionValueIds — unique per product.
+   * NULL for no-option (single-variant) products.
+   * Enforced by a partial unique index on (productId, combinationHash).
+   */
+  @Column({ type: 'varchar', length: 300, nullable: true }) combinationHash: string | null;
+
+  /** URL-safe slug for this variant combination (e.g. "black-m"). */
+  @Column({ type: 'varchar', length: 300, nullable: true }) variantSlug: string | null;
+
   @Column({ type: 'boolean', default: false }) isDefault: boolean;
   @Column({ type: 'int', default: 0 })         sortOrder: number;
 

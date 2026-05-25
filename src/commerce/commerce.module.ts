@@ -45,6 +45,7 @@ import { PromotionCategory } from './entities/promotion-category.entity';
 import { PromotionProduct } from './entities/promotion-product.entity';
 import { OrderStatusRef } from './entities/order-status-ref.entity';
 import { ShopCustomerGroup } from './entities/shop-customer-group.entity';
+import { ProductVariantAttribute } from './entities/product-variant-attribute.entity';
 
 // Services
 import { ProductService } from './catalog/product.service';
@@ -111,7 +112,7 @@ const ENTITIES = [
   // Catalog
   Product, ProductVariant, ProductCategory, ProductTag,
   // Variations (product_configuration domain)
-  VariantAttribute, VariantOption, VariationOptionValue,
+  VariantAttribute, VariantOption, VariationOptionValue, ProductVariantAttribute,
   // Inventory
   InventoryItem, InventoryMovement,
   // Cart (shopping_cart domain)

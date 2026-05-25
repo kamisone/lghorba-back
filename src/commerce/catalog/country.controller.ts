@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Patch } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
 import { Public } from '../../auth/public.decorator';
 import { CountryService } from './country.service';
 
@@ -18,12 +18,20 @@ export class CountryAdminController {
   @Get()
   listAll() { return this.countries.listAll(); }
 
+  @Post()
+  create(@Body() dto: any) {
+    return this.countries.create(dto);
+  }
+
   @Patch(':isoCode')
   @HttpCode(200)
-  patch(
-    @Param('isoCode') isoCode: string,
-    @Body() dto: { isActive?: boolean; isShippingEnabled?: boolean },
-  ) {
+  patch(@Param('isoCode') isoCode: string, @Body() dto: any) {
     return this.countries.patch(isoCode, dto);
+  }
+
+  @Delete(':isoCode')
+  @HttpCode(204)
+  remove(@Param('isoCode') isoCode: string) {
+    return this.countries.remove(isoCode);
   }
 }

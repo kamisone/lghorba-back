@@ -10,8 +10,12 @@ export class CartController {
   constructor(private readonly carts: CartService) {}
 
   @Get(':token')
-  getCart(@Param('token') token: string, @Query('userId') userId?: string) {
-    return this.carts.getOrCreate(token, userId);
+  getCart(
+    @Param('token') token: string,
+    @Query('userId') userId?: string,
+    @Query('lang') lang?: string,
+  ) {
+    return this.carts.getOrCreate(token, userId, lang);
   }
 
   @Post(':token/items')
@@ -19,8 +23,9 @@ export class CartController {
     @Param('token') token: string,
     @Body('variantId') variantId: string,
     @Body('quantity')  quantity: number,
+    @Body('selectedOptionValueIds') selectedOptionValueIds?: string[],
   ) {
-    return this.carts.addItem(token, variantId, quantity);
+    return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds);
   }
 
   @Put(':token/items/:itemId')

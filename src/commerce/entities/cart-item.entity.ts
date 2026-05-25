@@ -19,9 +19,17 @@ export class CartItem {
   @Column({ type: 'int' }) quantity: number;
   @Column({ type: 'int' }) unitPriceCents: number;
 
-  @Column({ type: 'varchar', length: 500 })        titleSnapshot: string;
-  @Column({ type: 'varchar', length: 200, nullable: true }) skuSnapshot: string | null;
-  @Column({ type: 'varchar', length: 1000, nullable: true }) imageKeySnapshot: string | null;
+  @Column({ type: 'varchar', length: 500 })                   titleSnapshot:   string;
+  @Column({ type: 'varchar', length: 200, nullable: true })   skuSnapshot:     string | null;
+  @Column({ type: 'varchar', length: 1000, nullable: true })  imageKeySnapshot: string | null;
+
+  /** Frozen option choices at add-to-cart time: [{attributeName, value, displayValue}] */
+  @Column({ type: 'jsonb', nullable: true }) optionsSnapshot: Array<{
+    attributeId: string; attributeName: string;
+    optionValueId: string | null; value: string; displayValue: string | null;
+  }> | null;
+
+  @Column({ type: 'int', nullable: true }) compareAtPriceCentsSnapshot: number | null;
 
   @CreateDateColumn() createdAt: Date;
   @UpdateDateColumn() updatedAt: Date;

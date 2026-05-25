@@ -124,18 +124,20 @@ export class OrdersService {
         await this.inventoryService.reserveForOrder(item.variantId, item.quantity, savedOrder.id, em);
       }
 
-      // Create order items (immutable snapshots)
+      // Create order items (immutable snapshots — never depend on mutable variant data)
       for (const item of items) {
         await em.save(OrderItem, em.create(OrderItem, {
-          orderId:        savedOrder.id,
-          productId:      item.productId,
-          variantId:      item.variantId,
-          titleSnapshot:  item.titleSnapshot,
-          skuSnapshot:    item.skuSnapshot,
-          imageKeySnapshot: item.imageKeySnapshot,
-          quantity:       item.quantity,
-          unitPriceCents: item.unitPriceCents,
-          totalCents:     item.unitPriceCents * item.quantity,
+          orderId:                     savedOrder.id,
+          productId:                   item.productId,
+          variantId:                   item.variantId,
+          titleSnapshot:               item.titleSnapshot,
+          skuSnapshot:                 item.skuSnapshot,
+          imageKeySnapshot:            item.imageKeySnapshot,
+          optionsSnapshot:             (item as any).optionsSnapshot ?? null,
+          compareAtPriceCentsSnapshot: (item as any).compareAtPriceCentsSnapshot ?? null,
+          quantity:                    item.quantity,
+          unitPriceCents:              item.unitPriceCents,
+          totalCents:                  item.unitPriceCents * item.quantity,
         }));
       }
 

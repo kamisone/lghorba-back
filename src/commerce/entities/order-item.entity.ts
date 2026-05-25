@@ -20,9 +20,18 @@ export class OrderItem {
   @JoinColumn({ name: 'vendorId' })
   vendor: Relation<ShopVendor> | null;
 
-  @Column({ type: 'varchar', length: 500 })                 titleSnapshot: string;
-  @Column({ type: 'varchar', length: 200, nullable: true }) skuSnapshot: string | null;
+  @Column({ type: 'varchar', length: 500 })                  titleSnapshot:   string;
+  @Column({ type: 'varchar', length: 200, nullable: true })  skuSnapshot:     string | null;
   @Column({ type: 'varchar', length: 1000, nullable: true }) imageKeySnapshot: string | null;
+
+  /** Frozen option choices at order time: [{attributeName, value, displayValue}] */
+  @Column({ type: 'jsonb', nullable: true }) optionsSnapshot: Array<{
+    attributeId: string; attributeName: string;
+    optionValueId: string | null; value: string; displayValue: string | null;
+  }> | null;
+
+  /** Frozen compare-at price for order receipt display */
+  @Column({ type: 'int', nullable: true }) compareAtPriceCentsSnapshot: number | null;
 
   @Column({ type: 'int' }) quantity: number;
   @Column({ type: 'int' }) unitPriceCents: number;

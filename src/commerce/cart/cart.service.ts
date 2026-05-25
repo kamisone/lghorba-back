@@ -12,7 +12,10 @@ import { ProductVariant } from '../entities/product-variant.entity';
 import { Product } from '../entities/product.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { ShopPromotion } from '../entities/shop-promotion.entity';
+import { VariationOptionValue } from '../entities/variation-option-value.entity';
 import { AssetUrlService } from '../../asset-url/asset-url.service';
+import { TranslationsService } from '../../translations/translations.service';
+import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../shared/entity-types';
 import { CART_ABANDONMENT_QUEUE } from './cart-abandonment.constants';
 
 @Injectable()
@@ -23,15 +26,17 @@ export class CartService {
     @InjectRepository(ProductVariant) private readonly variantRepo:  Repository<ProductVariant>,
     @InjectRepository(Product)       private readonly productRepo:   Repository<Product>,
     @InjectRepository(InventoryItem) private readonly inventoryRepo: Repository<InventoryItem>,
-    @InjectRepository(ShopPromotion) private readonly promoRepo:     Repository<ShopPromotion>,
+    @InjectRepository(ShopPromotion)        private readonly promoRepo:     Repository<ShopPromotion>,
+    @InjectRepository(VariationOptionValue) private readonly ovRepo:        Repository<VariationOptionValue>,
     private readonly assetUrlService: AssetUrlService,
+    private readonly translationsService: TranslationsService,
     @InjectQueue(CART_ABANDONMENT_QUEUE)
     private readonly abandonmentQueue: Queue,
   ) {}
 
   // ── Get or create cart by token ────────────────────────────────────────────
 
-  async getOrCreate(token: string, userId?: string): Promise<any> {
+  async getOrCreate(token: string, userId?: string, lang?: string): Promise<any> {
     const existing = await this.cartRepo.findOne({
       where: { token },
       relations: ['items'],
@@ -55,12 +60,17 @@ export class CartService {
       }
     }
 
-    return this.enrichCart(cart);
+    return this.enrichCart(cart, lang);
   }
 
   // ── Add item ───────────────────────────────────────────────────────────────
 
-  async addItem(token: string, variantId: string, quantity: number): Promise<any> {
+  async addItem(
+    token: string,
+    variantId: string,
+    quantity: number,
+    selectedOptionValueIds?: string[],
+  ): Promise<any> {
     if (quantity < 1) throw new BadRequestException('Quantity must be at least 1');
 
     const variant = await this.variantRepo.findOne({
@@ -85,15 +95,38 @@ export class CartService {
       await this.itemRepo.save(existing);
     } else {
       const product = (variant as any).product as Product;
+
+      // Build options snapshot from caller-supplied selection (user-chosen variation options)
+      let optionsSnapshot: Array<{
+        attributeId: string; attributeName: string;
+        optionValueId: string | null; value: string; displayValue: string | null;
+      }> | null = null;
+
+      if (selectedOptionValueIds?.length) {
+        const ovRows = await this.ovRepo.find({
+          where: { id: (await import('typeorm')).In(selectedOptionValueIds) },
+          relations: ['attribute'],
+        });
+        optionsSnapshot = ovRows.map(ov => ({
+          attributeId:   ov.attributeId,
+          attributeName: ov.attribute?.name ?? '',
+          optionValueId: ov.id,
+          value:         ov.value,
+          displayValue:  ov.displayValue,
+        }));
+      }
+
       await this.itemRepo.save(this.itemRepo.create({
-        cartId:         cart.id,
-        productId:      product.id,
-        variantId:      variant.id,
+        cartId:          cart.id,
+        productId:       product.id,
+        variantId:       variant.id,
         quantity,
-        unitPriceCents: variant.priceCents,
-        titleSnapshot:  `${product.title}${variant.isDefault ? '' : ` — ${variant.title}`}`,
-        skuSnapshot:    variant.sku,
-        imageKeySnapshot: product.featuredImageKey ?? null,
+        unitPriceCents:  variant.priceCents,
+        titleSnapshot:   product.title,
+        skuSnapshot:     variant.sku,
+        imageKeySnapshot:            (variant as any).featuredMediaKey ?? product.featuredImageKey ?? null,
+        optionsSnapshot,
+        compareAtPriceCentsSnapshot: variant.compareAtPriceCents ?? null,
       }));
     }
 
@@ -187,16 +220,53 @@ export class CartService {
     return cart as Cart & { items: CartItem[] };
   }
 
-  private async enrichCart(cart: Cart): Promise<any> {
+  private async enrichCart(cart: Cart, lang?: string): Promise<any> {
     const items = (cart.items ?? []) as CartItem[];
     const imageKeys = items.map(i => i.imageKeySnapshot).filter(Boolean) as string[];
     const urlMap = imageKeys.length ? await this.assetUrlService.resolveBatch(imageKeys) : new Map<string, string>();
 
-    const enrichedItems = items.map(item => ({
+    let enrichedItems = items.map(item => ({
       ...item,
       imageUrl: item.imageKeySnapshot ? (urlMap.get(item.imageKeySnapshot) ?? null) : null,
       lineTotalCents: item.quantity * item.unitPriceCents,
     }));
+
+    // Translate optionsSnapshot attribute names and display values for non-FR locales
+    if (lang) {
+      const uniqueAttrIds   = [...new Set(
+        enrichedItems.flatMap(i => (i.optionsSnapshot ?? []).map((o: any) => o.attributeId).filter(Boolean)),
+      )] as string[];
+      const uniqueOptionIds = [...new Set(
+        enrichedItems.flatMap(i => (i.optionsSnapshot ?? []).map((o: any) => o.optionValueId).filter(Boolean)),
+      )] as string[];
+
+      const [attrTranslated, optionTranslated] = await Promise.all([
+        uniqueAttrIds.length
+          ? this.translationsService.applyToEntities(
+              uniqueAttrIds.map(id => ({ id })) as any[], ET_SHOP_VARIANT_ATTR, lang,
+            )
+          : Promise.resolve([]),
+        uniqueOptionIds.length
+          ? this.translationsService.applyToEntities(
+              uniqueOptionIds.map(id => ({ id })) as any[], ET_SHOP_VARIATION_OPTION, lang,
+            )
+          : Promise.resolve([]),
+      ]);
+
+      const attrMap   = new Map((attrTranslated   as any[]).map(r => [r.id, r]));
+      const optionMap = new Map((optionTranslated as any[]).map(r => [r.id, r]));
+
+      enrichedItems = enrichedItems.map(item => ({
+        ...item,
+        optionsSnapshot: (item.optionsSnapshot ?? []).map((o: any) => ({
+          ...o,
+          attributeName: (attrMap.get(o.attributeId) as any)?.name           ?? o.attributeName,
+          displayValue:  o.optionValueId
+            ? ((optionMap.get(o.optionValueId) as any)?.displayValue ?? o.displayValue)
+            : o.displayValue,
+        })),
+      }));
+    }
 
     const subtotalCents = enrichedItems.reduce((sum, i) => sum + i.lineTotalCents, 0);
 
