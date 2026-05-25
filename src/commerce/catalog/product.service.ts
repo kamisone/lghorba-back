@@ -264,6 +264,27 @@ export class ProductService {
 
     const [raw, total] = await qb.getManyAndCount();
     const withUrls = await this.resolveProductsUrls(raw) as any[];
+
+    // Batch-compute outOfStock flag: true only when inventory items exist AND all are ≤ 0.
+    // Matches PDP logic: a variant with no inventory row is treated as available.
+    if (raw.length > 0) {
+      const productIds = raw.map(p => p.id);
+      const stockRows: Array<{ productId: string; allOutOfStock: boolean }> = await this.dataSource.query(
+        `SELECT pv."productId",
+                CASE
+                  WHEN COUNT(ii.id) = 0 THEN false
+                  ELSE BOOL_AND(COALESCE(ii.available, 0) <= 0)
+                END AS "allOutOfStock"
+         FROM shop_product_variants pv
+         LEFT JOIN shop_inventory_items ii ON ii."variantId" = pv.id
+         WHERE pv."productId" = ANY($1)
+         GROUP BY pv."productId"`,
+        [productIds],
+      );
+      const outOfStockSet = new Set(stockRows.filter(r => r.allOutOfStock).map(r => r.productId));
+      for (const p of withUrls) p.outOfStock = outOfStockSet.has(p.id);
+    }
+
     const items = await this.translationsService.maybeApply(withUrls, ET_SHOP_PRODUCT, lang);
     return { items, total };
   }
@@ -585,6 +606,119 @@ export class ProductService {
     });
   }
 
+  // ── Auto-generate all variant combinations from linked attributes ────────────
+
+  async generateVariantCombinations(productId: string): Promise<{
+    created: number;
+    skipped: number;
+    combinations: Array<{ title: string; sku: string; isNew: boolean; combinationHash: string }>;
+  }> {
+    const product = await this.productRepo.findOneBy({ id: productId });
+    if (!product) throw new NotFoundException('Product not found');
+
+    const productAttrs = await this.productAttrRepo.find({
+      where: { productId },
+      relations: ['attribute', 'attribute.optionValues'],
+      order: { sortOrder: 'ASC' },
+    });
+    if (!productAttrs.length) throw new BadRequestException('Product has no linked variation attributes');
+
+    const axes = productAttrs.map(pa => ({
+      attribute:          pa.attribute,
+      defaultOptionValueId: pa.defaultOptionValueId,
+      optionValues: [...pa.attribute.optionValues]
+        .filter(ov => ov.isActive)
+        .sort((a, b) => a.sortOrder - b.sortOrder),
+    }));
+
+    if (axes.some(ax => ax.optionValues.length === 0)) {
+      throw new BadRequestException('One or more attributes have no active option values');
+    }
+
+    // Default combination = the hash of the admin-selected defaultOptionValueId per attribute.
+    // Falls back to null when any attribute has no default configured.
+    const defaultIds = axes.map(ax => ax.defaultOptionValueId).filter(Boolean) as string[];
+    const defaultHash = defaultIds.length === axes.length
+      ? buildCombinationHash(defaultIds)
+      : null;
+
+    // Cartesian product
+    const allCombos: VariationOptionValue[][] = axes.reduce<VariationOptionValue[][]>(
+      (acc, ax) => acc.flatMap(a => ax.optionValues.map(ov => [...a, ov])),
+      [[]],
+    );
+
+    let created = 0;
+    let skipped = 0;
+    let sortOrder = await this.variantRepo.countBy({ productId });
+    const combinations: Array<{ title: string; sku: string; isNew: boolean; combinationHash: string }> = [];
+
+    // Use a reference price from the first existing variant, or 0 for new products
+    const existingVariant = await this.variantRepo.findOne({
+      where: { productId },
+      order: { createdAt: 'ASC' },
+    });
+    const refPriceCents = existingVariant?.priceCents ?? 0;
+
+    for (const optionValues of allCombos) {
+      const hash = buildCombinationHash(optionValues.map(v => v.id));
+      if (!hash) continue;
+
+      const isDefault = defaultHash !== null && hash === defaultHash;
+
+      const existing = await this.variantRepo.findOneBy({ productId, combinationHash: hash });
+      if (existing) {
+        // Sync isDefault in case the admin changed defaultOptionValueId after initial generation.
+        if (defaultHash !== null && existing.isDefault !== isDefault) {
+          await this.variantRepo.update(existing.id, { isDefault });
+        }
+        skipped++;
+        combinations.push({ title: existing.title, sku: existing.sku, isNew: false, combinationHash: hash });
+        continue;
+      }
+
+      await this.dataSource.transaction(async (em) => {
+        const sku         = await this.generateUniqueVariantSku(buildVariantSkuBase(product, optionValues), em);
+        const title       = buildVariantTitle(optionValues);
+        const variantSlug = await this.generateUniqueVariantSlug(productId, buildVariantSlug(optionValues), em);
+
+        const saved = await em.save(ProductVariant, em.create(ProductVariant, {
+          productId,
+          sku,
+          title,
+          combinationHash: hash,
+          variantSlug,
+          priceCents:  refPriceCents,
+          isDefault,
+          sortOrder:   sortOrder++,
+        }));
+
+        await this.saveVariantOptions(saved.id, productId, optionValues, em);
+
+        await em.save(InventoryItem, em.create(InventoryItem, {
+          variantId: saved.id,
+          productId,
+          available: 0,
+        }));
+
+        created++;
+        combinations.push({ title, sku, isNew: true, combinationHash: hash });
+      });
+    }
+
+    // If a default hash was resolved, ensure no other variant for this product is marked default.
+    if (defaultHash !== null) {
+      await this.variantRepo.query(
+        `UPDATE shop_product_variants
+         SET "isDefault" = CASE WHEN "combinationHash" = $1 THEN true ELSE false END
+         WHERE "productId" = $2`,
+        [defaultHash, productId],
+      );
+    }
+
+    return { created, skipped, combinations };
+  }
+
   async updateVariant(variantId: string, dto: UpdateVariantDto): Promise<ProductVariant> {
     const variant = await this.variantRepo.findOne({ where: { id: variantId }, relations: ['options'] });
     if (!variant) throw new NotFoundException('Variant not found');
@@ -604,7 +738,6 @@ export class ProductService {
     }
 
     return this.dataSource.transaction(async (em) => {
-      const newOptionValues = optionValues ?? [];
       const combinationHash = optionValues !== null ? buildCombinationHash(optionValues.map(v => v.id)) : variant.combinationHash;
       const variantSlug     = optionValues !== null
         ? await this.generateUniqueVariantSlug(variant.productId, buildVariantSlug(optionValues), em, variantId)
@@ -696,16 +829,51 @@ export class ProductService {
 
   // ── Variant resolution (PDP option picker → specific SKU) ──────────────────
 
-  async resolveVariant(productId: string, optionValueIds: string[]): Promise<ProductVariant> {
-    if (!optionValueIds.length) throw new BadRequestException('At least one option value is required');
+  async resolveVariant(
+    productId: string,
+    optionValueIds: string[],
+  ): Promise<{
+    status: 'available' | 'out_of_stock' | 'unavailable';
+    variant: {
+      id: string; sku: string; title: string;
+      priceCents: number; compareAtPriceCents: number | null;
+      variantSlug: string | null; featuredMediaUrl: string | null;
+      available: number; optionValueIds: string[];
+    } | null;
+  }> {
+    if (!optionValueIds.length) return { status: 'unavailable', variant: null };
+
     const hash = buildCombinationHash(optionValueIds);
-    if (!hash) throw new BadRequestException('Invalid option values');
+    if (!hash) return { status: 'unavailable', variant: null };
+
     const variant = await this.variantRepo.findOne({
       where: { productId, combinationHash: hash },
-      relations: ['options', 'options.optionValue'],
+      relations: ['options'],
     });
-    if (!variant) throw new NotFoundException('No variant matches the selected options');
-    return variant;
+    if (!variant) return { status: 'unavailable', variant: null };
+
+    const inventory   = await this.inventoryRepo.findOneBy({ variantId: variant.id });
+    const hasInventory = !!inventory;
+    const available   = hasInventory ? (inventory!.available ?? 0) : -1;
+
+    const featuredMediaUrl = variant.featuredMediaKey
+      ? ((await this.assetUrlService.resolveBatch([variant.featuredMediaKey])).get(variant.featuredMediaKey) ?? null)
+      : null;
+
+    return {
+      status:  !hasInventory || available > 0 ? 'available' : 'out_of_stock',
+      variant: {
+        id:                  variant.id,
+        sku:                 variant.sku,
+        title:               variant.title,
+        priceCents:          variant.priceCents,
+        compareAtPriceCents: variant.compareAtPriceCents ?? null,
+        variantSlug:         variant.variantSlug ?? null,
+        featuredMediaUrl,
+        available,
+        optionValueIds:      (variant.options ?? []).map(o => o.optionValueId).filter(Boolean) as string[],
+      },
+    };
   }
 
   // ── Variant availability matrix (PDP option picker state) ──────────────────
@@ -749,6 +917,7 @@ export class ProductService {
     });
 
     const inventoryRows = await this.inventoryRepo.findBy({ productId });
+    const hasInventory  = inventoryRows.length > 0;
     const stockMap      = new Map(inventoryRows.map(i => [i.variantId, i.available]));
 
     const mediaKeys = variants.map(v => v.featuredMediaKey).filter(Boolean) as string[];
@@ -794,8 +963,8 @@ export class ProductService {
         variantSlug:         v.variantSlug,
         featuredMediaUrl:    v.featuredMediaKey ? (urlMap.get(v.featuredMediaKey) ?? null) : null,
         optionValueIds:      (v.options ?? []).map(o => o.optionValueId).filter(Boolean) as string[],
-        available:           stockMap.get(v.id) ?? 0,
-        inStock:             (stockMap.get(v.id) ?? 0) > 0,
+        available:           hasInventory ? (stockMap.get(v.id) ?? 0) : 1,
+        inStock:             !hasInventory || (stockMap.get(v.id) ?? 0) > 0,
       })),
     };
   }

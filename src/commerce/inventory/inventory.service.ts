@@ -5,6 +5,34 @@ import { InventoryItem } from '../entities/inventory-item.entity';
 import { InventoryMovement, MovementType } from '../entities/inventory-movement.entity';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { COMMERCE_EVENTS } from '../events/commerce-events';
+import { AssetUrlService } from '../../asset-url/asset-url.service';
+
+export interface EnrichedInventoryItem {
+  id: string;
+  variantId: string;
+  productId: string;
+  sku: string;
+  variantTitle: string;
+  priceCents: number;
+  compareAtPriceCents: number | null;
+  featuredMediaUrl: string | null;
+  optionValues: Array<{
+    optionValueId: string;
+    value: string;
+    displayValue: string | null;
+    attributeName: string;
+    attributeId: string;
+  }>;
+  productTitle: string;
+  productSlug: string;
+  productStatus: string;
+  available: number;
+  reserved: number;
+  incoming: number;
+  lowStockThreshold: number;
+  updatedAt: string;
+  status: 'in_stock' | 'low_stock' | 'out_of_stock';
+}
 
 @Injectable()
 export class InventoryService {
@@ -15,6 +43,7 @@ export class InventoryService {
     @InjectRepository(InventoryMovement) private readonly movementRepo: Repository<InventoryMovement>,
     private readonly dataSource:  DataSource,
     private readonly eventBus:    CommerceEventBus,
+    private readonly assetUrl:    AssetUrlService,
   ) {}
 
   async getByVariant(variantId: string): Promise<InventoryItem | null> {
@@ -23,6 +52,132 @@ export class InventoryService {
 
   async listAll(): Promise<InventoryItem[]> {
     return this.itemRepo.find();
+  }
+
+  // ── Enriched list (for admin inventory page) ───────────────────────────────
+
+  async listAllEnriched(): Promise<EnrichedInventoryItem[]> {
+    const rows: any[] = await this.itemRepo.manager.query(`
+      SELECT
+        inv.id,
+        inv."variantId",
+        inv."productId",
+        inv.available,
+        inv.reserved,
+        inv.incoming,
+        inv."lowStockThreshold",
+        inv."updatedAt",
+        v.sku,
+        v.title               AS "variantTitle",
+        v."priceCents",
+        v."compareAtPriceCents",
+        v."featuredMediaKey"  AS "variantMediaKey",
+        p.title               AS "productTitle",
+        p.slug                AS "productSlug",
+        p.status              AS "productStatus",
+        p."featuredImageKey"  AS "productImageKey"
+      FROM shop_inventory_items  inv
+      JOIN shop_product_variants v ON v.id  = inv."variantId"
+      JOIN shop_products         p ON p.id  = inv."productId"
+      WHERE p."deletedAt" IS NULL
+        AND v."combinationHash" IS NOT NULL
+      ORDER BY p.title ASC, v."sortOrder" ASC, v.title ASC
+    `);
+
+    if (!rows.length) return [];
+
+    const variantIds = rows.map(r => r.variantId);
+
+    const optionRows: any[] = await this.itemRepo.manager.query(`
+      SELECT
+        vo."variantId",
+        ov.id           AS "optionValueId",
+        ov.value,
+        ov."displayValue",
+        attr.name        AS "attributeName",
+        attr.id          AS "attributeId",
+        attr."sortOrder" AS "attrSortOrder"
+      FROM shop_variant_options          vo
+      JOIN shop_variation_option_values  ov   ON ov.id   = vo."optionValueId"
+      JOIN shop_variant_attributes       attr ON attr.id = vo."attributeId"
+      WHERE vo."variantId" = ANY($1)
+        AND vo."optionValueId" IS NOT NULL
+      ORDER BY attr."sortOrder" ASC
+    `, [variantIds]);
+
+    const optsByVariant = new Map<string, typeof optionRows>();
+    for (const ov of optionRows) {
+      const arr = optsByVariant.get(ov.variantId) ?? [];
+      arr.push(ov);
+      optsByVariant.set(ov.variantId, arr);
+    }
+
+    const mediaKeys = [
+      ...rows.map(r => r.variantMediaKey).filter(Boolean),
+      ...rows.map(r => r.productImageKey).filter(Boolean),
+    ] as string[];
+    const urlMap = await this.assetUrl.resolveBatch(mediaKeys);
+
+    return rows.map(r => {
+      const available  = Number(r.available  ?? 0);
+      const threshold  = Number(r.lowStockThreshold ?? 5);
+      const mediaUrl   = r.variantMediaKey
+        ? (urlMap.get(r.variantMediaKey) ?? null)
+        : (r.productImageKey ? (urlMap.get(r.productImageKey) ?? null) : null);
+
+      return {
+        id:                  r.id,
+        variantId:           r.variantId,
+        productId:           r.productId,
+        sku:                 r.sku,
+        variantTitle:        r.variantTitle,
+        priceCents:          Number(r.priceCents  ?? 0),
+        compareAtPriceCents: r.compareAtPriceCents ? Number(r.compareAtPriceCents) : null,
+        featuredMediaUrl:    mediaUrl,
+        optionValues:        optsByVariant.get(r.variantId) ?? [],
+        productTitle:        r.productTitle,
+        productSlug:         r.productSlug,
+        productStatus:       r.productStatus,
+        available,
+        reserved:   Number(r.reserved  ?? 0),
+        incoming:   Number(r.incoming  ?? 0),
+        lowStockThreshold: threshold,
+        updatedAt:  r.updatedAt,
+        status: available <= 0 ? 'out_of_stock' : available <= threshold ? 'low_stock' : 'in_stock',
+      } as EnrichedInventoryItem;
+    });
+  }
+
+  // ── Update inventory settings ──────────────────────────────────────────────
+
+  async updateSettings(
+    variantId: string,
+    dto: { lowStockThreshold?: number; incoming?: number },
+  ): Promise<InventoryItem> {
+    const item = await this.itemRepo.findOneBy({ variantId });
+    if (!item) throw new NotFoundException(`Inventory record not found for variant ${variantId}`);
+    if (dto.lowStockThreshold !== undefined) item.lowStockThreshold = dto.lowStockThreshold;
+    if (dto.incoming          !== undefined) item.incoming          = dto.incoming;
+    return this.itemRepo.save(item);
+  }
+
+  // ── Bulk adjust ────────────────────────────────────────────────────────────
+
+  async bulkAdjust(
+    adjustments: Array<{ variantId: string; delta: number; note?: string }>,
+    adminId?: string,
+  ): Promise<{ ok: number; failed: number }> {
+    let ok = 0; let failed = 0;
+    for (const adj of adjustments) {
+      try {
+        await this.adjust(adj.variantId, adj.delta, adj.note ?? 'Bulk adjustment', adminId);
+        ok++;
+      } catch (err) {
+        failed++;
+        this.logger.warn(`Bulk adjust failed for ${adj.variantId}: ${(err as Error).message}`);
+      }
+    }
+    return { ok, failed };
   }
 
   // ── Reserve stock when an order is placed (pessimistic lock) ───────────────

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, HttpCode } from '@nestjs/common';
 import { Public } from '../../auth/public.decorator';
 import { ProductService } from './product.service';
 import { ReviewsService } from '../reviews/reviews.service';
@@ -54,6 +54,7 @@ export class ProductPublicController {
 
   /** Resolve a set of selected option value IDs to a specific SKU/variant. */
   @Post(':slug/variants/resolve')
+  @HttpCode(200)
   async resolveVariant(
     @Param('slug') slug: string,
     @Body() dto: { optionValueIds: string[] },

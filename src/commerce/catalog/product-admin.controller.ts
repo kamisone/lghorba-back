@@ -106,6 +106,13 @@ export class ProductAdminController {
     return this.products.deleteVariant(variantId);
   }
 
+  /** Generate all possible variant combinations from the product's linked attributes. */
+  @Post(':id/variants/generate-combinations')
+  @HttpCode(200)
+  generateCombinations(@Param('id') productId: string) {
+    return this.products.generateVariantCombinations(productId);
+  }
+
   // ── Product-level attribute scoping ────────────────────────────────────────
 
   @Get(':id/attributes')
