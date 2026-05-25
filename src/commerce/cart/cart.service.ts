@@ -4,7 +4,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Queue } from 'bullmq';
 import { Cart } from '../entities/cart.entity';
 import { CartItem } from '../entities/cart-item.entity';
@@ -225,10 +225,17 @@ export class CartService {
     const imageKeys = items.map(i => i.imageKeySnapshot).filter(Boolean) as string[];
     const urlMap = await this.assetUrlService.resolveBatch(imageKeys);
 
+    const productIds = [...new Set(items.map(i => i.productId))];
+    const products = productIds.length
+      ? await this.productRepo.find({ where: { id: In(productIds) } })
+      : [];
+    const slugMap = new Map(products.map(p => [p.id, p.slug]));
+
     let enrichedItems = items.map(item => ({
       ...item,
       imageUrl: item.imageKeySnapshot ? (urlMap.get(item.imageKeySnapshot) ?? null) : null,
       lineTotalCents: item.quantity * item.unitPriceCents,
+      productSlug: slugMap.get(item.productId) ?? null,
     }));
 
     // Translate optionsSnapshot attribute names and display values for non-FR locales
