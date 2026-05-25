@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Inject, Optional, Param, Patch, Post, Query,
+  Body, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,7 +7,7 @@ import { Public } from '../../auth/public.decorator';
 import { VariantAttribute } from '../entities/variant-attribute.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../shared/entity-types';
+import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
 
 @Controller('admin/shop/variant-attributes')
 export class VariantAttributeAdminController {
@@ -75,7 +75,7 @@ export class VariantAttributePublicController {
   constructor(
     @InjectRepository(VariantAttribute)
     private readonly attrRepo: Repository<VariantAttribute>,
-    @Optional() private readonly translationsService: TranslationsService,
+    private readonly translationsService: TranslationsService,
   ) {}
 
   @Get()
@@ -88,12 +88,10 @@ export class VariantAttributePublicController {
       .addOrderBy('v.sortOrder', 'ASC')
       .getMany();
 
-    if (!lang || !this.translationsService) return attrs;
-
-    const translated = await this.translationsService.applyToEntities(attrs, ET_SHOP_VARIANT_ATTR, lang);
+    const translated = await this.translationsService.maybeApply(attrs, ET_SHOP_VARIANT_ATTR, lang);
     for (const attr of translated) {
       if (attr.optionValues?.length) {
-        attr.optionValues = await this.translationsService.applyToEntities(
+        attr.optionValues = await this.translationsService.maybeApply(
           attr.optionValues, ET_SHOP_VARIATION_OPTION, lang,
         );
       }

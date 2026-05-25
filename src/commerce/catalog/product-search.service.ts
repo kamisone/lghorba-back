@@ -161,7 +161,7 @@ export class ProductSearchService implements OnModuleInit {
     const keys = result.hits
       .map((h: any) => h.featuredImageKey)
       .filter((k: any): k is string => !!k);
-    const urlMap = keys.length ? await this.assetUrl.resolveBatch(keys) : new Map<string, string>();
+    const urlMap = await this.assetUrl.resolveBatch(keys);
     result.hits = result.hits.map((h: any) => ({
       ...h,
       featuredImageUrl: h.featuredImageKey ? (urlMap.get(h.featuredImageKey) ?? null) : null,

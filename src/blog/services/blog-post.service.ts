@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { z } from 'zod';
@@ -8,7 +8,7 @@ import { BlogTag } from '../entities/blog-tag.entity';
 import { calculateReadingTime, slugify } from './blog-slug.util';
 import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_BLOG_POST } from '../../commerce/shared/entity-types';
+import { ET_BLOG_POST } from '../../common/entity-types';
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ export class BlogPostService {
     @InjectRepository(BlogCategory) private readonly categoryRepo: Repository<BlogCategory>,
     @InjectRepository(BlogTag)      private readonly tagRepo:      Repository<BlogTag>,
     private readonly assetUrlService: AssetUrlService,
-    @Optional() private readonly translationsService: TranslationsService,
+    private readonly translationsService: TranslationsService,
   ) {}
 
   private async enrichPost<T extends BlogPost>(post: T): Promise<T & { featuredImageUrl: string | null }> {
@@ -286,10 +286,8 @@ export class BlogPostService {
       .offset(offset)
       .getMany();
 
-    let items: any[] = await this.enrichPosts(raw);
-    if (filter.lang && this.translationsService) {
-      items = await this.translationsService.applyToEntities(items, ET_BLOG_POST, filter.lang);
-    }
+    const enriched: any[] = await this.enrichPosts(raw);
+    const items = await this.translationsService.maybeApply(enriched, ET_BLOG_POST, filter.lang);
     return { items, total };
   }
 
@@ -299,11 +297,8 @@ export class BlogPostService {
       relations: ['categories', 'tags'],
     });
     if (!post) throw new NotFoundException(`Post "${slug}" not found`);
-    let result: any = await this.enrichPost(post);
-    if (lang && this.translationsService) {
-      result = await this.translationsService.applyToEntity(result, ET_BLOG_POST, lang);
-    }
-    return result;
+    const enriched: any = await this.enrichPost(post);
+    return this.translationsService.maybeApplyOne(enriched, ET_BLOG_POST, lang);
   }
 
   async publicRelated(postId: string, limit = 3): Promise<BlogPost[]> {

@@ -17,7 +17,8 @@ import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { MediaService } from '../../media/media.service';
 import { ProductSearchService } from './product-search.service';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_SHOP_PRODUCT, ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../shared/entity-types';
+import { ET_SHOP_PRODUCT, ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
+import { slugify } from '../../common/utils/slug.util';
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
 
@@ -125,10 +126,6 @@ export interface ProductListFilter {
   offset?:     number;
 }
 
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
 @Injectable()
 export class ProductService {
   private readonly logger = new Logger(ProductService.name);
@@ -146,7 +143,7 @@ export class ProductService {
     private readonly dataSource:       DataSource,
     @Optional() private readonly searchService: ProductSearchService,
     @Optional() private readonly mediaService: MediaService,
-    @Optional() private readonly translationsService: TranslationsService,
+    private readonly translationsService: TranslationsService,
   ) {}
 
   private syncProductMediaUsage(product: Product): void {
@@ -184,7 +181,7 @@ export class ProductService {
       for (const v of variants) for (const k of v.mediaKeys ?? []) allKeys.add(k);
     }
 
-    const urlMap = allKeys.size ? await this.assetUrlService.resolveBatch([...allKeys]) : new Map<string, string>();
+    const urlMap = await this.assetUrlService.resolveBatch([...allKeys]);
 
     if (variants) {
       for (const v of variants) {
@@ -202,7 +199,7 @@ export class ProductService {
   private async resolveProductsUrls<T extends Product>(products: T[]): Promise<(T & { featuredImageUrl: string | null })[]> {
     if (!products.length) return [];
     const keys = products.map(p => p.featuredImageKey).filter(Boolean) as string[];
-    const urlMap = keys.length ? await this.assetUrlService.resolveBatch(keys) : new Map<string, string>();
+    const urlMap = await this.assetUrlService.resolveBatch(keys);
     return products.map(p => Object.assign(p, { featuredImageUrl: p.featuredImageKey ? (urlMap.get(p.featuredImageKey) ?? null) : null }));
   }
 
@@ -266,11 +263,9 @@ export class ProductService {
     if (search) qb.andWhere('p.title ILIKE :q', { q: `%${search}%` });
 
     const [raw, total] = await qb.getManyAndCount();
-    let withUrls = await this.resolveProductsUrls(raw) as any[];
-    if (lang && this.translationsService) {
-      withUrls = await this.translationsService.applyToEntities(withUrls, ET_SHOP_PRODUCT, lang);
-    }
-    return { items: withUrls, total };
+    const withUrls = await this.resolveProductsUrls(raw) as any[];
+    const items = await this.translationsService.maybeApply(withUrls, ET_SHOP_PRODUCT, lang);
+    return { items, total };
   }
 
   // ── Find by ID (admin) ──────────────────────────────────────────────────────
@@ -293,11 +288,8 @@ export class ProductService {
       relations: ['categories', 'tags', 'variants', 'variants.options', 'primaryCategory'],
     });
     if (!product) throw new NotFoundException('Product not found');
-    let result: any = await this.resolveProductUrls(product);
-    if (lang && this.translationsService) {
-      result = await this.translationsService.applyToEntity(result, ET_SHOP_PRODUCT, lang);
-    }
-    return result;
+    const resolved: any = await this.resolveProductUrls(product);
+    return this.translationsService.maybeApplyOne(resolved, ET_SHOP_PRODUCT, lang);
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────
@@ -760,7 +752,7 @@ export class ProductService {
     const stockMap      = new Map(inventoryRows.map(i => [i.variantId, i.available]));
 
     const mediaKeys = variants.map(v => v.featuredMediaKey).filter(Boolean) as string[];
-    const urlMap    = mediaKeys.length ? await this.assetUrlService.resolveBatch(mediaKeys) : new Map<string, string>();
+    const urlMap = await this.assetUrlService.resolveBatch(mediaKeys);
 
     let attributes: any[] = productAttrs.map(pa => ({
       id:                   pa.attribute.id,
@@ -782,14 +774,12 @@ export class ProductService {
         })),
     }));
 
-    if (lang && this.translationsService) {
-      attributes = await this.translationsService.applyToEntities(attributes, ET_SHOP_VARIANT_ATTR, lang);
-      for (const attr of attributes) {
-        if (attr.optionValues?.length) {
-          attr.optionValues = await this.translationsService.applyToEntities(
-            attr.optionValues, ET_SHOP_VARIATION_OPTION, lang,
-          );
-        }
+    attributes = await this.translationsService.maybeApply(attributes, ET_SHOP_VARIANT_ATTR, lang);
+    for (const attr of attributes) {
+      if (attr.optionValues?.length) {
+        attr.optionValues = await this.translationsService.maybeApply(
+          attr.optionValues, ET_SHOP_VARIATION_OPTION, lang,
+        );
       }
     }
 

@@ -41,9 +41,7 @@ export class BlogProductReferenceService {
     const imageKeys = products
       .map(p => p.featuredImageKey)
       .filter(Boolean) as string[];
-    const urlMap = imageKeys.length
-      ? await this.assetUrlService.resolveBatch(imageKeys)
-      : new Map<string, string>();
+    const urlMap = await this.assetUrlService.resolveBatch(imageKeys);
 
     return refs.map(ref => {
       const product = productMap.get(ref.productId);

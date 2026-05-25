@@ -1,5 +1,5 @@
 import {
-  ConflictException, Injectable, NotFoundException, Optional,
+  ConflictException, Injectable, NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -8,7 +8,8 @@ import { ShopCollection } from '../entities/shop-collection.entity';
 import { ShopCollectionProduct } from '../entities/shop-collection-product.entity';
 import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_SHOP_COLLECTION } from '../shared/entity-types';
+import { ET_SHOP_COLLECTION } from '../../common/entity-types';
+import { slugify } from '../../common/utils/slug.util';
 
 export const UpsertCollectionSchema = z.object({
   slug:           z.string().min(1).max(200).optional(),
@@ -27,17 +28,13 @@ export const UpsertCollectionSchema = z.object({
 });
 export type UpsertCollectionDto = z.infer<typeof UpsertCollectionSchema>;
 
-function slugify(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-}
-
 @Injectable()
 export class CollectionService {
   constructor(
     @InjectRepository(ShopCollection)        private readonly collectionRepo: Repository<ShopCollection>,
     @InjectRepository(ShopCollectionProduct) private readonly cpRepo:         Repository<ShopCollectionProduct>,
-    private readonly assetUrlService: AssetUrlService,
-    @Optional() private readonly translationsService: TranslationsService,
+    private readonly assetUrlService:      AssetUrlService,
+    private readonly translationsService:  TranslationsService,
   ) {}
 
   private async enrichCollection<T extends ShopCollection>(c: T): Promise<T & { imageUrl: string | null }> {
@@ -57,11 +54,8 @@ export class CollectionService {
       where: { isActive: true },
       order: { sortOrder: 'ASC' },
     });
-    let enriched = await Promise.all(collections.map(c => this.enrichCollection(c))) as any[];
-    if (lang && this.translationsService) {
-      enriched = await this.translationsService.applyToEntities(enriched, ET_SHOP_COLLECTION, lang);
-    }
-    return enriched;
+    const enriched = await Promise.all(collections.map(c => this.enrichCollection(c))) as any[];
+    return this.translationsService.maybeApply(enriched, ET_SHOP_COLLECTION, lang);
   }
 
   async featuredList(lang?: string): Promise<any[]> {
@@ -69,11 +63,8 @@ export class CollectionService {
       where: { isActive: true, isFeatured: true },
       order: { sortOrder: 'ASC' },
     });
-    let enriched = await Promise.all(collections.map(c => this.enrichCollection(c))) as any[];
-    if (lang && this.translationsService) {
-      enriched = await this.translationsService.applyToEntities(enriched, ET_SHOP_COLLECTION, lang);
-    }
-    return enriched;
+    const enriched = await Promise.all(collections.map(c => this.enrichCollection(c))) as any[];
+    return this.translationsService.maybeApply(enriched, ET_SHOP_COLLECTION, lang);
   }
 
   async findBySlug(slug: string, withProducts = true, lang?: string): Promise<any> {
@@ -88,11 +79,8 @@ export class CollectionService {
       });
     }
 
-    let result: any = { ...(await this.enrichCollection(collection)), products };
-    if (lang && this.translationsService) {
-      result = await this.translationsService.applyToEntity(result, ET_SHOP_COLLECTION, lang);
-    }
-    return result;
+    const result: any = { ...(await this.enrichCollection(collection)), products };
+    return this.translationsService.maybeApplyOne(result, ET_SHOP_COLLECTION, lang);
   }
 
   async findById(id: string): Promise<any> {

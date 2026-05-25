@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { z } from 'zod';
 import { ShippingZone } from '../entities/shipping-zone.entity';
 import { ShippingMethod } from '../entities/shipping-method.entity';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_SHOP_SHIPPING_METHOD } from '../shared/entity-types';
+import { ET_SHOP_SHIPPING_METHOD } from '../../common/entity-types';
 
 export const UpsertZoneSchema = z.object({
   name:         z.string().min(1).max(200),
@@ -31,7 +31,7 @@ export class ShippingService {
   constructor(
     @InjectRepository(ShippingZone)   private readonly zoneRepo:   Repository<ShippingZone>,
     @InjectRepository(ShippingMethod) private readonly methodRepo: Repository<ShippingMethod>,
-    @Optional() private readonly translationsService: TranslationsService,
+    private readonly translationsService: TranslationsService,
   ) {}
 
   async getMethodsForCountry(countryCode: string, cartTotalCents: number, lang?: string): Promise<any[]> {
@@ -58,11 +58,8 @@ export class ShippingService {
       });
     }
 
-    let result: any[] = this.applyFreeShipping(methods, cartTotalCents);
-    if (lang && this.translationsService) {
-      result = await this.translationsService.applyToEntities(result, ET_SHOP_SHIPPING_METHOD, lang);
-    }
-    return result;
+    const result: any[] = this.applyFreeShipping(methods, cartTotalCents);
+    return this.translationsService.maybeApply(result, ET_SHOP_SHIPPING_METHOD, lang);
   }
 
   private applyFreeShipping(methods: ShippingMethod[], cartTotalCents: number): ShippingMethod[] {

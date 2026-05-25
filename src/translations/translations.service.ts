@@ -83,6 +83,24 @@ export class TranslationsService {
     });
   }
 
+  /** Convenience: apply translations only when lang is provided. Eliminates repetitive if-guards at call sites. */
+  maybeApply<T extends Record<string, unknown>>(
+    items: T[],
+    entityType: string,
+    lang?: string,
+  ): Promise<T[]> {
+    return lang ? this.applyToEntities(items, entityType, lang) : Promise.resolve(items);
+  }
+
+  /** Single-entity variant of maybeApply. */
+  maybeApplyOne<T extends Record<string, unknown>>(
+    entity: T,
+    entityType: string,
+    lang?: string,
+  ): Promise<T> {
+    return lang ? this.applyToEntity(entity, entityType, lang) : Promise.resolve(entity);
+  }
+
   async deleteById(id: string): Promise<void> {
     await this.repo.delete(id);
   }

@@ -15,7 +15,7 @@ import { ShopPromotion } from '../entities/shop-promotion.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
 import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../shared/entity-types';
+import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
 import { CART_ABANDONMENT_QUEUE } from './cart-abandonment.constants';
 
 @Injectable()
@@ -223,7 +223,7 @@ export class CartService {
   private async enrichCart(cart: Cart, lang?: string): Promise<any> {
     const items = (cart.items ?? []) as CartItem[];
     const imageKeys = items.map(i => i.imageKeySnapshot).filter(Boolean) as string[];
-    const urlMap = imageKeys.length ? await this.assetUrlService.resolveBatch(imageKeys) : new Map<string, string>();
+    const urlMap = await this.assetUrlService.resolveBatch(imageKeys);
 
     let enrichedItems = items.map(item => ({
       ...item,
