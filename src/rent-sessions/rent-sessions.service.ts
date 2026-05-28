@@ -16,7 +16,7 @@ import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
 const LOCATION_INTERVAL_MS = 15 * 60 * 1000;
-const MAX_POSITION_JUMP_KM = 100;
+const MAX_POSITION_JUMP_KM = 50;
 
 export function addLocationInterval(from: Date): Date {
   return new Date(from.getTime() + LOCATION_INTERVAL_MS);
@@ -184,9 +184,49 @@ export class RentSessionsService {
       }
     }
 
-    return this.positionRepo.save(
+    const saved = await this.positionRepo.save(
       this.positionRepo.create({ ...dto, sessionId: id }),
     );
+    await this.removeSpikes(id);
+    return saved;
+  }
+
+  private async removeSpikes(sessionId: string): Promise<void> {
+    const recent = await this.positionRepo.find({
+      where: { sessionId },
+      order: { recordedAt: 'DESC' },
+      take: 5,
+    });
+    if (recent.length < 3) return;
+
+    const positions = recent.reverse(); // chronological order
+    const toDelete: string[] = [];
+
+    for (let i = 1; i < positions.length - 1; i++) {
+      const prev = positions[i - 1];
+      const curr = positions[i];
+      const next = positions[i + 1];
+      const dPrevCurr = haversineKm(Number(prev.lat), Number(prev.lng), Number(curr.lat), Number(curr.lng));
+      const dCurrNext = haversineKm(Number(curr.lat), Number(curr.lng), Number(next.lat), Number(next.lng));
+      const dPrevNext = haversineKm(Number(prev.lat), Number(prev.lng), Number(next.lat), Number(next.lng));
+
+      if (
+        dPrevCurr > MAX_POSITION_JUMP_KM &&
+        dCurrNext > MAX_POSITION_JUMP_KM &&
+        dPrevNext <= MAX_POSITION_JUMP_KM
+      ) {
+        toDelete.push(curr.id);
+        this.logger.warn(
+          `Spike removed in session ${sessionId}: position ${curr.id} ` +
+          `(prev→curr ${dPrevCurr.toFixed(1)} km, curr→next ${dCurrNext.toFixed(1)} km, ` +
+          `prev→next ${dPrevNext.toFixed(1)} km)`,
+        );
+      }
+    }
+
+    if (toDelete.length > 0) {
+      await this.positionRepo.delete(toDelete);
+    }
   }
 
   async getPositions(id: string): Promise<RentPosition[]> {
