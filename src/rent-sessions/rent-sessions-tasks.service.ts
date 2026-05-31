@@ -52,12 +52,12 @@ export class RentSessionsTasksService {
   @Cron(CronExpression.EVERY_MINUTE)
   async activateScheduledSessions(): Promise<void> {
     const now = new Date();
-    // Find bookings with autoStartTracking that are currently active (started but not ended)
-    // and don't yet have a session
+    // Start a session for every booking whose window is active and has no session yet.
+    // autoStartTracking only controls whether GPS pings begin immediately; the session
+    // is always created so the admin can see it and start tracking manually if needed.
     const bookings = await this.bookingRepo
       .createQueryBuilder('b')
-      .where('b.autoStartTracking = true')
-      .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+      .where('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
       .andWhere('b.startDateTime <= :now', { now })
       .andWhere('b.endDateTime > :now', { now })
       .getMany();
@@ -69,16 +69,19 @@ export class RentSessionsTasksService {
         const car = await this.carRepo.findOne({ where: { id: booking.carId } });
         if (!car) return;
         const ts = new Date();
+        const trackingPaused = !booking.autoStartTracking;
         await this.sessionRepo.save(
           this.sessionRepo.create({
             carId: booking.carId,
             bookingId: booking.id,
-            lastLocationRequestedAt: ts,
-            nextLocationAt: addLocationInterval(ts),
-            trackingPaused: false,
+            lastLocationRequestedAt: trackingPaused ? null : ts,
+            nextLocationAt: trackingPaused ? null : addLocationInterval(ts),
+            trackingPaused,
           }),
         );
-        await this.smsService.addMessage(car.phoneNumber, 'location');
+        if (!trackingPaused) {
+          await this.smsService.addMessage(car.phoneNumber, 'location');
+        }
       }),
     );
   }
