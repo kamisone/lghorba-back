@@ -14,6 +14,9 @@ import { DataSource, EntityManager, LessThan, Repository } from 'typeorm';
 import { Car } from '../cars/car.entity';
 import { CarPricing } from '../cars/car-pricing.entity';
 import { CarDeliveryLocation } from '../cars/car-delivery-location.entity';
+import { SmsService } from '../sms/sms.service';
+import { RentSession, RentSessionStatus } from '../rent-sessions/rent-session.entity';
+import { addLocationInterval } from '../rent-sessions/rent-sessions.service';
 import { VehicleHealthService } from '../vehicle-health/vehicle-health.service';
 import { haversineKm } from '../common/utils/map.util';
 import { DistributedLockService } from '../common/lock/distributed-lock.service';
@@ -73,6 +76,8 @@ export class BookingsService {
     private readonly pricingRepo: Repository<CarPricing>,
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
+    @InjectRepository(RentSession)
+    private readonly sessionRepo: Repository<RentSession>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     @InjectQueue(BOOKING_EXPIRATION_QUEUE)
@@ -83,6 +88,7 @@ export class BookingsService {
     private readonly vehicleHealthService: VehicleHealthService,
     private readonly promotionsService: PromotionsService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly smsService: SmsService,
   ) {}
 
   // ── Date helpers ──────────────────────────────────────────────────────────
@@ -865,6 +871,65 @@ export class BookingsService {
         (err as { name?: string })?.name === 'OptimisticLockVersionMismatchError' ||
         isTransientDbError(err),
     });
+  }
+
+  async reactivateBooking(id: string, endDateTime: string): Promise<Booking> {
+    const booking = await this.findBooking(id);
+
+    if (CANCELLED_STATUSES.includes(booking.status as typeof CANCELLED_STATUSES[number])) {
+      throw new BadRequestException('Cancelled bookings cannot be reactivated');
+    }
+    if (booking.status === BookingStatus.PENDING_PAYMENT) {
+      throw new BadRequestException('Pending payment bookings cannot be reactivated');
+    }
+
+    const newEnd = new Date(endDateTime);
+    if (newEnd <= new Date()) {
+      throw new BadRequestException('New end time must be in the future');
+    }
+    if (newEnd <= booking.startDateTime) {
+      throw new BadRequestException('New end time must be after the booking start time');
+    }
+
+    const conflict = await this.bookingRepo
+      .createQueryBuilder('b')
+      .where('b.carId = :carId',                          { carId: booking.carId })
+      .andWhere('b.id != :id',                            { id })
+      .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+      .andWhere('b.startDateTime < :end',                 { end: newEnd })
+      .andWhere('b.endDateTime   > :start',               { start: booking.startDateTime })
+      .getOne();
+    if (conflict) throw new ConflictException('Car is not available during the extended period');
+
+    booking.endDateTime = newEnd;
+    await this.bookingRepo.save(booking);
+
+    const existing = await this.sessionRepo.findOne({ where: { bookingId: id } });
+
+    // Only resume the existing session — never create a new one.
+    // If no session exists the activateScheduledSessions cron will start one
+    // within a minute (it now runs for all bookings, not just autoStartTracking).
+    if (!existing || existing.status !== RentSessionStatus.ENDED) {
+      return this.findBooking(id);
+    }
+
+    const now            = new Date();
+    const trackingPaused = !booking.autoStartTracking;
+    const car            = await this.carRepo.findOne({ where: { id: booking.carId } });
+
+    await this.sessionRepo.update(existing.id, {
+      status:                  RentSessionStatus.ACTIVE,
+      endedAt:                 null,
+      trackingPaused,
+      lastLocationRequestedAt: trackingPaused ? existing.lastLocationRequestedAt : now,
+      nextLocationAt:          trackingPaused ? null : addLocationInterval(now),
+    });
+
+    if (!trackingPaused && car) {
+      await this.smsService.addMessage(car.phoneNumber, 'location');
+    }
+
+    return this.findBooking(id);
   }
 
   async deleteBooking(id: string): Promise<void> {

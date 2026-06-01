@@ -119,6 +119,17 @@ export class BookingsAdminController {
     return this.svc.updateBookingStatus(id, parsed.data.status);
   }
 
+  @Post(':id/reactivate')
+  reactivate(
+    @Param('id') id: string,
+    @Body() body: { endDateTime?: string },
+  ) {
+    const schema = z.object({ endDateTime: z.string().min(1) });
+    const parsed = schema.safeParse(body);
+    if (!parsed.success) throw new BadRequestException(parsed.error.message);
+    return this.svc.reactivateBooking(id, parsed.data.endDateTime);
+  }
+
   @Delete(':id')
   @HttpCode(204)
   deleteBooking(@Param('id') id: string) {
