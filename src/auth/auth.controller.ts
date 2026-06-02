@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
@@ -19,6 +19,7 @@ export class AuthController {
     private readonly mfaService: MfaService,
   ) {}
 
+  @SkipThrottle()
   @Get('me')
   me(@Request() req: { user: { id: number; email: string } }) {
     return req.user;
