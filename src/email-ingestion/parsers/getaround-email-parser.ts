@@ -20,7 +20,7 @@ export class GetaroundEmailParser implements ProviderEmailParser {
     const reservationNumber = this.extractReservationNumber(body, email.subject, email.html);
     const guestName         = this.extractGuestName(body);
     const vehicleName       = this.extractVehicleName(body, email.subject, email.html);
-    const { start, end }    = this.extractDates(body, email.html);
+    const { start, end }    = this.extractDates(body, email.html, email.subject);
     const totalEarning      = this.extractEarning(body);
     const pickupLocation    = this.extractPickupLocation(body);
     const guestPhone        = this.extractPhone(body);
@@ -130,7 +130,7 @@ export class GetaroundEmailParser implements ProviderEmailParser {
     return m ? m[1].trim() : null;
   }
 
-  private extractDates(body: string, rawHtml?: string): { start: string | null; end: string | null } {
+  private extractDates(body: string, rawHtml?: string, subject?: string): { start: string | null; end: string | null } {
     let start: string | null = null;
     let end: string | null   = null;
 
@@ -145,7 +145,15 @@ export class GetaroundEmailParser implements ProviderEmailParser {
       }
     }
 
-    // 2. Labelled patterns in flattened body: "Début : lundi 15 février 2025 à 10h00"
+    // 2. Email subject — reliably contains full dates with year, e.g.
+    //    "Renault Mégane (DQ589PJ): location confirmée du ven 05 juin 2026 à 09:00 au sam 06 juin 2026 à 20:00"
+    if ((!start || !end) && subject) {
+      const subjectDates = this.extractAllFrDates(subject);
+      if (!start && subjectDates[0]) start = subjectDates[0];
+      if (!end   && subjectDates[1]) end   = subjectDates[1];
+    }
+
+    // 3. Labelled patterns in flattened body: "Début : lundi 15 février 2025 à 10h00"
     if (!start || !end) {
       const startM = body.match(/(?:d[eé]but|prise\s+en\s+charge|d[eé]part|du)\s*[:\-\n]+\s*([^\n]{5,80})/i);
       const endM   = body.match(/(?:fin|retour|restitution|au)\s*[:\-\n]+\s*([^\n]{5,80})/i);
@@ -153,11 +161,33 @@ export class GetaroundEmailParser implements ProviderEmailParser {
       if (!end   && endM)   end   = parseDateString(endM[1]);
     }
 
-    // 3. Fallback: scan body for any French date strings
+    // 4. Fallback: scan body for any French date strings with year
     if (!start || !end) {
       const allDates = this.extractAllFrDates(body);
       if (!start && allDates[0]) start = allDates[0];
       if (!end   && allDates[1]) end   = allDates[1];
+    }
+
+    // 5. Last resort: extract dates from rental-dates elements in raw HTML.
+    //    These lack a year, so infer it from subject or aria-label first.
+    if ((!start || !end) && rawHtml) {
+      const yearSrc = subject ?? rawHtml;
+      const yearM   = yearSrc.match(/\b(20\d{2})\b/);
+      const year    = yearM ? yearM[1] : String(new Date().getFullYear());
+
+      for (const m of rawHtml.matchAll(/class="[^"]*rental-dates[^"]*"[^>]*>([\s\S]*?)<\/div>/gi)) {
+        const raw = m[1].replace(/<[^>]+>/g, '').trim();
+        // raw: "ven 5 juin à 09:00" — inject the year so parseFrench can handle it
+        const withYear = raw.replace(
+          /(\d{1,2})\s+([a-zéèêîôûùàâäë]+)\s+(?:à\s+)?(\d{1,2}[h:]\d{2})/i,
+          `$1 $2 ${year} à $3`,
+        );
+        const d = parseDateString(withYear);
+        if (d) {
+          if (!start) { start = d; continue; }
+          if (!end)   { end   = d; break; }
+        }
+      }
     }
 
     return { start, end };
