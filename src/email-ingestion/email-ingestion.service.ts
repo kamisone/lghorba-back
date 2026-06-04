@@ -161,7 +161,7 @@ export class EmailIngestionService {
         reservationNumber:        extracted.reservationNumber,
         totalEarning:             extracted.totalEarning ?? undefined,
         guestPlatformProfileUrl:  extracted.platformProfileUrl ?? undefined,
-        autoStartTracking:        false,
+        autoStartTracking:        true,
         gpsStopMode:              'auto',
       });
 
