@@ -611,6 +611,7 @@ export class ProductService {
   async generateVariantCombinations(productId: string): Promise<{
     created: number;
     skipped: number;
+    deleted: number;
     combinations: Array<{ title: string; sku: string; isNew: boolean; combinationHash: string }>;
   }> {
     const product = await this.productRepo.findOneBy({ id: productId });
@@ -716,7 +717,28 @@ export class ProductService {
       );
     }
 
-    return { created, skipped, combinations };
+    // Delete stale variants — those whose hash is not in the current full valid set.
+    // This removes the initial "Default" variant (null hash) and any partial-combination
+    // variants left over from a previously smaller set of attributes.
+    const validHashes = new Set(
+      allCombos.map(ovs => buildCombinationHash(ovs.map(v => v.id))).filter(Boolean) as string[],
+    );
+    const allVariants = await this.variantRepo.find({
+      where: { productId },
+      select: ['id', 'combinationHash'],
+    });
+    const staleIds = allVariants
+      .filter(v => !v.combinationHash || !validHashes.has(v.combinationHash))
+      .map(v => v.id);
+
+    let deleted = 0;
+    if (staleIds.length > 0) {
+      await this.inventoryRepo.delete({ variantId: In(staleIds) });
+      await this.variantRepo.delete({ id: In(staleIds) });
+      deleted = staleIds.length;
+    }
+
+    return { created, skipped, deleted, combinations };
   }
 
   async updateVariant(variantId: string, dto: UpdateVariantDto): Promise<ProductVariant> {
@@ -823,8 +845,28 @@ export class ProductService {
     return this.productAttrRepo.save(row);
   }
 
-  async removeProductAttribute(productId: string, attributeId: string): Promise<void> {
-    await this.productAttrRepo.delete({ productId, attributeId });
+  async removeProductAttribute(productId: string, attributeId: string): Promise<{ deletedVariants: number }> {
+    return this.dataSource.transaction(async (em) => {
+      // Find all variants of this product that have an option from the removed attribute
+      const rows: { variantId: string }[] = await em.query(
+        `SELECT DISTINCT vo."variantId"
+         FROM shop_variant_options vo
+         INNER JOIN shop_product_variants pv ON pv.id = vo."variantId"
+         WHERE pv."productId" = $1 AND vo."attributeId" = $2`,
+        [productId, attributeId],
+      );
+      const variantIds = rows.map(r => r.variantId);
+
+      if (variantIds.length > 0) {
+        // Delete inventory items first — no FK cascade from ProductVariant
+        await em.delete(InventoryItem, { variantId: In(variantIds) });
+        // Delete variants — VariantOptions cascade automatically via FK
+        await em.delete(ProductVariant, { id: In(variantIds) });
+      }
+
+      await em.delete(ProductVariantAttribute, { productId, attributeId });
+      return { deletedVariants: variantIds.length };
+    });
   }
 
   // ── Variant resolution (PDP option picker → specific SKU) ──────────────────

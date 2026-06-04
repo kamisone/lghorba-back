@@ -138,7 +138,7 @@ export class ProductAdminController {
   }
 
   @Delete(':id/attributes/:attributeId')
-  @HttpCode(204)
+  @HttpCode(200)
   removeAttribute(
     @Param('id') productId: string,
     @Param('attributeId') attributeId: string,
