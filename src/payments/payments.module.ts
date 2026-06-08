@@ -9,6 +9,6 @@ import { PaymentsController } from './payments.controller';
   imports:     [BookingsModule],
   providers:   [stripeProvider, PaymentsService, IdempotencyInterceptor],
   controllers: [PaymentsController],
-  exports:     [stripeProvider],
+  exports:     [stripeProvider, PaymentsService],
 })
 export class PaymentsModule {}

@@ -64,7 +64,9 @@ export class ShopPaymentService {
   // ── Process Stripe webhook ──────────────────────────────────────────────────
 
   async processWebhook(rawBody: Buffer, signature: string): Promise<void> {
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!;
+    // Each Stripe webhook endpoint has its own signing secret.
+    // The shop endpoint uses STRIPE_SHOP_WEBHOOK_SECRET (not the rental STRIPE_WEBHOOK_SECRET).
+    const webhookSecret = process.env.STRIPE_SHOP_WEBHOOK_SECRET!;
     let event: ReturnType<typeof this.stripe.webhooks.constructEvent>;
 
     try {
@@ -76,10 +78,16 @@ export class ShopPaymentService {
     if (event.type === 'payment_intent.succeeded') {
       const intent = event.data.object as Record<string, any>;
       const orderId = intent['metadata']?.orderId as string | undefined;
-      if (!orderId) return;
+      if (!orderId) {
+        this.logger.warn(`Webhook ${event.id}: payment_intent.succeeded has no orderId in metadata`);
+        return;
+      }
 
       const order = await this.orderRepo.findOneBy({ id: orderId });
-      if (!order) return;
+      if (!order) {
+        this.logger.warn(`Webhook ${event.id}: order ${orderId} not found`);
+        return;
+      }
 
       const isNew = await this.recordTransactionIdempotent({
         orderId,
@@ -92,9 +100,21 @@ export class ShopPaymentService {
         currency:              (intent['currency'] as string).toUpperCase(),
         metadata:              { intentId: intent['id'] },
       });
-      if (!isNew) return;
+      if (!isNew) {
+        this.logger.debug(`Webhook ${event.id}: already processed (idempotent skip)`);
+        return;
+      }
 
-      await this.ordersService.confirmPayment(orderId, intent['id'] as string);
+      try {
+        await this.ordersService.confirmPayment(orderId, intent['id'] as string);
+        this.logger.log(`Webhook ${event.id}: order ${orderId} confirmed as paid`);
+      } catch (err) {
+        this.logger.error(
+          `Webhook ${event.id}: confirmPayment failed for order ${orderId} (status="${order.status}") — manual review needed`,
+          (err as Error).message,
+        );
+        return;
+      }
 
       this.eventBus.emit(
         COMMERCE_EVENTS.PAYMENT_SUCCEEDED,

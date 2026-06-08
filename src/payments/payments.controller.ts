@@ -1,10 +1,6 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  Headers,
-  HttpCode,
-  Logger,
   Post,
   RawBodyRequest,
   Req,
@@ -20,8 +16,6 @@ import { PaymentsService } from './payments.service';
 
 @Controller()
 export class PaymentsController {
-  private readonly logger = new Logger(PaymentsController.name);
-
   constructor(
     private readonly bookingsService: BookingsService,
     private readonly paymentsService: PaymentsService,
@@ -54,49 +48,5 @@ export class PaymentsController {
     await this.bookingsService.setPaymentIntentId(booking.id, paymentIntentId);
 
     return { ...booking, clientSecret };
-  }
-
-  // ── Stripe webhook ────────────────────────────────────────────────────────
-
-  @Public()
-  @Post('webhooks/stripe')
-  @HttpCode(200)
-  async handleStripeWebhook(
-    @Headers('stripe-signature') sig: string,
-    @Req() req: RawBodyRequest<Request>,
-  ) {
-    const raw = req.rawBody;
-    if (!raw) throw new BadRequestException('Missing raw body');
-
-    let event;
-    try {
-      event = this.paymentsService.constructWebhookEvent(raw, sig);
-    } catch (err) {
-      this.logger.warn(`Webhook signature verification failed: ${(err as Error)?.message}`);
-      throw new BadRequestException('Invalid Stripe signature');
-    }
-
-    const intent = event.data.object as { id: string; metadata?: { bookingId?: string } };
-    const paymentIntentId = intent.id;
-
-    switch (event.type) {
-      case 'payment_intent.succeeded': {
-        // confirmByPaymentIntent emits booking.confirmed — the BillingBookingListener
-        // and BookingReminderListener react independently via the event bus.
-        await this.bookingsService.confirmByPaymentIntent(paymentIntentId);
-        break;
-      }
-
-      case 'payment_intent.payment_failed':
-      case 'payment_intent.canceled':
-        await this.bookingsService.cancelByPaymentIntent(paymentIntentId);
-        break;
-
-      default:
-        // Acknowledge all other events without action
-        break;
-    }
-
-    return { received: true };
   }
 }

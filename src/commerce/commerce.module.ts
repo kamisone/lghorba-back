@@ -210,7 +210,7 @@ const ENTITIES = [
     CustomerService, CollectionService, ReviewsService,
     PriceRuleService, ShopEmailService, BlogProductReferenceService,
     ProductSearchService, RecommendationService, ShopAnalyticsAggregatorService,
-    CommerceEventBus,
+    CommerceEventBus, ShopPaymentService,
   ],
 })
 export class CommerceModule {}

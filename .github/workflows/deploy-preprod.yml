@@ -83,6 +83,7 @@ jobs:
             --from-literal REDIS_DB=${{ secrets.REDIS_DB }} \
             --from-literal STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }} \
             --from-literal STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }} \
+            --from-literal STRIPE_SHOP_WEBHOOK_SECRET=${{ secrets.STRIPE_SHOP_WEBHOOK_SECRET }} \
             --from-literal SELLER_NAME=${{ secrets.SELLER_NAME }} \
             --from-literal SELLER_ADDRESS_LINE1=${{ secrets.SELLER_ADDRESS_LINE1 }} \
             --from-literal SELLER_ADDRESS_CITY=${{ secrets.SELLER_ADDRESS_CITY }} \

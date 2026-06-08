@@ -94,6 +94,7 @@ import { BlogCategory } from './blog/entities/blog-category.entity';
 import { BlogTag } from './blog/entities/blog-tag.entity';
 import { BlogModule } from './blog/blog.module';
 import { CommerceModule } from './commerce/commerce.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 import { Product } from './commerce/entities/product.entity';
 import { ProductVariant } from './commerce/entities/product-variant.entity';
 import { ProductCategory } from './commerce/entities/product-category.entity';
@@ -219,6 +220,7 @@ config();
     BlogModule,
     MeilisearchModule,
     CommerceModule,
+    WebhooksModule,
     MediaModule,
     VendorModule,
     HealthModule,
