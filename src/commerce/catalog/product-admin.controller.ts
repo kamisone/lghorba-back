@@ -30,6 +30,9 @@ export class ProductAdminController {
     });
   }
 
+  @Get('images')
+  listImages() { return this.products.adminListImages(); }
+
   @Get('categories')
   getCategories() { return this.products.getCategories(); }
 

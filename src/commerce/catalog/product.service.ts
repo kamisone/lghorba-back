@@ -242,6 +242,36 @@ export class ProductService {
     return { items, total };
   }
 
+  // Returns all product images (featured + gallery) as { key, url, productId, productTitle }
+  async adminListImages(): Promise<Array<{ key: string; url: string; productId: string; productTitle: string }>> {
+    const products = await this.productRepo.find({
+      where: { deletedAt: null as any },
+      select: ['id', 'title', 'featuredImageKey', 'galleryImageKeys'],
+      order: { createdAt: 'DESC' },
+    });
+
+    const allKeys = new Set<string>();
+    for (const p of products) {
+      if (p.featuredImageKey) allKeys.add(p.featuredImageKey);
+      for (const k of p.galleryImageKeys ?? []) allKeys.add(k);
+    }
+
+    const urlMap = await this.assetUrlService.resolveBatch([...allKeys]);
+
+    const result: Array<{ key: string; url: string; productId: string; productTitle: string }> = [];
+    for (const p of products) {
+      if (p.featuredImageKey) {
+        const url = urlMap.get(p.featuredImageKey);
+        if (url) result.push({ key: p.featuredImageKey, url, productId: p.id, productTitle: p.title });
+      }
+      for (const k of p.galleryImageKeys ?? []) {
+        const url = urlMap.get(k);
+        if (url) result.push({ key: k, url, productId: p.id, productTitle: p.title });
+      }
+    }
+    return result;
+  }
+
   // ── Public list ─────────────────────────────────────────────────────────────
 
   async publicList(filter: ProductListFilter & { lang?: string } = {}): Promise<{ items: any[]; total: number }> {
@@ -963,7 +993,13 @@ export class ProductService {
     const stockMap      = new Map(inventoryRows.map(i => [i.variantId, i.available]));
 
     const mediaKeys = variants.map(v => v.featuredMediaKey).filter(Boolean) as string[];
-    const urlMap = await this.assetUrlService.resolveBatch(mediaKeys);
+    // Also sign image swatch keys so the frontend can render them as <img> backgrounds.
+    const swatchKeys = productAttrs.flatMap(pa =>
+      pa.attribute.optionValues
+        .filter(ov => ov.swatchType === 'image' && ov.swatchValue)
+        .map(ov => ov.swatchValue as string),
+    );
+    const urlMap = await this.assetUrlService.resolveBatch([...mediaKeys, ...swatchKeys]);
 
     let attributes: any[] = productAttrs.map(pa => ({
       id:                   pa.attribute.id,
@@ -979,7 +1015,10 @@ export class ProductService {
           id:           ov.id,
           value:        ov.value,
           displayValue: ov.displayValue,
-          swatchValue:  ov.swatchValue,
+          swatchValue:  ov.swatchValue,   // raw GCS key — used by frontend for gallery jump matching
+          swatchUrl:    ov.swatchType === 'image' && ov.swatchValue
+                          ? (urlMap.get(ov.swatchValue) ?? null)
+                          : null,          // signed URL — used by frontend for CSS background display
           swatchType:   ov.swatchType,
           sortOrder:    ov.sortOrder,
         })),
