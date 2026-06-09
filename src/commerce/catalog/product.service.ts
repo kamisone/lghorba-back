@@ -295,8 +295,10 @@ export class ProductService {
     const [raw, total] = await qb.getManyAndCount();
     const withUrls = await this.resolveProductsUrls(raw) as any[];
 
-    // Batch-compute outOfStock flag: true only when inventory items exist AND all are ≤ 0.
-    // Matches PDP logic: a variant with no inventory row is treated as available.
+    // Batch-compute stock flags.
+    // outOfStock: true only when inventory items exist AND all variants are ≤ 0.
+    // defaultVariantOutOfStock: same logic scoped to the default variant only —
+    //   drives "See Details" on listing cards when the pre-selected variant is OOS.
     if (raw.length > 0) {
       const productIds = raw.map(p => p.id);
       const stockRows: Array<{ productId: string; allOutOfStock: boolean }> = await this.dataSource.query(
@@ -313,6 +315,21 @@ export class ProductService {
       );
       const outOfStockSet = new Set(stockRows.filter(r => r.allOutOfStock).map(r => r.productId));
       for (const p of withUrls) p.outOfStock = outOfStockSet.has(p.id);
+
+      const defaultRows: Array<{ productId: string; defaultOutOfStock: boolean }> = await this.dataSource.query(
+        `SELECT pv."productId",
+                CASE
+                  WHEN COUNT(ii.id) = 0 THEN false
+                  ELSE BOOL_AND(COALESCE(ii.available, 0) <= 0)
+                END AS "defaultOutOfStock"
+         FROM shop_product_variants pv
+         LEFT JOIN shop_inventory_items ii ON ii."variantId" = pv.id
+         WHERE pv."productId" = ANY($1) AND pv."isDefault" = true
+         GROUP BY pv."productId"`,
+        [productIds],
+      );
+      const defaultOosSet = new Set(defaultRows.filter(r => r.defaultOutOfStock).map(r => r.productId));
+      for (const p of withUrls) p.defaultVariantOutOfStock = defaultOosSet.has(p.id);
     }
 
     const items = await this.translationsService.maybeApply(withUrls, ET_SHOP_PRODUCT, lang);
