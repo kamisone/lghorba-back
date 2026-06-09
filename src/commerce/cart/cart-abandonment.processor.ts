@@ -27,7 +27,7 @@ export class CartAbandonmentProcessor extends DlqAwareWorker {
   }
 
   async process(job: Job<CartAbandonmentJobData>): Promise<void> {
-    const { cartToken, customerEmail: jobEmail, customerName: jobName } = job.data;
+    const { cartToken, customerEmail: jobEmail, customerName: jobName, locale: jobLocale } = job.data;
 
     const cart = await this.cartRepo.findOne({
       where: { token: cartToken, status: 'active' },
@@ -47,16 +47,18 @@ export class CartAbandonmentProcessor extends DlqAwareWorker {
     // Resolve customer email: prefer job data, fall back to any order for this cartToken.
     // The cart service enqueues abandonment jobs with only cartToken — the email is captured
     // later when the customer enters checkout and creates a draft order.
-    let email = jobEmail ?? null;
-    let name  = jobName ?? null;
+    let email  = jobEmail ?? null;
+    let name   = jobName ?? null;
+    let locale = jobLocale ?? null;
     if (!email) {
       const order = await this.orderRepo.findOne({
         where: { cartToken },
         order: { createdAt: 'DESC' },
       });
       if (order?.customerEmail) {
-        email = order.customerEmail;
-        name  = name ?? order.customerName;
+        email  = order.customerEmail;
+        name   = name ?? order.customerName;
+        locale = locale ?? order.customerLocale;
       }
     }
 
@@ -72,6 +74,7 @@ export class CartAbandonmentProcessor extends DlqAwareWorker {
       customerEmail: email,
       customerName:  name ?? 'Customer',
       cartUrl,
+      locale:        locale ?? 'fr',
       items: items.map(i => ({
         title:          i.titleSnapshot,
         quantity:       i.quantity,

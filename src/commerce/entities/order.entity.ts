@@ -55,6 +55,9 @@ export class Order {
   @JoinColumn({ name: 'paymentMethodId' })
   paymentMethod: Relation<UserPaymentMethod> | null;
 
+  /** ISO 639-1 locale captured at checkout (fr | en) — drives email language */
+  @Column({ type: 'varchar', length: 10, default: 'fr' }) customerLocale: string;
+
   @Column({ type: 'varchar', length: 100, nullable: true }) cartToken: string | null;
   @Column({ type: 'varchar', length: 500, nullable: true }) paymentIntentId: string | null;
   @Column({ type: 'timestamptz', nullable: true }) reservationExpiresAt: Date | null;

@@ -4,4 +4,5 @@ export interface CartAbandonmentJobData {
   cartToken: string;
   customerEmail?: string;
   customerName?: string;
+  locale?: string;
 }

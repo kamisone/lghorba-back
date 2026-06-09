@@ -40,6 +40,8 @@ export const InitiateCheckoutSchema = z.object({
   zip:          z.string().min(1).max(20),
   country:      z.string().length(2),
   couponCode:   z.string().max(100).nullish(),
+  /** Customer's UI locale — determines email language (fr | en, default fr) */
+  locale:       z.enum(['fr', 'en']).optional().default('fr'),
 });
 export type InitiateCheckoutDto = z.infer<typeof InitiateCheckoutSchema>;
 
@@ -140,6 +142,7 @@ export class CheckoutService {
         customerEmail:   dto.email,
         customerName:    `${dto.firstName} ${dto.lastName}`.trim(),
         customerPhone:   dto.phone ?? null,
+        customerLocale:  dto.locale ?? 'fr',
         shippingAddressSnapshot: {
           name:    `${dto.firstName} ${dto.lastName}`.trim(),
           line1:   dto.line1,

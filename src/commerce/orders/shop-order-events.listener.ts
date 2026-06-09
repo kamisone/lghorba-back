@@ -42,6 +42,7 @@ export class ShopOrderEventsListener {
         customerEmail: order.customerEmail,
         customerName:  order.customerName ?? order.customerEmail,
         totalCents:    order.totalCents,
+        locale:        order.customerLocale,
         items: items.map(i => ({
           title:         i.titleSnapshot,
           quantity:      i.quantity,
@@ -72,6 +73,7 @@ export class ShopOrderEventsListener {
         customerName:  order.customerName ?? order.customerEmail,
         orderNumber:   order.orderNumber,
         retryUrl:      `${frontendUrl}/shop`,
+        locale:        order.customerLocale,
       });
     } catch (err) {
       this.logger.error(`Payment failed email failed for ${event.orderId}: ${(err as Error).message}`);
@@ -106,6 +108,7 @@ export class ShopOrderEventsListener {
         customerName:   order.customerName ?? order.customerEmail,
         trackingNumber: shipment?.trackingNumber ?? null,
         carrier:        shipment?.carrier ?? null,
+        locale:         order.customerLocale,
       });
     } catch (err) {
       this.logger.error(`Shipping email failed for ${orderId}: ${(err as Error).message}`);
@@ -130,6 +133,7 @@ export class ShopOrderEventsListener {
         productId:    first.productId ?? '',
         productTitle: first.titleSnapshot,
         reviewUrl:    `${frontendUrl}/shop`,
+        locale:       order.customerLocale,
       });
     } catch (err) {
       this.logger.error(`Review request email failed for ${orderId}: ${(err as Error).message}`);
@@ -151,7 +155,7 @@ export class ShopOrderEventsListener {
       customer: {
         email:  order.customerEmail,
         name:   order.customerName ?? null,
-        locale: 'fr',
+        locale: order.customerLocale ?? 'fr',
       },
       seller: {
         name:      process.env.SELLER_NAME            ?? '',
