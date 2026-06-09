@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Storage } from '@google-cloud/storage';
 
-const SIGNED_URL_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const SIGNED_URL_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 @Injectable()
 export class GcsService {

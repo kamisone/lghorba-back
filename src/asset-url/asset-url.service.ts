@@ -14,11 +14,11 @@ import { GcsService } from '../gcs/gcs.service';
 import { RedisService } from '../redis/redis.service';
 
 /** GCS V4 signed URL TTL, must stay in sync with gcs.service.ts. */
-const GCS_TTL_MS     = 15 * 60 * 1_000;
-/** Redis cache TTL: GCS TTL minus 2-minute safety buffer. */
-const CACHE_TTL_S    = 13 * 60;               // 780 s — Redis SETEX ttl
+const GCS_TTL_MS     = 60 * 60 * 1_000;       // 1 hour
+/** Redis cache TTL: GCS TTL minus 5-minute safety buffer. */
+const CACHE_TTL_S    = 55 * 60;               // 3300 s — Redis SETEX ttl
 /** Regenerate when remaining lifetime is below this threshold. */
-const REFRESH_FLOOR_MS = 2 * 60 * 1_000;      // 2 min
+const REFRESH_FLOOR_MS = 5 * 60 * 1_000;      // 5 min
 
 const KEY_PREFIX = 'asset:surl:';
 
