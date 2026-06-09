@@ -3,7 +3,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ThrottlerGuard, Throttle, SkipThrottle } from '@nestjs/throttler';
+import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { SupportConversationsService } from './support-conversations.service';
@@ -16,7 +16,6 @@ function extractGuestToken(header: string | undefined): string | null {
 }
 
 @Public()
-@UseGuards(ThrottlerGuard)
 @Controller('support/guest')
 export class SupportGuestController {
   constructor(
@@ -25,6 +24,7 @@ export class SupportGuestController {
   ) {}
 
   // Strict bootstrap limit: 5 req / min / IP
+  @UseGuards(ThrottlerGuard)
   @Throttle({ auth: { ttl: 60_000, limit: 5 } })
   @Post('bootstrap')
   @HttpCode(200)
@@ -38,6 +38,7 @@ export class SupportGuestController {
   }
 
   // Looser history limit: 30 req / min / IP
+  @UseGuards(ThrottlerGuard)
   @Throttle({ auth: { ttl: 60_000, limit: 30 } })
   @Get('history')
   async history(
@@ -54,10 +55,9 @@ export class SupportGuestController {
     return { messages, conversationId: conv.id, status: conv.status, unreadGuestCount: conv.unreadGuestCount };
   }
 
-  // ws-ticket is a BFF-internal endpoint: the Next.js server calls it, not browsers.
-  // All BFF requests share one source IP, so per-IP throttling would block all users
-  // simultaneously. The real security boundary is the httpOnly cookie check in the BFF.
-  @SkipThrottle()
+  // BFF-internal endpoint — called only by the Next.js server, never by browsers.
+  // No throttle guard at all: the httpOnly cookie check in the BFF is the security
+  // boundary, and all BFF requests share one IP so per-IP limiting would lock everyone out.
   @Post('ws-ticket')
   @HttpCode(200)
   async getWsTicket(@Headers('x-support-token') tokenHeader: string | undefined) {
