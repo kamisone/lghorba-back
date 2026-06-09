@@ -1,6 +1,6 @@
 import {
-  Column, CreateDateColumn, Entity, Index, OneToMany, PrimaryGeneratedColumn,
-  UpdateDateColumn,
+  Column, CreateDateColumn, Entity, Index, OneToMany,
+  PrimaryGeneratedColumn, UpdateDateColumn,
 } from 'typeorm';
 
 @Entity('media_assets')
@@ -31,6 +31,10 @@ export class MediaAsset {
 
   /** Admin user ID who uploaded (loose reference, no FK — admin may be deleted) */
   @Column({ type: 'varchar', length: 200, nullable: true }) uploadedBy: string | null;
+
+  @Column({ name: 'folder_id', type: 'uuid', nullable: true })
+  @Index()
+  folderId: string | null;
 
   // String reference avoids circular import with media-usage.entity.ts
   @OneToMany('MediaUsage', 'asset')

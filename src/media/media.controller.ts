@@ -10,22 +10,31 @@ import { MediaEntityType } from './media-usage.entity';
 export class MediaController {
   constructor(private readonly media: MediaService) {}
 
+  // ── Asset list ────────────────────────────────────────────────────────────
+
   @Get()
   list(
-    @Query('search')   search?:   string,
-    @Query('mimeType') mimeType?: string,
-    @Query('tag')      tag?:      string,
-    @Query('limit')    limit?:    string,
-    @Query('offset')   offset?:   string,
+    @Query('search')    search?:    string,
+    @Query('mimeType')  mimeType?:  string,
+    @Query('tag')       tag?:       string,
+    @Query('folderId')  folderId?:  string,
+    @Query('limit')     limit?:     string,
+    @Query('offset')    offset?:    string,
   ) {
+    const folderSet = folderId !== undefined;
+    const resolvedFolderId = (folderId === '' || folderId === 'null') ? null : folderId;
     return this.media.list({
       search,
       mimeType,
       tag,
+      folderId:  resolvedFolderId,
+      folderSet,
       limit:  limit  ? parseInt(limit,  10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });
   }
+
+  // ── Upload ────────────────────────────────────────────────────────────────
 
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
@@ -33,10 +42,45 @@ export class MediaController {
     @UploadedFile() file: Express.Multer.File,
     @Body('altText')    altText?:    string,
     @Body('uploadedBy') uploadedBy?: string,
+    @Body('folderId')   folderId?:   string,
   ) {
     if (!file) throw new Error('No file provided');
-    return this.media.upload(file, altText, uploadedBy);
+    const resolvedFolderId = folderId ? folderId : null;
+    return this.media.upload(file, altText, uploadedBy, resolvedFolderId);
   }
+
+  // ── Bulk move ─────────────────────────────────────────────────────────────
+
+  @Post('bulk-move')
+  @HttpCode(204)
+  bulkMove(@Body() dto: { assetIds: string[]; folderId: string | null }) {
+    return this.media.moveAssets(dto.assetIds, dto.folderId ?? null);
+  }
+
+  // ── Folders (static routes — must precede /:id to avoid route conflicts) ──
+
+  @Get('folders')
+  listFolders() {
+    return this.media.listFolders();
+  }
+
+  @Post('folders')
+  createFolder(@Body() dto: { name: string; parentId?: string | null }) {
+    return this.media.createFolder(dto.name, dto.parentId);
+  }
+
+  @Patch('folders/:folderId')
+  renameFolder(@Param('folderId') id: string, @Body() dto: { name: string }) {
+    return this.media.renameFolder(id, dto.name);
+  }
+
+  @Delete('folders/:folderId')
+  @HttpCode(204)
+  deleteFolder(@Param('folderId') id: string) {
+    return this.media.deleteFolder(id);
+  }
+
+  // ── Single asset (parameterized — must come after static routes) ──────────
 
   @Get(':id')
   findOne(@Param('id') id: string) {
@@ -45,8 +89,8 @@ export class MediaController {
 
   @Patch(':id')
   update(
-    @Param('id') id:   string,
-    @Body() dto: { altText?: string; tags?: string[] },
+    @Param('id') id: string,
+    @Body() dto: { altText?: string; tags?: string[]; folderId?: string | null },
   ) {
     return this.media.updateMetadata(id, dto);
   }
