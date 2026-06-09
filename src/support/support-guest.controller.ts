@@ -57,7 +57,7 @@ export class SupportGuestController {
   // ws-ticket is a BFF-internal endpoint: the Next.js server calls it, not browsers.
   // All BFF requests share one source IP, so per-IP throttling would block all users
   // simultaneously. The real security boundary is the httpOnly cookie check in the BFF.
-  @SkipThrottle({ auth: true })
+  @SkipThrottle()
   @Post('ws-ticket')
   @HttpCode(200)
   async getWsTicket(@Headers('x-support-token') tokenHeader: string | undefined) {
