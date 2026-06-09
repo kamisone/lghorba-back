@@ -75,7 +75,7 @@ export class CartService {
 
     const variant = await this.variantRepo.findOne({
       where: { id: variantId },
-      relations: ['product'],
+      relations: ['product', 'options', 'options.attribute', 'options.optionValue'],
     });
     if (!variant) throw new NotFoundException('Variant not found');
     if ((variant as any).product?.status !== 'active') throw new BadRequestException('Product is not available');
@@ -96,7 +96,11 @@ export class CartService {
     } else {
       const product = (variant as any).product as Product;
 
-      // Build options snapshot from caller-supplied selection (user-chosen variation options)
+      // Build options snapshot.
+      // Priority: caller-supplied IDs (user manually picked options) → variant's own
+      // option relations (default variant added directly from listing/default selection).
+      // This ensures the cart always shows which options were chosen, even when the
+      // client didn't pass selectedOptionValueIds (e.g. "Add to cart" on listing page).
       let optionsSnapshot: Array<{
         attributeId: string; attributeName: string;
         optionValueId: string | null; value: string; displayValue: string | null;
@@ -104,7 +108,7 @@ export class CartService {
 
       if (selectedOptionValueIds?.length) {
         const ovRows = await this.ovRepo.find({
-          where: { id: (await import('typeorm')).In(selectedOptionValueIds) },
+          where: { id: In(selectedOptionValueIds) },
           relations: ['attribute'],
         });
         optionsSnapshot = ovRows.map(ov => ({
@@ -114,6 +118,26 @@ export class CartService {
           value:         ov.value,
           displayValue:  ov.displayValue,
         }));
+      } else {
+        const variantOptions = (variant as any).options as Array<{
+          attributeId: string;
+          optionValueId: string | null;
+          value: string;
+          attribute?: { name: string };
+          optionValue?: { displayValue: string | null } | null;
+        }> | undefined;
+
+        if (variantOptions?.length) {
+          optionsSnapshot = variantOptions
+            .filter(o => o.attribute)
+            .map(o => ({
+              attributeId:   o.attributeId,
+              attributeName: o.attribute?.name ?? '',
+              optionValueId: o.optionValueId,
+              value:         o.value,
+              displayValue:  o.optionValue?.displayValue ?? null,
+            }));
+        }
       }
 
       await this.itemRepo.save(this.itemRepo.create({
