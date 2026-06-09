@@ -1,35 +1,19 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BullModule } from '@nestjs/bullmq';
-import { GcsModule } from '../gcs/gcs.module';
-import { DlqModule } from '../dlq/dlq.module';
 import { Booking } from '../bookings/booking.entity';
-import { Invoice } from './invoice.entity';
-import { InvoiceLine } from './invoice-line.entity';
 import { TaxRate } from './tax-rate.entity';
 import { InvoiceAuditLog } from './invoice-audit-log.entity';
-import { InvoiceService, INVOICE_QUEUE } from './invoice.service';
-import { InvoicePdfService } from './invoice-pdf.service';
-import { InvoiceEmailService } from './invoice-email.service';
-import { InvoiceJobsProcessor } from './invoice-jobs.processor';
+import { InvoiceDataBuilderService } from './invoice-data-builder.service';
 import { InvoicesAdminController } from './invoices.admin.controller';
 import { BillingBookingListener } from './billing-booking.listener';
+import { DocumentsModule } from '../documents/documents.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, Booking]),
-    BullModule.registerQueue({ name: INVOICE_QUEUE }),
-    GcsModule,
-    DlqModule,
+    TypeOrmModule.forFeature([TaxRate, InvoiceAuditLog, Booking]),
+    DocumentsModule,
   ],
   controllers: [InvoicesAdminController],
-  providers: [
-    InvoiceService,
-    InvoicePdfService,
-    InvoiceEmailService,
-    InvoiceJobsProcessor,
-    BillingBookingListener,
-  ],
-  exports: [InvoiceService],
+  providers: [InvoiceDataBuilderService, BillingBookingListener],
 })
 export class BillingModule {}

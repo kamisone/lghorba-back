@@ -61,6 +61,8 @@ import { ShopAnalyticsService } from './analytics/shop-analytics.service';
 import { WishlistService } from './wishlist/wishlist.service';
 import { PriceRuleService } from './pricing/price-rule.service';
 import { ShopEmailService } from './email/shop-email.service';
+import { ShopOrderEventsListener } from './orders/shop-order-events.listener';
+import { DocumentsModule } from '../documents/documents.module';
 import { CartAbandonmentProcessor } from './cart/cart-abandonment.processor';
 import { BlogProductReferenceService } from './content/blog-product-reference.service';
 import { CART_ABANDONMENT_QUEUE } from './cart/cart-abandonment.constants';
@@ -152,6 +154,7 @@ const ENTITIES = [
     TypeOrmModule.forFeature(ENTITIES),
     BullModule.registerQueue({ name: CART_ABANDONMENT_QUEUE }),
     BullModule.registerQueue({ name: CHECKOUT_RESERVATION_QUEUE }),
+    DocumentsModule,
     GcsModule,
     AssetUrlModule,
     MediaModule,
@@ -195,7 +198,8 @@ const ENTITIES = [
     ProductService, InventoryService, CartService, OrdersService,
     CustomerService, CollectionService, ShopPaymentService, CountryService,
     ShippingService, ReviewsService, ShopAnalyticsService, WishlistService,
-    PriceRuleService, ShopEmailService, CartAbandonmentProcessor, BlogProductReferenceService,
+    PriceRuleService, ShopEmailService, ShopOrderEventsListener,
+    CartAbandonmentProcessor, BlogProductReferenceService,
     ProductSearchService, RecommendationService,
     ShopAnalyticsAggregatorService,
     StockAlertService,

@@ -193,7 +193,7 @@ export class CheckoutService {
     await this.reservationQueue.add(
       'expire-reservation',
       { orderId: snapshot.id } satisfies ReservationExpiryJobData,
-      { delay: RESERVATION_TTL_MS, attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
+      { jobId: `expire-${snapshot.id}`, delay: RESERVATION_TTL_MS, attempts: 3, backoff: { type: 'exponential', delay: 5000 } },
     );
 
     this.eventBus.emit(

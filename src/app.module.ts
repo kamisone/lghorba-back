@@ -110,6 +110,9 @@ import { Order } from './commerce/entities/order.entity';
 import { OrderItem } from './commerce/entities/order-item.entity';
 import { OrderStatusHistory } from './commerce/entities/order-status-history.entity';
 import { PaymentTransaction } from './commerce/entities/payment-transaction.entity';
+import { Document as ShopDocument } from './documents/document.entity';
+import { DocumentLine } from './documents/document-line.entity';
+import { DocumentsModule } from './documents/documents.module';
 import { ShippingZone } from './commerce/entities/shipping-zone.entity';
 import { ShippingMethod } from './commerce/entities/shipping-method.entity';
 import { Shipment } from './commerce/entities/shipment.entity';
@@ -153,7 +156,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument, BlogPost, BlogCategory, BlogTag, Product, ProductVariant, ProductCategory, ProductTag, VariantAttribute, VariantOption, ProductVariantAttribute, InventoryItem, InventoryMovement, Cart, CartItem, Order, OrderItem, OrderStatusHistory, PaymentTransaction, ShippingZone, ShippingMethod, Shipment, ProductReview, ShopPromotion, ShopCustomer, ShopCustomerAddress, Address, Country, ShopCollection, ShopCollectionProduct, ShopWishlistItem, ShopPriceRule, BlogProductReference, ShopVendor, ShopVendorPayout, CommerceEventLog, VariationOptionValue, PaymentType, UserPaymentMethod, PromotionCategory, PromotionProduct, OrderStatusRef, ShopCustomerGroup, MediaAsset, MediaUsage],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument, BlogPost, BlogCategory, BlogTag, Product, ProductVariant, ProductCategory, ProductTag, VariantAttribute, VariantOption, ProductVariantAttribute, InventoryItem, InventoryMovement, Cart, CartItem, Order, OrderItem, OrderStatusHistory, PaymentTransaction, ShippingZone, ShippingMethod, Shipment, ProductReview, ShopPromotion, ShopCustomer, ShopCustomerAddress, Address, Country, ShopCollection, ShopCollectionProduct, ShopWishlistItem, ShopPriceRule, BlogProductReference, ShopVendor, ShopVendorPayout, CommerceEventLog, VariationOptionValue, PaymentType, UserPaymentMethod, PromotionCategory, PromotionProduct, OrderStatusRef, ShopCustomerGroup, MediaAsset, MediaUsage, ShopDocument, DocumentLine],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
       migrationsTransactionMode: 'each',
@@ -220,6 +223,7 @@ config();
     BlogModule,
     MeilisearchModule,
     CommerceModule,
+    DocumentsModule,
     WebhooksModule,
     MediaModule,
     VendorModule,

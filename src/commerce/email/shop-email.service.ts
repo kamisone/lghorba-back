@@ -135,6 +135,25 @@ export class ShopEmailService {
     this.logger.log(`Review request sent to ${customerEmail} for order ${orderNumber}`);
   }
 
+  // ── Payment failed ────────────────────────────────────────────────────────
+
+  async sendPaymentFailed(payload: { customerEmail: string; customerName: string; orderNumber: string; retryUrl: string }): Promise<void> {
+    const { customerEmail, customerName, orderNumber, retryUrl } = payload;
+
+    const html = baseTemplate('Payment unsuccessful', `
+      <p>Hello ${esc(customerName)},</p>
+      <p>Unfortunately, we were unable to process your payment for order <strong>${esc(orderNumber)}</strong>.</p>
+      <p>Your items are still reserved for a short period. Please try again with a different payment method:</p>
+      <p style="margin:24px 0">
+        <a href="${esc(retryUrl)}" style="display:inline-block;background:#dc2626;color:#fff;padding:12px 24px;text-decoration:none;border-radius:8px;font-weight:600">Retry payment</a>
+      </p>
+      <p style="font-size:13px;color:#6b7280">If you continue to experience issues, please contact our support team.</p>
+    `);
+
+    await this.send(customerEmail, `Payment failed for order ${orderNumber}`, html);
+    this.logger.log(`Payment failed email sent to ${customerEmail} for ${orderNumber}`);
+  }
+
   // ── Stock alert ───────────────────────────────────────────────────────────
 
   async sendStockAlert(payload: StockAlertPayload): Promise<void> {

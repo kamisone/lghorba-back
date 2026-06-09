@@ -1,7 +1,9 @@
 import {
-  BadRequestException, Injectable, NotFoundException,
+  BadRequestException, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { DataSource, Repository } from 'typeorm';
 import { z } from 'zod';
 import { Order, OrderStatus } from '../entities/order.entity';
@@ -12,6 +14,9 @@ import { CartItem } from '../entities/cart-item.entity';
 import { ShopPromotion } from '../entities/shop-promotion.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { CustomerService } from '../customer/customer.service';
+import { CommerceEventBus } from '../events/commerce-event-bus.service';
+import { COMMERCE_EVENTS, OrderStatusChangedEvent } from '../events/commerce-events';
+import { CHECKOUT_RESERVATION_QUEUE } from '../checkout/checkout-reservation.constants';
 
 // ── State machine ───────────────────────────────────────────────────────────
 
@@ -68,15 +73,19 @@ export interface OrderListFilter {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
-    @InjectRepository(Order)          private readonly orderRepo:   Repository<Order>,
-    @InjectRepository(OrderItem)      private readonly itemRepo:    Repository<OrderItem>,
+    @InjectRepository(Order)              private readonly orderRepo:   Repository<Order>,
+    @InjectRepository(OrderItem)          private readonly itemRepo:    Repository<OrderItem>,
     @InjectRepository(OrderStatusHistory) private readonly historyRepo: Repository<OrderStatusHistory>,
-    @InjectRepository(Cart)           private readonly cartRepo:    Repository<Cart>,
-    @InjectRepository(ShopPromotion)  private readonly promoRepo:   Repository<ShopPromotion>,
+    @InjectRepository(Cart)               private readonly cartRepo:    Repository<Cart>,
+    @InjectRepository(ShopPromotion)      private readonly promoRepo:   Repository<ShopPromotion>,
+    @InjectQueue(CHECKOUT_RESERVATION_QUEUE) private readonly reservationQueue: Queue,
     private readonly inventoryService: InventoryService,
     private readonly customerService:  CustomerService,
-    private readonly dataSource: DataSource,
+    private readonly eventBus:         CommerceEventBus,
+    private readonly dataSource:       DataSource,
   ) {}
 
   // ── Create from cart ────────────────────────────────────────────────────────
@@ -217,12 +226,23 @@ export class OrdersService {
             await this.inventoryService.confirmSale(item.variantId, item.quantity, orderId);
           }
         }
-        // Update customer stats
+      }
+
+      // Update customer lifetime stats when payment is confirmed (revenue is realized)
+      if (toStatus === 'paid') {
         await this.customerService.recordOrderCompletion(order.customerEmail, order.totalCents, em);
       }
 
       return order;
     });
+
+    this.eventBus.emit(
+      COMMERCE_EVENTS.ORDER_STATUS_CHANGED,
+      { orderId, fromStatus: order.status, toStatus, triggeredBy: adminId ? 'admin' : 'system' } satisfies OrderStatusChangedEvent,
+      { entityId: orderId, source: 'OrdersService.transition' },
+    );
+
+    return order;
   }
 
   // ── Confirm payment (idempotent, called by webhook) ─────────────────────────
@@ -235,7 +255,12 @@ export class OrdersService {
     order.paymentIntentId = paymentIntentId;
     await this.orderRepo.save(order);
 
-    // Draft orders skipped the awaiting_payment step — transition through it
+    // Cancel the pending reservation-expiry job — order is paid, no need to expire it.
+    this.reservationQueue.remove(`expire-${orderId}`).catch((err) =>
+      this.logger.debug(`Could not remove expiry job for ${orderId}: ${(err as Error).message}`),
+    );
+
+    // Draft orders skipped the awaiting_payment step — transition through it.
     if (order.status === 'draft') {
       await this.transition(orderId, 'awaiting_payment', 'Payment initiated');
     }
