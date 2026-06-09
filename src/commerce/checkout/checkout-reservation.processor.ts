@@ -6,9 +6,11 @@ import { Repository } from 'typeorm';
 import { DlqAwareWorker } from '../../dlq/dlq-aware.worker';
 import { DlqService } from '../../dlq/dlq.service';
 import { Order } from '../entities/order.entity';
-import { OrderItem } from '../entities/order-item.entity';
-import { InventoryService } from '../inventory/inventory.service';
+import { OrdersService } from '../orders/orders.service';
 import { CHECKOUT_RESERVATION_QUEUE, ReservationExpiryJobData } from './checkout-reservation.constants';
+
+// Statuses that still hold reserved inventory and can be timed out.
+const CANCELLABLE_STATUSES = new Set(['draft', 'awaiting_payment']);
 
 @Processor(CHECKOUT_RESERVATION_QUEUE)
 export class CheckoutReservationProcessor extends DlqAwareWorker {
@@ -17,9 +19,8 @@ export class CheckoutReservationProcessor extends DlqAwareWorker {
 
   constructor(
     dlqService: DlqService,
-    @InjectRepository(Order)      private readonly orderRepo: Repository<Order>,
-    @InjectRepository(OrderItem)  private readonly itemRepo:  Repository<OrderItem>,
-    private readonly inventoryService: InventoryService,
+    @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
+    private readonly ordersService: OrdersService,
   ) {
     super(dlqService);
   }
@@ -30,9 +31,8 @@ export class CheckoutReservationProcessor extends DlqAwareWorker {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) return;
 
-    // Only release if still in draft (not yet paid or cancelled)
-    if (order.status !== 'draft') {
-      this.logger.log(`Order ${orderId} is "${order.status}" — skipping reservation expiry`);
+    if (!CANCELLABLE_STATUSES.has(order.status)) {
+      this.logger.log(`Order ${orderId} is "${order.status}" — no expiry action needed`);
       return;
     }
 
@@ -42,20 +42,11 @@ export class CheckoutReservationProcessor extends DlqAwareWorker {
       return;
     }
 
-    this.logger.log(`Expiring reservation for draft order ${orderId}`);
+    this.logger.log(`Reservation timeout: cancelling ${order.status} order ${orderId}`);
 
-    // Cancel the order
-    order.status = 'cancelled';
-    await this.orderRepo.save(order);
+    // transition() handles inventory release + status history in one transaction.
+    await this.ordersService.transition(orderId, 'cancelled', 'Reservation expired — payment timeout');
 
-    // Release inventory for each item
-    const items = await this.itemRepo.findBy({ orderId });
-    for (const item of items) {
-      if (item.variantId) {
-        await this.inventoryService.releaseForOrder(item.variantId, item.quantity, orderId);
-      }
-    }
-
-    this.logger.log(`Reservation expired and inventory released for order ${orderId}`);
+    this.logger.log(`Order ${orderId} cancelled and inventory released`);
   }
 }
