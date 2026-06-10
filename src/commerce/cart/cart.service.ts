@@ -82,7 +82,7 @@ export class CartService {
 
     const inventory = await this.inventoryRepo.findOneBy({ variantId });
     if (!inventory || inventory.available < quantity) {
-      throw new BadRequestException('Insufficient stock');
+      throw new BadRequestException({ code: 'INSUFFICIENT_STOCK', available: inventory?.available ?? 0 });
     }
 
     const cart = await this.ensureActiveCart(token);
@@ -90,7 +90,9 @@ export class CartService {
     const existing = cart.items.find((i: CartItem) => i.variantId === variantId);
     if (existing) {
       const newQty = existing.quantity + quantity;
-      if (inventory.available < newQty) throw new BadRequestException('Insufficient stock');
+      if (inventory.available < newQty) {
+        throw new BadRequestException({ code: 'INSUFFICIENT_STOCK', available: inventory.available });
+      }
       existing.quantity = newQty;
       await this.itemRepo.save(existing);
     } else {
@@ -175,7 +177,7 @@ export class CartService {
 
     const inventory = await this.inventoryRepo.findOneBy({ variantId: item.variantId });
     if (!inventory || inventory.available < quantity) {
-      throw new BadRequestException('Insufficient stock');
+      throw new BadRequestException({ code: 'INSUFFICIENT_STOCK', available: inventory?.available ?? 0 });
     }
 
     item.quantity = quantity;

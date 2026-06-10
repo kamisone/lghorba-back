@@ -965,6 +965,12 @@ export class ProductService {
     };
   }
 
+  async getVariantStock(variantId: string): Promise<{ available: number; inStock: boolean }> {
+    const inventory = await this.inventoryRepo.findOneBy({ variantId });
+    if (!inventory) return { available: -1, inStock: true };
+    return { available: inventory.available, inStock: inventory.available > 0 };
+  }
+
   // ── Variant availability matrix (PDP option picker state) ──────────────────
 
   /**

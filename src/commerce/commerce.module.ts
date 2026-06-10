@@ -95,6 +95,7 @@ import { CommerceEventLogAdminController } from './events/commerce-event-log.con
 // Controllers
 import { ProductAdminController } from './catalog/product-admin.controller';
 import { ProductPublicController } from './catalog/product-public.controller';
+import { VariantStockController } from './catalog/variant-stock.controller';
 import { InventoryAdminController } from './inventory/inventory.controller';
 import { CartController } from './cart/cart.controller';
 import { OrdersAdminController } from './orders/orders-admin.controller';
@@ -163,7 +164,7 @@ const ENTITIES = [
     TranslationsModule,
   ],
   controllers: [
-    ProductAdminController, ProductPublicController,
+    ProductAdminController, ProductPublicController, VariantStockController,
     InventoryAdminController,
     CartController,
     OrdersAdminController, OrdersPublicController,
