@@ -19,6 +19,9 @@ export class MediaAsset {
   @Column({ type: 'int', nullable: true })              width:  number | null;
   @Column({ type: 'int', nullable: true })              height: number | null;
 
+  /** Video duration in seconds — extracted on upload for video/* assets */
+  @Column({ type: 'int', nullable: true })              durationSeconds: number | null;
+
   @Column({ type: 'varchar', length: 500, nullable: true }) altText: string | null;
 
   /** Free-form tags for organization */

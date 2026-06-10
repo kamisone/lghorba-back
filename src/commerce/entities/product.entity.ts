@@ -6,6 +6,7 @@ import {
 import { ProductCategory } from './product-category.entity';
 import { ProductTag } from './product-tag.entity';
 import { ShopVendor } from './shop-vendor.entity';
+import { ProductMediaItem } from './product-media-item';
 
 export type ProductStatus = 'draft' | 'active' | 'archived' | 'out_of_stock' | 'hidden';
 
@@ -25,6 +26,9 @@ export class Product {
   @Column({ type: 'varchar', length: 1000, nullable: true }) featuredImageKey: string | null;
   @Column({ type: 'varchar', length: 500, nullable: true })  featuredImageAlt: string | null;
   @Column({ type: 'text', array: true, default: '{}' })      galleryImageKeys: string[];
+
+  /** Generic ordered media gallery (images + videos). Source of truth for the storefront gallery. */
+  @Column({ type: 'jsonb', default: () => "'[]'" }) media: ProductMediaItem[];
 
   @Column({ type: 'varchar', length: 300, nullable: true }) brand: string | null;
   @Column({ type: 'jsonb', nullable: true })                specifications: Record<string, string> | null;

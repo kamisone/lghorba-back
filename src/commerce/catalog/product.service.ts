@@ -19,8 +19,17 @@ import { ProductSearchService } from './product-search.service';
 import { TranslationsService } from '../../translations/translations.service';
 import { ET_SHOP_PRODUCT, ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
 import { slugify } from '../../common/utils/slug.util';
+import { ProductMediaItem, ResolvedProductMediaItem } from '../entities/product-media-item';
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
+
+export const ProductMediaItemSchema = z.object({
+  key:        z.string().max(1000),
+  type:       z.enum(['image', 'video']),
+  posterKey:  z.string().max(1000).nullish(),
+  altText:    z.string().max(500).nullish(),
+  isFeatured: z.boolean().optional(),
+});
 
 export const CreateProductSchema = z.object({
   title:              z.string().min(1).max(500),
@@ -32,6 +41,7 @@ export const CreateProductSchema = z.object({
   specifications:     z.record(z.string(), z.unknown()).nullish(),
   featuredImageKey:   z.string().max(1000).nullish(),
   galleryImageKeys:   z.array(z.string().max(1000)).optional(),
+  media:              z.array(ProductMediaItemSchema).optional(),
   seoTitle:           z.string().max(500).nullish(),
   seoDescription:     z.string().nullish(),
   canonicalUrl:       z.string().max(2000).nullish(),
@@ -115,6 +125,27 @@ function buildVariantSkuBase(product: Product, sorted: VariationOptionValue[]): 
   return `${prefix}-${parts.join('-')}`;
 }
 
+/** Ensures at most one item is marked `isFeatured`, keeping the first occurrence. */
+function normalizeMedia(media: ProductMediaItem[]): ProductMediaItem[] {
+  let featuredSeen = false;
+  return media.map(m => {
+    if (!m.isFeatured) return m;
+    if (featuredSeen) return { ...m, isFeatured: false };
+    featuredSeen = true;
+    return m;
+  });
+}
+
+/** Derives the legacy featuredImageKey/galleryImageKeys columns from the image-type subset of `media`. */
+function deriveLegacyImageFields(media: ProductMediaItem[]): { featuredImageKey: string | null; galleryImageKeys: string[] } {
+  const images = media.filter(m => m.type === 'image');
+  const featured = images.find(m => m.isFeatured) ?? images[0];
+  return {
+    featuredImageKey: featured?.key ?? null,
+    galleryImageKeys: images.filter(m => m !== featured).map(m => m.key),
+  };
+}
+
 export interface ProductListFilter {
   status?:     string;
   categoryId?: string;
@@ -151,6 +182,10 @@ export class ProductService {
     const keys: Array<{ key: string; field: string }> = [];
     if (product.featuredImageKey) keys.push({ key: product.featuredImageKey, field: 'featuredImageKey' });
     for (const k of product.galleryImageKeys ?? []) keys.push({ key: k, field: 'galleryImageKeys' });
+    for (const m of product.media ?? []) {
+      keys.push({ key: m.key, field: 'media' });
+      if (m.posterKey) keys.push({ key: m.posterKey, field: 'media' });
+    }
     this.mediaService
       .syncEntityUsages('product', product.id, keys)
       .catch(err => this.logger.warn(`Media usage sync failed for product ${product.id}: ${(err as Error).message}`));
@@ -167,16 +202,22 @@ export class ProductService {
 
   // ── URL resolution ─────────────────────────────────────────────────────────
 
-  // Resolves featured + gallery + all variant media keys in one Redis batch.
+  // Resolves featured + gallery + media + all variant media keys in one Redis batch.
   private async resolveProductUrls<T extends Product>(product: T): Promise<T & {
     featuredImageUrl:  string | null;
     galleryImageUrls:  string[];
+    media:             ResolvedProductMediaItem[];
   }> {
     const variants = (product as any).variants as Array<{ mediaKeys?: string[]; mediaUrls?: string[] }> | undefined;
+    const media = product.media ?? [];
 
     const allKeys = new Set<string>();
     if (product.featuredImageKey)        allKeys.add(product.featuredImageKey);
     for (const k of product.galleryImageKeys ?? []) allKeys.add(k);
+    for (const m of media) {
+      allKeys.add(m.key);
+      if (m.posterKey) allKeys.add(m.posterKey);
+    }
     if (variants) {
       for (const v of variants) for (const k of v.mediaKeys ?? []) allKeys.add(k);
     }
@@ -189,9 +230,25 @@ export class ProductService {
       }
     }
 
+    const videoKeys = media.filter(m => m.type === 'video').map(m => m.key);
+    const assetMap = new Map((await (this.mediaService?.findByStorageKeys(videoKeys) ?? Promise.resolve([])))
+      .map(a => [a.storageKey, a]));
+
+    const resolvedMedia: ResolvedProductMediaItem[] = media.map(m => {
+      const asset = assetMap.get(m.key);
+      return {
+        ...m,
+        url:             urlMap.get(m.key) ?? '',
+        posterUrl:       m.posterKey ? (urlMap.get(m.posterKey) ?? null) : null,
+        durationSeconds: asset?.durationSeconds ?? null,
+        mimeType:        asset?.mimeType ?? null,
+      };
+    });
+
     return Object.assign(product, {
       featuredImageUrl: product.featuredImageKey ? (urlMap.get(product.featuredImageKey) ?? null) : null,
       galleryImageUrls: (product.galleryImageKeys ?? []).map(k => urlMap.get(k)).filter(Boolean) as string[],
+      media: resolvedMedia,
     });
   }
 
@@ -375,6 +432,9 @@ export class ProductService {
         ? await em.find(ProductTag, { where: { id: In(dto.tagIds) } })
         : [];
 
+      const media = dto.media ? normalizeMedia(dto.media) : [];
+      const legacy = dto.media ? deriveLegacyImageFields(media) : null;
+
       const product = em.create(Product, {
         slug,
         title:             dto.title,
@@ -383,8 +443,9 @@ export class ProductService {
         description:       dto.description ?? null,
         brand:             dto.brand ?? null,
         specifications:    (dto.specifications as Record<string, string>) ?? null,
-        featuredImageKey:  dto.featuredImageKey ?? null,
-        galleryImageKeys:  dto.galleryImageKeys ?? [],
+        featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
+        galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? []),
+        media,
         seoTitle:          dto.seoTitle ?? null,
         seoDescription:    dto.seoDescription ?? null,
         canonicalUrl:      dto.canonicalUrl ?? null,
@@ -432,6 +493,9 @@ export class ProductService {
       product.slug = dto.slug;
     }
 
+    const media = dto.media !== undefined ? normalizeMedia(dto.media) : product.media;
+    const legacy = dto.media !== undefined ? deriveLegacyImageFields(media) : null;
+
     Object.assign(product, {
       title:             dto.title              ?? product.title,
       sku:               dto.sku                !== undefined ? dto.sku ?? null : product.sku,
@@ -439,8 +503,9 @@ export class ProductService {
       description:       dto.description        !== undefined ? dto.description ?? null : product.description,
       brand:             dto.brand              !== undefined ? dto.brand ?? null : product.brand,
       specifications:    dto.specifications     !== undefined ? dto.specifications ?? null : product.specifications,
-      featuredImageKey:  dto.featuredImageKey   !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey,
-      galleryImageKeys:  dto.galleryImageKeys   ?? product.galleryImageKeys,
+      featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
+      galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? product.galleryImageKeys),
+      media,
       seoTitle:          dto.seoTitle           !== undefined ? dto.seoTitle ?? null : product.seoTitle,
       seoDescription:    dto.seoDescription     !== undefined ? dto.seoDescription ?? null : product.seoDescription,
       canonicalUrl:      dto.canonicalUrl       !== undefined ? dto.canonicalUrl ?? null : product.canonicalUrl,

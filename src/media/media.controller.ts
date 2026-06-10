@@ -16,6 +16,7 @@ export class MediaController {
   list(
     @Query('search')    search?:    string,
     @Query('mimeType')  mimeType?:  string,
+    @Query('mediaType') mediaType?: 'image' | 'video',
     @Query('tag')       tag?:       string,
     @Query('folderId')  folderId?:  string,
     @Query('limit')     limit?:     string,
@@ -26,6 +27,7 @@ export class MediaController {
     return this.media.list({
       search,
       mimeType,
+      mediaType,
       tag,
       folderId:  resolvedFolderId,
       folderSet,

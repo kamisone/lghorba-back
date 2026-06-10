@@ -11,6 +11,8 @@ import { MediaUsage, MediaEntityType } from './media-usage.entity';
 export interface MediaListOptions {
   search?:    string;
   mimeType?:  string;
+  /** Broad type filter — translates to a mimeType prefix match */
+  mediaType?: 'image' | 'video';
   tag?:       string;
   folderId?:  string | null; // undefined = all, null/string = filter by folder
   folderSet?: boolean;       // true when folderId was explicitly provided (even as null)
@@ -25,8 +27,20 @@ export interface TrackUsageDto {
 }
 
 const MEDIA_PREFIX       = 'media/';
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif', 'image/svg+xml'];
-const MAX_FILE_BYTES     = 20 * 1024 * 1024; // 20 MB
+const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif', 'image/svg+xml'];
+const ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/webm'];
+const ALLOWED_MIME_TYPES = [...ALLOWED_IMAGE_MIME_TYPES, ...ALLOWED_VIDEO_MIME_TYPES];
+const MAX_IMAGE_BYTES    = 20 * 1024 * 1024;  // 20 MB
+const MAX_VIDEO_BYTES    = 200 * 1024 * 1024; // 200 MB
+
+export type MediaKind = 'image' | 'video' | 'other';
+
+/** Derives the broad media kind from a MIME type — used for filtering & UI display. */
+export function getMediaKind(mimeType: string): MediaKind {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'other';
+}
 
 @Injectable()
 export class MediaService {
@@ -47,12 +61,14 @@ export class MediaService {
     altText?: string,
     uploadedBy?: string,
     folderId?: string | null,
-  ): Promise<MediaAsset & { url: string }> {
+  ): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
     if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       throw new Error(`Unsupported file type: ${file.mimetype}`);
     }
-    if (file.size > MAX_FILE_BYTES) {
-      throw new Error(`File too large (max ${MAX_FILE_BYTES / 1024 / 1024} MB)`);
+    const kind = getMediaKind(file.mimetype);
+    const maxBytes = kind === 'video' ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (file.size > maxBytes) {
+      throw new Error(`File too large (max ${maxBytes / 1024 / 1024} MB)`);
     }
 
     const checksum = crypto.createHash('sha256').update(new Uint8Array(file.buffer)).digest('hex');
@@ -65,7 +81,7 @@ export class MediaService {
         existing.folderId = folderId ?? null;
       }
       const url = await this.urls.resolve(existing.storageKey);
-      return { ...existing, url };
+      return { ...existing, url, mediaType: getMediaKind(existing.mimeType) };
     }
 
     const ext        = file.originalname.split('.').pop()?.toLowerCase() ?? 'bin';
@@ -74,7 +90,9 @@ export class MediaService {
 
     await this.gcs.upload(file.buffer, storageKey, file.mimetype, 'publicRead');
 
-    const { width, height } = await extractImageDimensions(file.buffer, file.mimetype);
+    const { width, height, durationSeconds } = kind === 'video'
+      ? await extractVideoMetadata(file.buffer, file.mimetype)
+      : { ...(await extractImageDimensions(file.buffer, file.mimetype)), durationSeconds: null };
 
     const resolvedFolderId = folderId !== undefined ? (folderId ?? null) : null;
 
@@ -85,6 +103,7 @@ export class MediaService {
       sizeBytes:        file.size,
       width,
       height,
+      durationSeconds,
       altText:          altText ?? null,
       checksum,
       uploadedBy:       uploadedBy ?? null,
@@ -94,13 +113,13 @@ export class MediaService {
     await this.assetRepo.save(asset);
 
     const url = await this.urls.resolve(storageKey);
-    return { ...asset, url };
+    return { ...asset, url, mediaType: kind };
   }
 
   // ── List ──────────────────────────────────────────────────────────────────
 
-  async list(opts: MediaListOptions = {}): Promise<{ items: Array<MediaAsset & { url: string; usageCount: number }>; total: number }> {
-    const { search, mimeType, tag, folderId, folderSet, limit = 48, offset = 0 } = opts;
+  async list(opts: MediaListOptions = {}): Promise<{ items: Array<MediaAsset & { url: string; usageCount: number; mediaType: MediaKind }>; total: number }> {
+    const { search, mimeType, mediaType, tag, folderId, folderSet, limit = 48, offset = 0 } = opts;
 
     const qb = this.assetRepo
       .createQueryBuilder('a')
@@ -108,9 +127,10 @@ export class MediaService {
       .take(limit)
       .skip(offset);
 
-    if (search)   qb.andWhere('a.originalFilename ILIKE :q', { q: `%${search}%` });
-    if (mimeType) qb.andWhere('a.mimeType = :mimeType',      { mimeType });
-    if (tag)      qb.andWhere(':tag = ANY(a.tags)',           { tag });
+    if (search)    qb.andWhere('a.originalFilename ILIKE :q',    { q: `%${search}%` });
+    if (mimeType)  qb.andWhere('a.mimeType = :mimeType',         { mimeType });
+    if (mediaType) qb.andWhere('a.mimeType ILIKE :mediaTypePfx', { mediaTypePfx: `${mediaType}/%` });
+    if (tag)       qb.andWhere(':tag = ANY(a.tags)',             { tag });
 
     if (folderSet) {
       if (folderId === null || folderId === '') {
@@ -137,18 +157,29 @@ export class MediaService {
     const countMap = new Map(usageCounts.map(r => [r.assetId as string, parseInt(r.cnt, 10)]));
 
     return {
-      items: assets.map(a => ({ ...a, url: urlMap.get(a.storageKey) ?? '', usageCount: countMap.get(a.id) ?? 0 })),
+      items: assets.map(a => ({
+        ...a,
+        url:        urlMap.get(a.storageKey) ?? '',
+        usageCount: countMap.get(a.id) ?? 0,
+        mediaType:  getMediaKind(a.mimeType),
+      })),
       total,
     };
   }
 
+  /** Batch-loads assets by storage key — used to enrich product media items (e.g. video duration/mimeType). */
+  async findByStorageKeys(keys: string[]): Promise<MediaAsset[]> {
+    if (!keys.length) return [];
+    return this.assetRepo.find({ where: [...new Set(keys)].map(storageKey => ({ storageKey })) });
+  }
+
   // ── Single ────────────────────────────────────────────────────────────────
 
-  async findById(id: string): Promise<MediaAsset & { url: string }> {
+  async findById(id: string): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
     const asset = await this.assetRepo.findOneBy({ id });
     if (!asset) throw new NotFoundException('Media asset not found');
     const url = await this.urls.resolve(asset.storageKey);
-    return { ...asset, url };
+    return { ...asset, url, mediaType: getMediaKind(asset.mimeType) };
   }
 
   // ── Update metadata ───────────────────────────────────────────────────────
@@ -156,7 +187,7 @@ export class MediaService {
   async updateMetadata(
     id: string,
     dto: { altText?: string; tags?: string[]; folderId?: string | null },
-  ): Promise<MediaAsset & { url: string }> {
+  ): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
     const asset = await this.assetRepo.findOneBy({ id });
     if (!asset) throw new NotFoundException('Media asset not found');
 
@@ -166,7 +197,7 @@ export class MediaService {
     await this.assetRepo.save(asset);
 
     const url = await this.urls.resolve(asset.storageKey);
-    return { ...asset, url };
+    return { ...asset, url, mediaType: getMediaKind(asset.mimeType) };
   }
 
   // ── Bulk move ─────────────────────────────────────────────────────────────
@@ -198,6 +229,11 @@ export class MediaService {
         SELECT 1 FROM shop_products           WHERE "featuredImageKey" = $1 AND "deletedAt" IS NULL
         UNION ALL
         SELECT 1 FROM shop_products           WHERE $1 = ANY("galleryImageKeys") AND "deletedAt" IS NULL
+        UNION ALL
+        SELECT 1 FROM shop_products           WHERE "deletedAt" IS NULL AND EXISTS (
+          SELECT 1 FROM jsonb_array_elements("media") AS m
+          WHERE m->>'key' = $1 OR m->>'posterKey' = $1
+        )
         UNION ALL
         SELECT 1 FROM shop_product_categories WHERE "imageKey" = $1
         UNION ALL
@@ -345,4 +381,41 @@ async function extractImageDimensions(buf: Buffer, mime: string): Promise<{ widt
     }
   } catch { /* Non-fatal */ }
   return { width: null, height: null };
+}
+
+/** Locates a top-level MP4/ISO-BMFF box of the given type within [start, end), returning its content range (after the header). */
+function findMp4Box(buf: Buffer, type: string, start: number, end: number): { start: number; end: number } | null {
+  let offset = start;
+  while (offset + 8 <= end) {
+    let size = buf.readUInt32BE(offset);
+    const boxType = buf.toString('ascii', offset + 4, offset + 8);
+    let headerSize = 8;
+    if (size === 1) {
+      if (offset + 16 > end) break;
+      size = Number(buf.readBigUInt64BE(offset + 8));
+      headerSize = 16;
+    } else if (size === 0) {
+      size = end - offset;
+    }
+    if (size < headerSize || offset + size > end) break;
+    if (boxType === type) return { start: offset + headerSize, end: offset + size };
+    offset += size;
+  }
+  return null;
+}
+
+async function extractVideoMetadata(buf: Buffer, mime: string): Promise<{ width: number | null; height: number | null; durationSeconds: number | null }> {
+  try {
+    if (mime === 'video/mp4') {
+      const moov = findMp4Box(buf, 'moov', 0, buf.length);
+      const mvhd = moov && findMp4Box(buf, 'mvhd', moov.start, moov.end);
+      if (mvhd) {
+        const version = buf.readUInt8(mvhd.start);
+        const timescale = version === 1 ? buf.readUInt32BE(mvhd.start + 20) : buf.readUInt32BE(mvhd.start + 12);
+        const duration  = version === 1 ? Number(buf.readBigUInt64BE(mvhd.start + 24)) : buf.readUInt32BE(mvhd.start + 16);
+        if (timescale > 0) return { width: null, height: null, durationSeconds: Math.round(duration / timescale) };
+      }
+    }
+  } catch { /* Non-fatal */ }
+  return { width: null, height: null, durationSeconds: null };
 }
