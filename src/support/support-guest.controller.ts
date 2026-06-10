@@ -1,9 +1,7 @@
 import {
   Body, Controller, Get, Headers, Post, HttpCode, UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import { SupportConversationsService } from './support-conversations.service';
@@ -15,6 +13,11 @@ function extractGuestToken(header: string | undefined): string | null {
   return header.trim();
 }
 
+// All three endpoints are BFF-internal: the Next.js server calls them, not browsers.
+// Every user's request arrives from the same server IP, so per-IP throttling would
+// lock out all users simultaneously after the first few calls.
+// The real abuse protection is the guest-token check in each handler — a random UUID
+// header is required, and the token is only ever issued via the httpOnly BFF cookie.
 @Public()
 @Controller('support/guest')
 export class SupportGuestController {
@@ -23,9 +26,6 @@ export class SupportGuestController {
     private readonly jwtService: JwtService,
   ) {}
 
-  // Strict bootstrap limit: 5 req / min / IP
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ auth: { ttl: 60_000, limit: 5 } })
   @Post('bootstrap')
   @HttpCode(200)
   async bootstrap(
@@ -37,9 +37,6 @@ export class SupportGuestController {
     return this.convService.bootstrap(guestToken, dto.guestName);
   }
 
-  // Looser history limit: 30 req / min / IP
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ auth: { ttl: 60_000, limit: 30 } })
   @Get('history')
   async history(
     @Headers('x-support-token') tokenHeader: string | undefined,
@@ -55,9 +52,6 @@ export class SupportGuestController {
     return { messages, conversationId: conv.id, status: conv.status, unreadGuestCount: conv.unreadGuestCount };
   }
 
-  // BFF-internal endpoint — called only by the Next.js server, never by browsers.
-  // No throttle guard at all: the httpOnly cookie check in the BFF is the security
-  // boundary, and all BFF requests share one IP so per-IP limiting would lock everyone out.
   @Post('ws-ticket')
   @HttpCode(200)
   async getWsTicket(@Headers('x-support-token') tokenHeader: string | undefined) {
