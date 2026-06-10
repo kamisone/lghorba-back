@@ -19,8 +19,16 @@ export class GcsService {
     });
   }
 
-  async upload(buffer: Buffer, objectName: string, contentType: string): Promise<void> {
-    await this.storage.bucket(this.bucketName).file(objectName).save(buffer, { contentType });
+  async upload(
+    buffer: Buffer,
+    objectName: string,
+    contentType: string,
+    predefinedAcl?: 'publicRead' | 'private',
+  ): Promise<void> {
+    await this.storage.bucket(this.bucketName).file(objectName).save(buffer, {
+      contentType,
+      ...(predefinedAcl ? { predefinedAcl } : {}),
+    });
   }
 
   async delete(objectName: string): Promise<void> {

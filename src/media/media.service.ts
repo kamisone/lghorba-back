@@ -72,7 +72,7 @@ export class MediaService {
     const datePart   = new Date().toISOString().slice(0, 7);
     const storageKey = `${MEDIA_PREFIX}${datePart}/${checksum.slice(0, 8)}-${Date.now()}.${ext}`;
 
-    await this.gcs.upload(file.buffer, storageKey, file.mimetype);
+    await this.gcs.upload(file.buffer, storageKey, file.mimetype, 'publicRead');
 
     const { width, height } = await extractImageDimensions(file.buffer, file.mimetype);
 
