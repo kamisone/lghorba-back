@@ -264,7 +264,16 @@ export class OrdersService {
     if (order.status === 'draft') {
       await this.transition(orderId, 'awaiting_payment', 'Payment initiated');
     }
-    return this.transition(orderId, 'paid', 'Payment confirmed via Stripe webhook');
+    const paid = await this.transition(orderId, 'paid', 'Payment confirmed via Stripe webhook');
+
+    // Only now is the cart truly "spent" — mark it completed so a fresh empty
+    // cart is created for the customer's next visit, while preserving the
+    // (now-paid) order's snapshot of the items.
+    if (order.cartToken) {
+      await this.cartRepo.update({ token: order.cartToken, status: 'active' }, { status: 'completed' });
+    }
+
+    return paid;
   }
 
   // ── List ────────────────────────────────────────────────────────────────────

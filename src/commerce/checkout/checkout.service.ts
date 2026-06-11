@@ -2,7 +2,7 @@ import {
   BadRequestException, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { z } from 'zod';
@@ -106,8 +106,11 @@ export class CheckoutService {
     if (!cart) throw new NotFoundException('Active cart not found');
     if (!cart.items.length) throw new BadRequestException('Cart is empty');
 
-    // Idempotency: return existing draft for this cart token
-    const existing = await this.orderRepo.findOneBy({ cartToken: dto.cartToken, status: 'draft' });
+    // Idempotency: return existing draft/in-progress order for this cart token.
+    // The cart stays "active" (and its items visible) until the payment webhook
+    // confirms success, so a page refresh during checkout must resume this order
+    // rather than creating a duplicate (and double-reserving inventory).
+    const existing = await this.orderRepo.findOneBy({ cartToken: dto.cartToken, status: In(['draft', 'awaiting_payment']) });
     if (existing) {
       const methods = await this.shippingService.getMethodsForCountry(dto.country, existing.subtotalCents);
       return this.toSnapshot(existing, methods);
@@ -214,7 +217,17 @@ export class CheckoutService {
   async updateShipping(orderId: string, dto: UpdateShippingDto): Promise<CheckoutSnapshot> {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'draft') throw new BadRequestException('Order is no longer modifiable');
+    if (order.status !== 'draft') {
+      // Resuming after a refresh: the order already moved past shipping selection
+      // (its PaymentIntent amount is locked in) — return the existing snapshot
+      // as a no-op rather than erroring, so the checkout flow can resume.
+      if (order.status === 'awaiting_payment') {
+        const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
+        const methods = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
+        return this.toSnapshot(order, methods);
+      }
+      throw new BadRequestException('Order is no longer modifiable');
+    }
 
     const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
     const methods = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
@@ -240,6 +253,12 @@ export class CheckoutService {
   async readyForPayment(orderId: string): Promise<{ orderId: string; orderNumber: string; totalCents: number }> {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
+
+    // Idempotent resume: a page refresh re-runs the checkout flow against the
+    // same draft/awaiting_payment order (see initiate()'s idempotency check).
+    if (order.status === 'awaiting_payment') {
+      return { orderId: order.id, orderNumber: order.orderNumber, totalCents: order.totalCents };
+    }
     if (order.status !== 'draft') throw new BadRequestException('Order is not in draft state');
     if (!order.shippingMethodId) throw new BadRequestException('Please select a shipping method before payment');
 
@@ -269,7 +288,10 @@ export class CheckoutService {
       }
     }
 
-    await this.cartRepo.update({ token: order.cartToken ?? '' }, { status: 'completed' });
+    // NOTE: the cart is intentionally left "active" here — it's only marked
+    // "completed" once the Stripe webhook confirms payment (OrdersService.confirmPayment).
+    // This keeps the customer's cart items intact if payment fails, is abandoned,
+    // or the page is refreshed mid-payment.
 
     await this.customerService.upsertFromOrder(
       order.customerEmail,
