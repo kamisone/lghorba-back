@@ -28,6 +28,7 @@ export interface EnrichedInventoryItem {
   productStatus: string;
   available: number;
   reserved: number;
+  committed: number;
   incoming: number;
   lowStockThreshold: number;
   updatedAt: string;
@@ -64,6 +65,7 @@ export class InventoryService {
         inv."productId",
         inv.available,
         inv.reserved,
+        inv.committed,
         inv.incoming,
         inv."lowStockThreshold",
         inv."updatedAt",
@@ -140,6 +142,7 @@ export class InventoryService {
         productStatus:       r.productStatus,
         available,
         reserved:   Number(r.reserved  ?? 0),
+        committed:  Number(r.committed ?? 0),
         incoming:   Number(r.incoming  ?? 0),
         lowStockThreshold: threshold,
         updatedAt:  r.updatedAt,
@@ -212,6 +215,7 @@ export class InventoryService {
         delta:          -quantity,
         availableAfter: item.available,
         reservedAfter:  item.reserved,
+        committedAfter: item.committed,
         note:           `Reserved ${quantity} units for order`,
       }));
     };
@@ -253,6 +257,7 @@ export class InventoryService {
         delta:          quantity,
         availableAfter: item.available,
         reservedAfter:  item.reserved,
+        committedAfter: item.committed,
         note:           `Released ${quantity} reserved units (order cancelled)`,
       }));
     });
@@ -264,7 +269,78 @@ export class InventoryService {
     );
   }
 
-  // ── Commit reserve → sold when order ships ────────────────────────────────
+  // ── Commit reserve → committed when order is paid ───────────────────────────
+  // Moves stock from "Reserved" (held for an unpaid order, subject to the
+  // 15-minute checkout reservation) into "Committed" (held for a paid order,
+  // awaiting fulfillment — no longer subject to expiry).
+
+  async commitForOrder(variantId: string, quantity: number, orderId: string): Promise<void> {
+    await this.dataSource.transaction(async (em) => {
+      const item = await em
+        .getRepository(InventoryItem)
+        .createQueryBuilder('inv')
+        .where('inv.variantId = :variantId', { variantId })
+        .setLock('pessimistic_write')
+        .getOne();
+
+      if (!item) return;
+
+      item.reserved  = Math.max(0, item.reserved - quantity);
+      item.committed += quantity;
+      await em.save(InventoryItem, item);
+
+      await em.save(InventoryMovement, em.create(InventoryMovement, {
+        variantId,
+        orderId,
+        type:           'order_paid' as MovementType,
+        delta:          0,
+        availableAfter: item.available,
+        reservedAfter:  item.reserved,
+        committedAfter: item.committed,
+        note:           `Committed ${quantity} units (order paid)`,
+      }));
+    });
+  }
+
+  // ── Release committed stock when a paid order is cancelled/refunded ────────
+  // Used when an order is cancelled or refunded *after* payment but before
+  // shipment — the units move from "Committed" back to "Available".
+
+  async releaseCommittedForOrder(variantId: string, quantity: number, orderId: string): Promise<void> {
+    await this.dataSource.transaction(async (em) => {
+      const item = await em
+        .getRepository(InventoryItem)
+        .createQueryBuilder('inv')
+        .where('inv.variantId = :variantId', { variantId })
+        .setLock('pessimistic_write')
+        .getOne();
+
+      if (!item) return;
+
+      item.committed = Math.max(0, item.committed - quantity);
+      item.available += quantity;
+      await em.save(InventoryItem, item);
+
+      await em.save(InventoryMovement, em.create(InventoryMovement, {
+        variantId,
+        orderId,
+        type:           'order_refunded' as MovementType,
+        delta:          quantity,
+        availableAfter: item.available,
+        reservedAfter:  item.reserved,
+        committedAfter: item.committed,
+        note:           `Released ${quantity} committed units (paid order cancelled/refunded)`,
+      }));
+    });
+
+    this.eventBus.emit(
+      COMMERCE_EVENTS.INVENTORY_RELEASED,
+      { variantId, orderId, quantity },
+      { entityId: orderId, source: 'InventoryService.releaseCommittedForOrder' },
+    );
+  }
+
+  // ── Commit → sold when order ships ──────────────────────────────────────────
 
   async confirmSale(variantId: string, quantity: number, orderId: string): Promise<void> {
     await this.dataSource.transaction(async (em) => {
@@ -277,7 +353,7 @@ export class InventoryService {
 
       if (!item) return;
 
-      item.reserved = Math.max(0, item.reserved - quantity);
+      item.committed = Math.max(0, item.committed - quantity);
       await em.save(InventoryItem, item);
 
       await em.save(InventoryMovement, em.create(InventoryMovement, {
@@ -287,6 +363,7 @@ export class InventoryService {
         delta:          -quantity,
         availableAfter: item.available,
         reservedAfter:  item.reserved,
+        committedAfter: item.committed,
         note:           `Confirmed sale of ${quantity} units`,
       }));
     });
@@ -320,6 +397,7 @@ export class InventoryService {
         delta,
         availableAfter: item.available,
         reservedAfter:  item.reserved,
+        committedAfter: item.committed,
         note,
       }));
 

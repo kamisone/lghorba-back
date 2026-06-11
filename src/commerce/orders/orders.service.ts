@@ -190,13 +190,13 @@ export class OrdersService {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
 
-    const allowed = ALLOWED_TRANSITIONS[order.status] ?? [];
+    const prev = order.status;
+    const allowed = ALLOWED_TRANSITIONS[prev] ?? [];
     if (!allowed.includes(toStatus)) {
-      throw new BadRequestException(`Cannot transition from "${order.status}" to "${toStatus}"`);
+      throw new BadRequestException(`Cannot transition from "${prev}" to "${toStatus}"`);
     }
 
-    return this.dataSource.transaction(async (em) => {
-      const prev = order.status;
+    const result = await this.dataSource.transaction(async (em) => {
       order.status = toStatus;
       await em.save(Order, order);
 
@@ -208,17 +208,33 @@ export class OrdersService {
         adminId: adminId ?? null,
       }));
 
-      // Release inventory if cancelled
-      if (toStatus === 'cancelled') {
+      // Release inventory on cancel/refund — bucket depends on where the stock was held.
+      if (toStatus === 'cancelled' || toStatus === 'refunded') {
+        const items = await em.find(OrderItem, { where: { orderId } });
+        for (const item of items) {
+          if (!item.variantId) continue;
+          if (prev === 'paid' || prev === 'processing') {
+            // Already moved from Reserved -> Committed on payment; release back to Available.
+            await this.inventoryService.releaseCommittedForOrder(item.variantId, item.quantity, orderId);
+          } else if (prev !== 'shipped' && prev !== 'delivered') {
+            // Still in the unpaid Reserved bucket (draft/pending/awaiting_payment).
+            await this.inventoryService.releaseForOrder(item.variantId, item.quantity, orderId);
+          }
+          // shipped/delivered -> refunded: stock was already confirmed sold; no automatic restock.
+        }
+      }
+
+      // Move Reserved -> Committed once payment is confirmed
+      if (toStatus === 'paid') {
         const items = await em.find(OrderItem, { where: { orderId } });
         for (const item of items) {
           if (item.variantId) {
-            await this.inventoryService.releaseForOrder(item.variantId, item.quantity, orderId);
+            await this.inventoryService.commitForOrder(item.variantId, item.quantity, orderId);
           }
         }
       }
 
-      // Confirm sale when shipped
+      // Confirm sale (Committed -> sold) when shipped
       if (toStatus === 'shipped') {
         const items = await em.find(OrderItem, { where: { orderId } });
         for (const item of items) {
@@ -238,11 +254,11 @@ export class OrdersService {
 
     this.eventBus.emit(
       COMMERCE_EVENTS.ORDER_STATUS_CHANGED,
-      { orderId, fromStatus: order.status, toStatus, triggeredBy: adminId ? 'admin' : 'system' } satisfies OrderStatusChangedEvent,
+      { orderId, fromStatus: prev, toStatus, triggeredBy: adminId ? 'admin' : 'system' } satisfies OrderStatusChangedEvent,
       { entityId: orderId, source: 'OrdersService.transition' },
     );
 
-    return order;
+    return result;
   }
 
   // ── Confirm payment (idempotent, called by webhook) ─────────────────────────
