@@ -19,7 +19,11 @@ export class AuthController {
     private readonly mfaService: MfaService,
   ) {}
 
-  @SkipThrottle()
+  // SkipThrottle() with no args only skips a throttler named "default", which
+  // doesn't exist here — ThrottlerModule registers "auth" and "contact". Since
+  // this controller is under @Throttle({ auth: ... }), every named throttler
+  // (including "contact") otherwise applies to this route too. Must list all.
+  @SkipThrottle({ auth: true, contact: true })
   @Get('me')
   me(@Request() req: { user: { id: number; email: string } }) {
     return req.user;
@@ -35,6 +39,13 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body(new ZodValidationPipe(RefreshSchema)) body: RefreshDto) {
     return this.authService.refresh(body.refresh_token);
+  }
+
+  @Public()
+  @Post('logout')
+  async logout(@Body(new ZodValidationPipe(RefreshSchema)) body: RefreshDto) {
+    await this.authService.logout(body.refresh_token);
+    return { ok: true };
   }
 
   @Public()
