@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query,
+  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query,
 } from '@nestjs/common';
 import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
@@ -29,9 +29,6 @@ export class ProductAdminController {
       offset:   offset ? parseInt(offset, 10) : undefined,
     });
   }
-
-  @Get('images')
-  listImages() { return this.products.adminListImages(); }
 
   @Get('categories')
   getCategories() { return this.products.getCategories(); }
@@ -147,6 +144,31 @@ export class ProductAdminController {
     @Param('attributeId') attributeId: string,
   ) {
     return this.products.removeProductAttribute(productId, attributeId);
+  }
+
+  // ── Per-product images for "image" swatch option values ─────────────────────
+
+  @Get(':id/option-images')
+  getOptionImages(@Param('id') id: string) {
+    return this.products.getProductOptionImages(id);
+  }
+
+  @Put(':id/option-images/:optionValueId')
+  setOptionImage(
+    @Param('id') productId: string,
+    @Param('optionValueId') optionValueId: string,
+    @Body() dto: { mediaKey: string },
+  ) {
+    return this.products.setProductOptionImage(productId, optionValueId, dto.mediaKey);
+  }
+
+  @Delete(':id/option-images/:optionValueId')
+  @HttpCode(204)
+  removeOptionImage(
+    @Param('id') productId: string,
+    @Param('optionValueId') optionValueId: string,
+  ) {
+    return this.products.removeProductOptionImage(productId, optionValueId);
   }
 
 }

@@ -10,6 +10,7 @@ import { VariantOption } from '../entities/variant-option.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
 import { VariantAttribute } from '../entities/variant-attribute.entity';
 import { ProductVariantAttribute } from '../entities/product-variant-attribute.entity';
+import { ProductOptionValueImage } from '../entities/product-option-value-image.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { ProductCategory } from '../entities/product-category.entity';
 import { ProductTag } from '../entities/product-tag.entity';
@@ -167,6 +168,7 @@ export class ProductService {
     @InjectRepository(VariantOption)            private readonly variantOptionRepo: Repository<VariantOption>,
     @InjectRepository(VariationOptionValue)     private readonly optionValueRepo:  Repository<VariationOptionValue>,
     @InjectRepository(ProductVariantAttribute)  private readonly productAttrRepo:  Repository<ProductVariantAttribute>,
+    @InjectRepository(ProductOptionValueImage)  private readonly optionImageRepo:  Repository<ProductOptionValueImage>,
     @InjectRepository(InventoryItem)            private readonly inventoryRepo:    Repository<InventoryItem>,
     @InjectRepository(ProductCategory)          private readonly categoryRepo:     Repository<ProductCategory>,
     @InjectRepository(ProductTag)               private readonly tagRepo:          Repository<ProductTag>,
@@ -297,36 +299,6 @@ export class ProductService {
     const [raw, total] = await qb.getManyAndCount();
     const items = await this.resolveProductsUrls(raw);
     return { items, total };
-  }
-
-  // Returns all product images (featured + gallery) as { key, url, productId, productTitle }
-  async adminListImages(): Promise<Array<{ key: string; url: string; productId: string; productTitle: string }>> {
-    const products = await this.productRepo.find({
-      where: { deletedAt: null as any },
-      select: ['id', 'title', 'featuredImageKey', 'galleryImageKeys'],
-      order: { createdAt: 'DESC' },
-    });
-
-    const allKeys = new Set<string>();
-    for (const p of products) {
-      if (p.featuredImageKey) allKeys.add(p.featuredImageKey);
-      for (const k of p.galleryImageKeys ?? []) allKeys.add(k);
-    }
-
-    const urlMap = await this.assetUrlService.resolveBatch([...allKeys]);
-
-    const result: Array<{ key: string; url: string; productId: string; productTitle: string }> = [];
-    for (const p of products) {
-      if (p.featuredImageKey) {
-        const url = urlMap.get(p.featuredImageKey);
-        if (url) result.push({ key: p.featuredImageKey, url, productId: p.id, productTitle: p.title });
-      }
-      for (const k of p.galleryImageKeys ?? []) {
-        const url = urlMap.get(k);
-        if (url) result.push({ key: k, url, productId: p.id, productTitle: p.title });
-      }
-    }
-    return result;
   }
 
   // ── Public list ─────────────────────────────────────────────────────────────
@@ -981,6 +953,44 @@ export class ProductService {
     });
   }
 
+  // ── Per-product images for "image" swatch option values ─────────────────────
+
+  async getProductOptionImages(productId: string): Promise<Array<{ optionValueId: string; mediaKey: string; url: string | null }>> {
+    const rows = await this.optionImageRepo.findBy({ productId });
+    if (!rows.length) return [];
+    const urlMap = await this.assetUrlService.resolveBatch(rows.map(r => r.mediaKey));
+    return rows.map(r => ({
+      optionValueId: r.optionValueId,
+      mediaKey:      r.mediaKey,
+      url:           urlMap.get(r.mediaKey) ?? null,
+    }));
+  }
+
+  async setProductOptionImage(
+    productId: string, optionValueId: string, mediaKey: string,
+  ): Promise<{ optionValueId: string; mediaKey: string; url: string | null }> {
+    const product = await this.productRepo.findOneBy({ id: productId });
+    if (!product) throw new NotFoundException('Product not found');
+
+    const optionValue = await this.optionValueRepo.findOneBy({ id: optionValueId });
+    if (!optionValue) throw new BadRequestException('Option value not found');
+
+    const linked = await this.productAttrRepo.findOneBy({ productId, attributeId: optionValue.attributeId });
+    if (!linked) throw new BadRequestException('This option value\'s attribute is not linked to this product');
+
+    let row = await this.optionImageRepo.findOneBy({ productId, optionValueId });
+    if (row) row.mediaKey = mediaKey;
+    else row = this.optionImageRepo.create({ productId, optionValueId, mediaKey });
+    await this.optionImageRepo.save(row);
+
+    const url = await this.assetUrlService.resolve(mediaKey);
+    return { optionValueId, mediaKey, url };
+  }
+
+  async removeProductOptionImage(productId: string, optionValueId: string): Promise<void> {
+    await this.optionImageRepo.delete({ productId, optionValueId });
+  }
+
   // ── Variant resolution (PDP option picker → specific SKU) ──────────────────
 
   async resolveVariant(
@@ -1081,12 +1091,11 @@ export class ProductService {
     const stockMap      = new Map(inventoryRows.map(i => [i.variantId, i.available]));
 
     const mediaKeys = variants.map(v => v.featuredMediaKey).filter(Boolean) as string[];
-    // Also sign image swatch keys so the frontend can render them as <img> backgrounds.
-    const swatchKeys = productAttrs.flatMap(pa =>
-      pa.attribute.optionValues
-        .filter(ov => ov.swatchType === 'image' && ov.swatchValue)
-        .map(ov => ov.swatchValue as string),
-    );
+    // Image swatches are per-product (Product A's "Red" photo isn't Product B's),
+    // so resolve them from this product's option-value image overrides.
+    const optionImages    = await this.optionImageRepo.findBy({ productId });
+    const optionImageMap  = new Map(optionImages.map(oi => [oi.optionValueId, oi.mediaKey]));
+    const swatchKeys      = [...optionImageMap.values()];
     const urlMap = await this.assetUrlService.resolveBatch([...mediaKeys, ...swatchKeys]);
 
     let attributes: any[] = productAttrs.map(pa => ({
@@ -1103,9 +1112,11 @@ export class ProductService {
           id:           ov.id,
           value:        ov.value,
           displayValue: ov.displayValue,
-          swatchValue:  ov.swatchValue,   // raw GCS key — used by frontend for gallery jump matching
-          swatchUrl:    ov.swatchType === 'image' && ov.swatchValue
-                          ? (urlMap.get(ov.swatchValue) ?? null)
+          // Color swatches are a global hex value; image swatches are per-product
+          // (see optionImageMap) so the global swatchValue is not exposed here.
+          swatchValue:  ov.swatchType === 'color' ? ov.swatchValue : null,
+          swatchUrl:    ov.swatchType === 'image'
+                          ? (urlMap.get(optionImageMap.get(ov.id) ?? '') ?? null)
                           : null,          // signed URL — used by frontend for CSS background display
           swatchType:   ov.swatchType,
           sortOrder:    ov.sortOrder,

@@ -18,8 +18,11 @@ import { ProductCategory } from './product-category.entity';
 export class VariantAttribute {
   @PrimaryGeneratedColumn('uuid') id: string;
 
-  @Column({ type: 'varchar', length: 200, unique: true }) name: string;
-  @Column({ type: 'varchar', length: 200, unique: true }) slug: string;
+  @Column({ type: 'varchar', length: 200 }) name: string;
+  @Column({ type: 'varchar', length: 200 }) slug: string;
+
+  /** Internal-only label to tell apart attributes that share the same storefront `name` — must be unique */
+  @Column({ type: 'varchar', length: 200, nullable: true, unique: true }) adminLabel: string | null;
 
   /** Optional scope — if set, this variation only applies to this product category */
   @Column({ type: 'uuid', nullable: true })
