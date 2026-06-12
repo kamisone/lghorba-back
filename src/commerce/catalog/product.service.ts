@@ -7,6 +7,7 @@ import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { z } from 'zod';
 import { Product } from '../entities/product.entity';
 import { ProductInfoSection } from '../entities/product-info-section';
+import { ProductTrustBadge, TRUST_BADGE_ICON_NAMES } from '../entities/product-trust-badge';
 import { ProductVariant } from '../entities/product-variant.entity';
 import { VariantOption } from '../entities/variant-option.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
@@ -43,6 +44,14 @@ export const ProductInfoSectionSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+export const ProductTrustBadgeSchema = z.object({
+  /** Omit when adding a new badge — the server assigns a stable id. */
+  id:        z.string().min(1).max(100).optional(),
+  icon:      z.enum(TRUST_BADGE_ICON_NAMES),
+  label:     z.string().min(1).max(120),
+  sortOrder: z.number().int().optional(),
+});
+
 export const CreateProductSchema = z.object({
   title:              z.string().min(1).max(500),
   slug:               z.string().min(1).max(300).optional(),
@@ -52,6 +61,7 @@ export const CreateProductSchema = z.object({
   brand:              z.string().max(300).nullish(),
   specifications:     z.record(z.string(), z.unknown()).nullish(),
   infoSections:       z.array(ProductInfoSectionSchema).optional(),
+  trustBadges:        z.array(ProductTrustBadgeSchema).optional(),
   featuredImageKey:   z.string().max(1000).nullish(),
   galleryImageKeys:   z.array(z.string().max(1000)).optional(),
   media:              z.array(ProductMediaItemSchema).optional(),
@@ -156,6 +166,16 @@ function normalizeInfoSections(sections: z.infer<typeof ProductInfoSectionSchema
     key:       s.key ?? 'custom',
     label:     s.label,
     value:     s.value,
+    sortOrder: i,
+  }));
+}
+
+/** Assigns stable ids to new badges and re-derives sortOrder from array position. */
+function normalizeTrustBadges(badges: z.infer<typeof ProductTrustBadgeSchema>[]): ProductTrustBadge[] {
+  return badges.map((b, i) => ({
+    id:        b.id ?? randomUUID(),
+    icon:      b.icon,
+    label:     b.label,
     sortOrder: i,
   }));
 }
@@ -411,30 +431,34 @@ export class ProductService {
     const resolved: any = await this.resolveProductUrls(product);
     const withTranslations = await this.translationsService.maybeApplyOne(resolved, ET_SHOP_PRODUCT, lang);
     withTranslations.infoSections = await this.resolveInfoSections(product.id, product.infoSections, lang);
+    withTranslations.trustBadges  = await this.resolveTrustBadges(product.id, product.trustBadges, lang);
     return withTranslations;
   }
 
   /**
-   * Sorts info sections by sortOrder, overlays FR/EN translations for the
-   * requested lang (stored as `infoSection:{id}:label|value` rows against the
-   * product's translation entity), and drops sections with no content.
+   * Generic resolver for per-product translatable ordered lists (info sections,
+   * trust badges, ...). Sorts by sortOrder, overlays FR/EN translations matching
+   * `fieldPrefix:{id}:{subfield}` against the product's translation rows (only
+   * when lang !== 'fr'), then filters with `isNonEmpty`.
    */
-  private async resolveInfoSections(
-    productId: string, sections: ProductInfoSection[], lang?: string,
-  ): Promise<ProductInfoSection[]> {
-    const sorted = [...(sections ?? [])]
+  private async resolveTranslatableList<T extends { id: string; sortOrder: number }>(
+    productId: string, items: T[], lang: string | undefined,
+    fieldPrefix: string, translatableFields: readonly string[], isNonEmpty: (item: T) => boolean,
+  ): Promise<T[]> {
+    const sorted = [...(items ?? [])]
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map(s => ({ ...s }));
 
     if (lang && lang !== 'fr') {
       const rows = await this.translationsService.findForEntity(ET_SHOP_PRODUCT, productId, lang);
-      const overrides = new Map<string, Partial<Pick<ProductInfoSection, 'label' | 'value'>>>();
+      const fieldRe = new RegExp(`^${fieldPrefix}:(.+):(${translatableFields.join('|')})$`);
+      const overrides = new Map<string, Record<string, string>>();
       for (const row of rows) {
-        const m = row.field.match(/^infoSection:(.+):(label|value)$/);
+        const m = row.field.match(fieldRe);
         if (!m) continue;
         const [, id, sub] = m;
         const entry = overrides.get(id) ?? {};
-        entry[sub as 'label' | 'value'] = row.value;
+        entry[sub] = row.value;
         overrides.set(id, entry);
       }
       for (const s of sorted) {
@@ -443,7 +467,35 @@ export class ProductService {
       }
     }
 
-    return sorted.filter(s => s.value?.trim() && s.label?.trim());
+    return sorted.filter(isNonEmpty);
+  }
+
+  /**
+   * Sorts info sections by sortOrder, overlays FR/EN translations for the
+   * requested lang (stored as `infoSection:{id}:label|value` rows against the
+   * product's translation entity), and drops sections with no content.
+   */
+  private resolveInfoSections(
+    productId: string, sections: ProductInfoSection[], lang?: string,
+  ): Promise<ProductInfoSection[]> {
+    return this.resolveTranslatableList(
+      productId, sections, lang, 'infoSection', ['label', 'value'],
+      s => !!s.value?.trim() && !!s.label?.trim(),
+    );
+  }
+
+  /**
+   * Sorts trust badges by sortOrder, overlays FR/EN translations for the
+   * requested lang (stored as `trustBadge:{id}:label` rows against the
+   * product's translation entity), and drops badges with no label.
+   */
+  private resolveTrustBadges(
+    productId: string, badges: ProductTrustBadge[], lang?: string,
+  ): Promise<ProductTrustBadge[]> {
+    return this.resolveTranslatableList(
+      productId, badges, lang, 'trustBadge', ['label'],
+      b => !!b.label?.trim(),
+    );
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────
@@ -473,6 +525,7 @@ export class ProductService {
         brand:             dto.brand ?? null,
         specifications:    (dto.specifications as Record<string, string>) ?? null,
         infoSections:      dto.infoSections ? normalizeInfoSections(dto.infoSections) : [],
+        trustBadges:       dto.trustBadges  ? normalizeTrustBadges(dto.trustBadges)  : [],
         featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
         galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? []),
         media,
@@ -534,6 +587,7 @@ export class ProductService {
       brand:             dto.brand              !== undefined ? dto.brand ?? null : product.brand,
       specifications:    dto.specifications     !== undefined ? dto.specifications ?? null : product.specifications,
       infoSections:      dto.infoSections       !== undefined ? normalizeInfoSections(dto.infoSections) : product.infoSections,
+      trustBadges:       dto.trustBadges        !== undefined ? normalizeTrustBadges(dto.trustBadges)  : product.trustBadges,
       featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
       galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? product.galleryImageKeys),
       media,

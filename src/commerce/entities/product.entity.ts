@@ -8,6 +8,7 @@ import { ProductTag } from './product-tag.entity';
 import { ShopVendor } from './shop-vendor.entity';
 import { ProductMediaItem } from './product-media-item';
 import { ProductInfoSection } from './product-info-section';
+import { ProductTrustBadge } from './product-trust-badge';
 
 export type ProductStatus = 'draft' | 'active' | 'archived' | 'out_of_stock' | 'hidden';
 
@@ -36,6 +37,9 @@ export class Product {
 
   /** Ordered "Composition / Lavage / Sexe / ..." spec sections shown on the PDP. */
   @Column({ type: 'jsonb', default: () => "'[]'" }) infoSections: ProductInfoSection[];
+
+  /** Ordered icon+label trust signals shown near the PDP buy box. */
+  @Column({ type: 'jsonb', default: () => "'[]'" }) trustBadges: ProductTrustBadge[];
 
   @Column({ type: 'varchar', length: 500, nullable: true }) seoTitle: string | null;
   @Column({ type: 'text', nullable: true })                 seoDescription: string | null;
