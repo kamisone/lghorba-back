@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { Product } from '../entities/product.entity';
 import { ProductInfoSection } from '../entities/product-info-section';
 import { ProductTrustBadge, TRUST_BADGE_ICON_NAMES } from '../entities/product-trust-badge';
+import { ProductFaq } from '../entities/product-faq';
 import { ProductVariant } from '../entities/product-variant.entity';
 import { VariantOption } from '../entities/variant-option.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
@@ -52,6 +53,15 @@ export const ProductTrustBadgeSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+export const ProductFaqSchema = z.object({
+  /** Omit when adding a new FAQ — the server assigns a stable id. */
+  id:        z.string().min(1).max(100).optional(),
+  question:  z.string().min(1).max(300),
+  answer:    z.string().min(1).max(5000),
+  sortOrder: z.number().int().optional(),
+  isActive:  z.boolean().optional(),
+});
+
 export const CreateProductSchema = z.object({
   title:              z.string().min(1).max(500),
   slug:               z.string().min(1).max(300).optional(),
@@ -62,6 +72,7 @@ export const CreateProductSchema = z.object({
   specifications:     z.record(z.string(), z.unknown()).nullish(),
   infoSections:       z.array(ProductInfoSectionSchema).optional(),
   trustBadges:        z.array(ProductTrustBadgeSchema).optional(),
+  faqs:               z.array(ProductFaqSchema).optional(),
   featuredImageKey:   z.string().max(1000).nullish(),
   galleryImageKeys:   z.array(z.string().max(1000)).optional(),
   media:              z.array(ProductMediaItemSchema).optional(),
@@ -177,6 +188,17 @@ function normalizeTrustBadges(badges: z.infer<typeof ProductTrustBadgeSchema>[])
     icon:      b.icon,
     label:     b.label,
     sortOrder: i,
+  }));
+}
+
+/** Assigns stable ids to new FAQs and re-derives sortOrder from array position. */
+function normalizeFaqs(faqs: z.infer<typeof ProductFaqSchema>[]): ProductFaq[] {
+  return faqs.map((f, i) => ({
+    id:        f.id ?? randomUUID(),
+    question:  f.question,
+    answer:    f.answer,
+    sortOrder: i,
+    isActive:  f.isActive ?? true,
   }));
 }
 
@@ -432,6 +454,7 @@ export class ProductService {
     const withTranslations = await this.translationsService.maybeApplyOne(resolved, ET_SHOP_PRODUCT, lang);
     withTranslations.infoSections = await this.resolveInfoSections(product.id, product.infoSections, lang);
     withTranslations.trustBadges  = await this.resolveTrustBadges(product.id, product.trustBadges, lang);
+    withTranslations.faqs         = await this.resolveFaqs(product.id, product.faqs, lang);
     return withTranslations;
   }
 
@@ -498,6 +521,20 @@ export class ProductService {
     );
   }
 
+  /**
+   * Sorts FAQs by sortOrder, overlays FR/EN translations for the requested
+   * lang (stored as `faq:{id}:question|answer` rows against the product's
+   * translation entity), and drops inactive or empty FAQs.
+   */
+  private resolveFaqs(
+    productId: string, faqs: ProductFaq[], lang?: string,
+  ): Promise<ProductFaq[]> {
+    return this.resolveTranslatableList(
+      productId, faqs, lang, 'faq', ['question', 'answer'],
+      f => f.isActive && !!f.question?.trim() && !!f.answer?.trim(),
+    );
+  }
+
   // ── Create ──────────────────────────────────────────────────────────────────
 
   async create(dto: CreateProductDto): Promise<Product> {
@@ -526,6 +563,7 @@ export class ProductService {
         specifications:    (dto.specifications as Record<string, string>) ?? null,
         infoSections:      dto.infoSections ? normalizeInfoSections(dto.infoSections) : [],
         trustBadges:       dto.trustBadges  ? normalizeTrustBadges(dto.trustBadges)  : [],
+        faqs:              dto.faqs         ? normalizeFaqs(dto.faqs)                : [],
         featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
         galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? []),
         media,
@@ -588,6 +626,7 @@ export class ProductService {
       specifications:    dto.specifications     !== undefined ? dto.specifications ?? null : product.specifications,
       infoSections:      dto.infoSections       !== undefined ? normalizeInfoSections(dto.infoSections) : product.infoSections,
       trustBadges:       dto.trustBadges        !== undefined ? normalizeTrustBadges(dto.trustBadges)  : product.trustBadges,
+      faqs:              dto.faqs               !== undefined ? normalizeFaqs(dto.faqs)               : product.faqs,
       featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
       galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? product.galleryImageKeys),
       media,

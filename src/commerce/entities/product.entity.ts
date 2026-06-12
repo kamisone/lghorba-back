@@ -9,6 +9,7 @@ import { ShopVendor } from './shop-vendor.entity';
 import { ProductMediaItem } from './product-media-item';
 import { ProductInfoSection } from './product-info-section';
 import { ProductTrustBadge } from './product-trust-badge';
+import { ProductFaq } from './product-faq';
 
 export type ProductStatus = 'draft' | 'active' | 'archived' | 'out_of_stock' | 'hidden';
 
@@ -40,6 +41,9 @@ export class Product {
 
   /** Ordered icon+label trust signals shown near the PDP buy box. */
   @Column({ type: 'jsonb', default: () => "'[]'" }) trustBadges: ProductTrustBadge[];
+
+  /** Ordered FAQ entries shown near the bottom of the PDP and used for FAQPage JSON-LD. */
+  @Column({ type: 'jsonb', default: () => "'[]'" }) faqs: ProductFaq[];
 
   @Column({ type: 'varchar', length: 500, nullable: true }) seoTitle: string | null;
   @Column({ type: 'text', nullable: true })                 seoDescription: string | null;
