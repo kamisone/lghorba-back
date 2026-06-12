@@ -244,32 +244,58 @@ export class EmailIngestionService {
   }
 
   /**
+   * Normalizes a name for fuzzy comparison: strips accents/diacritics
+   * (so "Citroën" === "Citroen"), lowercases, replaces punctuation with
+   * spaces and collapses whitespace.
+   */
+  private normalizeForMatch(s: string): string {
+    return s
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  /**
    * Tries to match a car by vehicle name extracted from the email.
+   * All comparisons are accent/case/punctuation-insensitive.
    * Strategy:
-   *   1. Exact match on car.name (case-insensitive)
+   *   1. Exact match on car.name
    *   2. Match on "brand model" concatenation
-   *   3. Any car whose name is contained in the extracted vehicle name
+   *   3. Any car whose name is contained in the extracted vehicle name (or vice-versa)
+   *   4. Token match: every word of the car's brand+model appears in the vehicle name
    */
   private async matchCar(vehicleName: string): Promise<Car | null> {
-    const norm = vehicleName.toLowerCase().trim();
+    const norm = this.normalizeForMatch(vehicleName);
+    const normTokens = new Set(norm.split(' ').filter(Boolean));
 
     const cars = await this.carRepo.find({ select: ['id', 'name', 'brand', 'model', 'modelYear'] });
 
     // Exact match on car.name
-    let match = cars.find(c => c.name.toLowerCase() === norm);
+    let match = cars.find(c => this.normalizeForMatch(c.name) === norm);
     if (match) return match;
 
     // Match on brand + model (e.g. "Peugeot 208")
     match = cars.find(c => {
-      const bm = `${c.brand ?? ''} ${c.model ?? ''}`.toLowerCase().trim();
+      const bm = this.normalizeForMatch(`${c.brand ?? ''} ${c.model ?? ''}`);
       return bm && (norm === bm || norm.includes(bm) || bm.includes(norm));
     });
     if (match) return match;
 
     // Loose: car name contained in vehicle string or vice-versa
     match = cars.find(c => {
-      const cn = c.name.toLowerCase();
-      return norm.includes(cn) || cn.includes(norm);
+      const cn = this.normalizeForMatch(c.name);
+      return cn && (norm.includes(cn) || cn.includes(norm));
+    });
+    if (match) return match;
+
+    // Token match: every word of brand+model is present somewhere in the vehicle name
+    match = cars.find(c => {
+      const bmTokens = this.normalizeForMatch(`${c.brand ?? ''} ${c.model ?? ''}`)
+        .split(' ')
+        .filter(Boolean);
+      return bmTokens.length > 0 && bmTokens.every(t => normTokens.has(t));
     });
     return match ?? null;
   }
