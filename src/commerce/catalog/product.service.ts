@@ -1,10 +1,12 @@
 import {
   BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { z } from 'zod';
 import { Product } from '../entities/product.entity';
+import { ProductInfoSection } from '../entities/product-info-section';
 import { ProductVariant } from '../entities/product-variant.entity';
 import { VariantOption } from '../entities/variant-option.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
@@ -32,6 +34,15 @@ export const ProductMediaItemSchema = z.object({
   isFeatured: z.boolean().optional(),
 });
 
+export const ProductInfoSectionSchema = z.object({
+  /** Omit when adding a new section — the server assigns a stable id. */
+  id:        z.string().min(1).max(100).optional(),
+  key:       z.string().max(100).optional(),
+  label:     z.string().min(1).max(200),
+  value:     z.string().max(5000),
+  sortOrder: z.number().int().optional(),
+});
+
 export const CreateProductSchema = z.object({
   title:              z.string().min(1).max(500),
   slug:               z.string().min(1).max(300).optional(),
@@ -40,6 +51,7 @@ export const CreateProductSchema = z.object({
   description:        z.string().nullish(),
   brand:              z.string().max(300).nullish(),
   specifications:     z.record(z.string(), z.unknown()).nullish(),
+  infoSections:       z.array(ProductInfoSectionSchema).optional(),
   featuredImageKey:   z.string().max(1000).nullish(),
   galleryImageKeys:   z.array(z.string().max(1000)).optional(),
   media:              z.array(ProductMediaItemSchema).optional(),
@@ -135,6 +147,17 @@ function normalizeMedia(media: ProductMediaItem[]): ProductMediaItem[] {
     featuredSeen = true;
     return m;
   });
+}
+
+/** Assigns stable ids to new sections and re-derives sortOrder from array position. */
+function normalizeInfoSections(sections: z.infer<typeof ProductInfoSectionSchema>[]): ProductInfoSection[] {
+  return sections.map((s, i) => ({
+    id:        s.id ?? randomUUID(),
+    key:       s.key ?? 'custom',
+    label:     s.label,
+    value:     s.value,
+    sortOrder: i,
+  }));
 }
 
 /** Derives the legacy featuredImageKey/galleryImageKeys columns from the image-type subset of `media`. */
@@ -386,7 +409,41 @@ export class ProductService {
     });
     if (!product) throw new NotFoundException('Product not found');
     const resolved: any = await this.resolveProductUrls(product);
-    return this.translationsService.maybeApplyOne(resolved, ET_SHOP_PRODUCT, lang);
+    const withTranslations = await this.translationsService.maybeApplyOne(resolved, ET_SHOP_PRODUCT, lang);
+    withTranslations.infoSections = await this.resolveInfoSections(product.id, product.infoSections, lang);
+    return withTranslations;
+  }
+
+  /**
+   * Sorts info sections by sortOrder, overlays FR/EN translations for the
+   * requested lang (stored as `infoSection:{id}:label|value` rows against the
+   * product's translation entity), and drops sections with no content.
+   */
+  private async resolveInfoSections(
+    productId: string, sections: ProductInfoSection[], lang?: string,
+  ): Promise<ProductInfoSection[]> {
+    const sorted = [...(sections ?? [])]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map(s => ({ ...s }));
+
+    if (lang && lang !== 'fr') {
+      const rows = await this.translationsService.findForEntity(ET_SHOP_PRODUCT, productId, lang);
+      const overrides = new Map<string, Partial<Pick<ProductInfoSection, 'label' | 'value'>>>();
+      for (const row of rows) {
+        const m = row.field.match(/^infoSection:(.+):(label|value)$/);
+        if (!m) continue;
+        const [, id, sub] = m;
+        const entry = overrides.get(id) ?? {};
+        entry[sub as 'label' | 'value'] = row.value;
+        overrides.set(id, entry);
+      }
+      for (const s of sorted) {
+        const ov = overrides.get(s.id);
+        if (ov) Object.assign(s, ov);
+      }
+    }
+
+    return sorted.filter(s => s.value?.trim() && s.label?.trim());
   }
 
   // ── Create ──────────────────────────────────────────────────────────────────
@@ -415,6 +472,7 @@ export class ProductService {
         description:       dto.description ?? null,
         brand:             dto.brand ?? null,
         specifications:    (dto.specifications as Record<string, string>) ?? null,
+        infoSections:      dto.infoSections ? normalizeInfoSections(dto.infoSections) : [],
         featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
         galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? []),
         media,
@@ -475,6 +533,7 @@ export class ProductService {
       description:       dto.description        !== undefined ? dto.description ?? null : product.description,
       brand:             dto.brand              !== undefined ? dto.brand ?? null : product.brand,
       specifications:    dto.specifications     !== undefined ? dto.specifications ?? null : product.specifications,
+      infoSections:      dto.infoSections       !== undefined ? normalizeInfoSections(dto.infoSections) : product.infoSections,
       featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
       galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? product.galleryImageKeys),
       media,

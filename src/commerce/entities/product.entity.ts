@@ -7,6 +7,7 @@ import { ProductCategory } from './product-category.entity';
 import { ProductTag } from './product-tag.entity';
 import { ShopVendor } from './shop-vendor.entity';
 import { ProductMediaItem } from './product-media-item';
+import { ProductInfoSection } from './product-info-section';
 
 export type ProductStatus = 'draft' | 'active' | 'archived' | 'out_of_stock' | 'hidden';
 
@@ -32,6 +33,9 @@ export class Product {
 
   @Column({ type: 'varchar', length: 300, nullable: true }) brand: string | null;
   @Column({ type: 'jsonb', nullable: true })                specifications: Record<string, string> | null;
+
+  /** Ordered "Composition / Lavage / Sexe / ..." spec sections shown on the PDP. */
+  @Column({ type: 'jsonb', default: () => "'[]'" }) infoSections: ProductInfoSection[];
 
   @Column({ type: 'varchar', length: 500, nullable: true }) seoTitle: string | null;
   @Column({ type: 'text', nullable: true })                 seoDescription: string | null;
