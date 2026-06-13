@@ -79,6 +79,27 @@ export class AuthService {
     }
 
     if (stored.revokedAt) {
+      // When the 15-min access token expires, multiple browser tabs that were
+      // open simultaneously all carry the same (now-expired) refresh token and
+      // all fire rotation requests concurrently. The first wins and revokes the
+      // token; the rest present the now-revoked token milliseconds later.
+      // Within a 30-second grace window and with a replacedByTokenId recorded
+      // (proving the revocation was a normal rotation, not an attacker clearing
+      // the field), we treat this as a race condition and re-issue a fresh pair
+      // rather than revoking all sessions (theft response).
+      const RACE_GRACE_MS = 30_000;
+      if (
+        stored.replacedByTokenId &&
+        Date.now() - stored.revokedAt.getTime() < RACE_GRACE_MS
+      ) {
+        this.logger.warn(
+          `refresh: concurrent rotation race detected for admin=${stored.adminId} — re-issuing tokens`,
+        );
+        return this.issueTokens(payload.sub, payload.email);
+      }
+
+      // Outside the grace window and/or no replacedByTokenId → genuine reuse
+      // (stolen token presented after the rotation chain would have settled).
       this.logger.warn(`refresh: reuse of revoked token detected for admin=${stored.adminId} — revoking all sessions`);
       await this.refreshTokenRepo.update(
         { adminId: stored.adminId, revokedAt: IsNull() },
