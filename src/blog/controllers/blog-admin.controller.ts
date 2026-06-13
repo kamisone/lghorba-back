@@ -117,7 +117,7 @@ export class BlogAdminController {
 
   @Post('categories')
   createCategory(@Body(new ZodValidationPipe(CreateCategorySchema)) dto: z.infer<typeof CreateCategorySchema>) {
-    return this.categories.create(dto);
+    return this.categories.create(dto as any);
   }
 
   @Patch('categories/:id')
@@ -125,7 +125,7 @@ export class BlogAdminController {
     @Param('id') id: string,
     @Body(new ZodValidationPipe(UpdateCategorySchema)) dto: z.infer<typeof UpdateCategorySchema>,
   ) {
-    return this.categories.update(id, dto);
+    return this.categories.update(id, dto as any);
   }
 
   @Delete('categories/:id')

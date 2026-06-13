@@ -47,8 +47,8 @@ export class BlogPublicController {
   }
 
   @Get('categories')
-  listCategories() {
-    return this.categoryService.findAll(true);
+  listCategories(@Query('lang') lang?: string) {
+    return this.categoryService.findAll(true, lang);
   }
 
   @Get('tags')

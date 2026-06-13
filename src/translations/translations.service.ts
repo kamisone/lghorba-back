@@ -101,6 +101,16 @@ export class TranslationsService {
     return lang ? this.applyToEntity(entity, entityType, lang) : Promise.resolve(entity);
   }
 
+  /** Bulk-fetch all translation rows for multiple entities (no lang filter). Use for admin read. */
+  async findForEntities(entityType: string, entityIds: string[]): Promise<Translation[]> {
+    if (!entityIds.length) return [];
+    return this.repo
+      .createQueryBuilder('t')
+      .where('t.entityType = :entityType', { entityType })
+      .andWhere('t.entityId IN (:...entityIds)', { entityIds })
+      .getMany();
+  }
+
   async deleteById(id: string): Promise<void> {
     await this.repo.delete(id);
   }
