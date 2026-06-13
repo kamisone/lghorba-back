@@ -13,6 +13,10 @@ import { AuthModule } from './auth/auth.module';
 import { RefreshToken } from './auth/entities/refresh-token.entity';
 import { Contact } from './contacts/contact.entity';
 import { ContactsModule } from './contacts/contacts.module';
+import { NewsletterSubscriber } from './newsletter/newsletter-subscriber.entity';
+import { NewsletterCampaign } from './newsletter/newsletter-campaign.entity';
+import { NewsletterCampaignRecipient } from './newsletter/newsletter-campaign-recipient.entity';
+import { NewsletterModule } from './newsletter/newsletter.module';
 import { Translation } from './translations/translation.entity';
 import { TranslationsModule } from './translations/translations.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
@@ -159,7 +163,7 @@ config();
       username: process.env.TYPEORM_USERNAME || 'postgres',
       password: process.env.TYPEORM_PASSWORD || '',
       database: process.env.TYPEORM_DATABASE || 'lghorba',
-      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, RefreshToken, Contact, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument, BlogPost, BlogCategory, BlogTag, Product, ProductVariant, ProductCategory, ProductTag, VariantAttribute, VariantOption, ProductVariantAttribute, ProductOptionValueImage, InventoryItem, InventoryMovement, Cart, CartItem, Order, OrderItem, OrderStatusHistory, PaymentTransaction, ShippingZone, ShippingMethod, Shipment, ProductReview, ShopPromotion, ShopCustomer, ShopCustomerAddress, Address, Country, ShopCollection, ShopCollectionProduct, ShopWishlistItem, ShopPriceRule, BlogProductReference, ShopVendor, ShopVendorPayout, CommerceEventLog, VariationOptionValue, PaymentType, UserPaymentMethod, PromotionCategory, PromotionProduct, OrderStatusRef, ShopCustomerGroup, MediaAsset, MediaFolder, MediaUsage, ShopDocument, DocumentLine],
+      entities: [SmsMessage, Car, CarPhoto, CarPricing, CarDeliveryLocation, RentSession, RentPosition, User, Admin, RefreshToken, Contact, NewsletterSubscriber, NewsletterCampaign, NewsletterCampaignRecipient, Translation, Booking, Invoice, InvoiceLine, TaxRate, InvoiceAuditLog, GuestToken, GuestTokenAuditLog, PageContent, VehicleAvailability, IngestedEmail, VehicleHealthRecord, MaintenanceRecord, MaintenanceType, MaintenanceSupplier, OdometerReading, Inspection, InspectionChecklistItem, InspectionPhoto, Incident, IncidentPhoto, Promotion, PromotionUsage, NotificationSettings, ReminderLog, PlatformSettings, SupportConversation, SupportMessage, SupportNotificationLog, SupportAuditLog, VehicleFaq, SpamLog, Parking, ParkingOwnerPhone, ParkingDocument, BlogPost, BlogCategory, BlogTag, Product, ProductVariant, ProductCategory, ProductTag, VariantAttribute, VariantOption, ProductVariantAttribute, ProductOptionValueImage, InventoryItem, InventoryMovement, Cart, CartItem, Order, OrderItem, OrderStatusHistory, PaymentTransaction, ShippingZone, ShippingMethod, Shipment, ProductReview, ShopPromotion, ShopCustomer, ShopCustomerAddress, Address, Country, ShopCollection, ShopCollectionProduct, ShopWishlistItem, ShopPriceRule, BlogProductReference, ShopVendor, ShopVendorPayout, CommerceEventLog, VariationOptionValue, PaymentType, UserPaymentMethod, PromotionCategory, PromotionProduct, OrderStatusRef, ShopCustomerGroup, MediaAsset, MediaFolder, MediaUsage, ShopDocument, DocumentLine],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,
       migrationsTransactionMode: 'each',
@@ -198,6 +202,7 @@ config();
     CarsModule,
     RentSessionsModule,
     ContactsModule,
+    NewsletterModule,
     TranslationsModule,
     BookingsModule,
     BookingExpirationModule,
