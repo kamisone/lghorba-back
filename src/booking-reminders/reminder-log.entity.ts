@@ -8,6 +8,11 @@ export enum ReminderStatus {
   CANCELLED = 'cancelled',
 }
 
+export enum ReminderType {
+  PICKUP = 'pickup',
+  RETURN = 'return',
+}
+
 @Entity('reminder_logs')
 export class ReminderLog {
   @PrimaryGeneratedColumn('uuid')
@@ -24,6 +29,9 @@ export class ReminderLog {
 
   @Column({ type: 'enum', enum: ReminderStatus, default: ReminderStatus.SCHEDULED })
   status: ReminderStatus;
+
+  @Column({ type: 'enum', enum: ReminderType, default: ReminderType.PICKUP })
+  type: ReminderType;
 
   @Column({ type: 'text', nullable: true })
   errorMessage: string | null;

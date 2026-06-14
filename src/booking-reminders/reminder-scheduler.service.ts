@@ -4,13 +4,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import { BookingStatus, CANCELLED_STATUSES } from '../bookings/booking.entity';
-import { ReminderLog, ReminderStatus } from './reminder-log.entity';
+import { ReminderLog, ReminderStatus, ReminderType } from './reminder-log.entity';
 import { ReminderSettingsService } from './reminder-settings.service';
 import { BOOKING_REMINDER_QUEUE } from './booking-reminders.constants';
 
 export interface SchedulableBooking {
   id: string;
   startDateTime: Date;
+  endDateTime: Date;
   status: BookingStatus;
 }
 
@@ -37,27 +38,36 @@ export class ReminderSchedulerService {
     if (!settings.enabled && !settings.emailEnabled) return;
     if (CANCELLED_STATUSES.includes(booking.status as typeof CANCELLED_STATUSES[number])) return;
 
-    const fireAt = new Date(
-      booking.startDateTime.getTime() - settings.reminderMinutesBefore * 60_000,
-    );
+    await this.cancelReminder(booking.id);
+
+    await this.scheduleOne(booking, ReminderType.PICKUP, booking.startDateTime, settings.reminderMinutesBefore);
+    await this.scheduleOne(booking, ReminderType.RETURN, booking.endDateTime, settings.reminderMinutesBefore);
+  }
+
+  private async scheduleOne(
+    booking: SchedulableBooking,
+    type: ReminderType,
+    targetDateTime: Date,
+    minutesBefore: number,
+  ): Promise<void> {
+    const fireAt = new Date(targetDateTime.getTime() - minutesBefore * 60_000);
     const delay = fireAt.getTime() - Date.now();
 
     if (delay <= 0) {
-      this.logger.debug(`Reminder for booking ${booking.id} is in the past — skipping`);
+      this.logger.debug(`${type} reminder for booking ${booking.id} is in the past — skipping`);
       return;
     }
-
-    await this.cancelReminder(booking.id);
 
     const log = await this.logRepo.save(
       this.logRepo.create({
         bookingId:    booking.id,
+        type,
         scheduledFor: fireAt,
         status:       ReminderStatus.SCHEDULED,
       }),
     );
 
-    const jobId = `reminder-${booking.id}`;
+    const jobId = `reminder-${booking.id}-${type}`;
     const job = await this.queue.add(
       'send-reminder',
       { bookingId: booking.id, logId: log.id },
@@ -73,17 +83,22 @@ export class ReminderSchedulerService {
 
     await this.logRepo.update(log.id, { bullJobId: job.id });
     this.logger.log(
-      `Reminder scheduled for booking ${booking.id} at ${fireAt.toISOString()} (delay ${delay}ms)`,
+      `${type} reminder scheduled for booking ${booking.id} at ${fireAt.toISOString()} (delay ${delay}ms)`,
     );
   }
 
   async cancelReminder(bookingId: string): Promise<void> {
-    const jobId = `reminder-${bookingId}`;
-    try {
-      const job = await this.queue.getJob(jobId);
-      if (job) await job.remove();
-    } catch (err) {
-      this.logger.warn(`Could not remove job ${jobId}: ${(err as Error)?.message}`);
+    for (const jobId of [
+      `reminder-${bookingId}-${ReminderType.PICKUP}`,
+      `reminder-${bookingId}-${ReminderType.RETURN}`,
+      `reminder-${bookingId}`, // legacy job id (pre pickup/return split)
+    ]) {
+      try {
+        const job = await this.queue.getJob(jobId);
+        if (job) await job.remove();
+      } catch (err) {
+        this.logger.warn(`Could not remove job ${jobId}: ${(err as Error)?.message}`);
+      }
     }
 
     await this.logRepo.update(

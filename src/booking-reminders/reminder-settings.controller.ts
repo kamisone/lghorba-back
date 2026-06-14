@@ -14,6 +14,7 @@ import { DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_TEMPLATE, DEFAULT_SMS_TEMPLATE } f
 import { SmsService } from '../sms/sms.service';
 
 const SAMPLE_VARS: Record<string, string> = {
+  reminderType:  'Départ',
   minutesBefore: '60',
   customerName:  'Jean Dupont',
   customerPhone: '+33 6 12 34 56 78',

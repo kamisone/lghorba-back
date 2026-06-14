@@ -519,6 +519,7 @@ export class BookingsService {
       new BookingConfirmedEvent(booking.id, paymentIntentId, {
         id: booking.id,
         startDateTime: booking.startDateTime,
+        endDateTime: booking.endDateTime,
         status: BookingStatus.CONFIRMED,
       }),
     );
@@ -637,6 +638,7 @@ export class BookingsService {
       new BookingCreatedAdminEvent({
         id: booking.id,
         startDateTime: booking.startDateTime,
+        endDateTime: booking.endDateTime,
         status: booking.status,
       }),
     );
@@ -780,6 +782,7 @@ export class BookingsService {
         new BookingUpdatedEvent({
           id: updated.id,
           startDateTime: updated.startDateTime,
+          endDateTime: updated.endDateTime,
           status: updated.status,
         }),
       );

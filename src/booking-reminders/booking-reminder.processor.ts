@@ -8,7 +8,7 @@ import { DlqService } from '../dlq/dlq.service';
 import { Booking, CANCELLED_STATUSES } from '../bookings/booking.entity';
 import { SmsService } from '../sms/sms.service';
 import { DateTimeService } from '../date-time/date-time.service';
-import { ReminderLog, ReminderStatus } from './reminder-log.entity';
+import { ReminderLog, ReminderStatus, ReminderType } from './reminder-log.entity';
 import { ReminderSettingsService } from './reminder-settings.service';
 import {
   BOOKING_REMINDER_QUEUE,
@@ -69,7 +69,7 @@ export class BookingReminderProcessor extends DlqAwareWorker {
       return;
     }
 
-    const vars = this.buildTemplateVars(booking, settings.reminderMinutesBefore);
+    const vars = this.buildTemplateVars(booking, settings.reminderMinutesBefore, log.type);
 
     // ── SMS ──────────────────────────────────────────────────────────────────
     const smsUpdate = await this.sendSms(settings, vars);
@@ -210,7 +210,7 @@ export class BookingReminderProcessor extends DlqAwareWorker {
 
   // ── Template vars ─────────────────────────────────────────────────────────
 
-  private buildTemplateVars(booking: Booking, minutesBefore: number): Record<string, string> {
+  private buildTemplateVars(booking: Booking, minutesBefore: number, type: ReminderType): Record<string, string> {
     const fmt = (d: Date) => this.dateTimeService.format(d, 'fr-FR');
 
     const car  = booking.car;
@@ -223,6 +223,7 @@ export class BookingReminderProcessor extends DlqAwareWorker {
     const location = booking.deliveryAddress ?? car?.parkingAddress ?? '';
 
     return {
+      reminderType:   type === ReminderType.RETURN ? 'Retour' : 'Départ',
       minutesBefore:  String(minutesBefore),
       customerName:   user?.name  ?? 'Client inconnu',
       customerPhone:  user?.phone ?? '',
