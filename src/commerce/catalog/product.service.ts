@@ -49,7 +49,9 @@ export const ProductTrustBadgeSchema = z.object({
   /** Omit when adding a new badge — the server assigns a stable id. */
   id:        z.string().min(1).max(100).optional(),
   icon:      z.enum(TRUST_BADGE_ICON_NAMES),
-  label:     z.string().min(1).max(120),
+  title:     z.string().min(1).max(120),
+  subtitle:  z.string().max(200).nullish(),
+  link:      z.string().max(2000).nullish(),
   sortOrder: z.number().int().optional(),
 });
 
@@ -186,7 +188,9 @@ function normalizeTrustBadges(badges: z.infer<typeof ProductTrustBadgeSchema>[])
   return badges.map((b, i) => ({
     id:        b.id ?? randomUUID(),
     icon:      b.icon,
-    label:     b.label,
+    title:     b.title,
+    subtitle:  b.subtitle?.trim() ? b.subtitle : undefined,
+    link:      b.link?.trim() ? b.link : undefined,
     sortOrder: i,
   }));
 }
@@ -509,15 +513,15 @@ export class ProductService {
 
   /**
    * Sorts trust badges by sortOrder, overlays FR/EN translations for the
-   * requested lang (stored as `trustBadge:{id}:label` rows against the
-   * product's translation entity), and drops badges with no label.
+   * requested lang (stored as `trustBadge:{id}:title|subtitle` rows against
+   * the product's translation entity), and drops badges with no title.
    */
   private resolveTrustBadges(
     productId: string, badges: ProductTrustBadge[], lang?: string,
   ): Promise<ProductTrustBadge[]> {
     return this.resolveTranslatableList(
-      productId, badges, lang, 'trustBadge', ['label'],
-      b => !!b.label?.trim(),
+      productId, badges, lang, 'trustBadge', ['title', 'subtitle'],
+      b => !!b.title?.trim(),
     );
   }
 
