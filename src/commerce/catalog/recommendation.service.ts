@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { RedisService } from '../../redis/redis.service';
+import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { Product } from '../entities/product.entity';
 
 const TTL_SECONDS = 3600; // 1 hour cache
@@ -11,7 +12,9 @@ export interface ProductSummary {
   slug: string;
   title: string;
   minPriceCents: number | null;
-  featuredImageKey: string | null;
+  featuredImageUrl: string | null;
+  averageRating: number | null;
+  reviewCount: number;
 }
 
 @Injectable()
@@ -22,6 +25,7 @@ export class RecommendationService {
     @InjectRepository(Product)
     private readonly productRepo: Repository<Product>,
     private readonly redis: RedisService,
+    private readonly assetUrl: AssetUrlService,
   ) {}
 
   // ── Frequently bought together ────────────────────────────────────────────
@@ -113,21 +117,45 @@ export class RecommendationService {
   private async fetchSummaries(ids: string[]): Promise<ProductSummary[]> {
     if (!ids.length) return [];
 
-    const products = await this.productRepo
-      .createQueryBuilder('p')
-      .leftJoin('shop_product_variants', 'v', 'v."productId" = p.id AND v."isDefault" = true')
-      .select(['p.id', 'p.slug', 'p.title', 'p.featuredImageKey', 'v.priceCents'])
-      .where('p.id IN (:...ids)', { ids })
-      .andWhere('p.status = :status', { status: 'active' })
-      .getRawMany();
+    const rows: Array<{
+      id: string;
+      slug: string;
+      title: string;
+      featuredImageKey: string | null;
+      priceCents: string | null;
+      avgRating: string | null;
+      reviewCount: string | null;
+    }> = await this.dataSource.query(
+      `SELECT p.id, p.slug, p.title, p."featuredImageKey",
+              v."priceCents",
+              rev."avgRating", rev."reviewCount"
+       FROM shop_products p
+       LEFT JOIN shop_product_variants v ON v."productId" = p.id AND v."isDefault" = true
+       LEFT JOIN (
+         SELECT "productId", AVG(rating) AS "avgRating", COUNT(*) AS "reviewCount"
+         FROM shop_product_reviews
+         WHERE status = 'published'
+         GROUP BY "productId"
+       ) rev ON rev."productId" = p.id
+       WHERE p.id = ANY($1::uuid[])
+         AND p.status = 'active'
+         AND p."deletedAt" IS NULL`,
+      [ids],
+    );
+
+    const urlMap = await this.assetUrl.resolveBatch(
+      rows.map(r => r.featuredImageKey).filter((k): k is string => k != null),
+    );
 
     const idOrder = new Map(ids.map((id, i) => [id, i]));
-    const mapped: ProductSummary[] = products.map(r => ({
-      id:               r.p_id as string,
-      slug:             r.p_slug as string,
-      title:            r.p_title as string,
-      featuredImageKey: r.p_featuredImageKey as string | null,
-      minPriceCents:    r.v_priceCents != null ? parseInt(r.v_priceCents, 10) : null,
+    const mapped: ProductSummary[] = rows.map(r => ({
+      id:               r.id,
+      slug:             r.slug,
+      title:            r.title,
+      featuredImageUrl: r.featuredImageKey ? (urlMap.get(r.featuredImageKey) ?? null) : null,
+      minPriceCents:    r.priceCents != null ? parseInt(r.priceCents, 10) : null,
+      averageRating:    r.avgRating != null ? Math.round(parseFloat(r.avgRating) * 10) / 10 : null,
+      reviewCount:      r.reviewCount != null ? parseInt(r.reviewCount, 10) : 0,
     }));
 
     return mapped.sort((a, b) => (idOrder.get(a.id) ?? 999) - (idOrder.get(b.id) ?? 999));
