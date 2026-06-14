@@ -89,6 +89,13 @@ export class SmsService {
     return sms;
   }
 
+  /** Returns the `consumed` flag for each requested message id. Missing ids are omitted. */
+  async getConsumedStatuses(ids: number[]): Promise<Map<number, boolean>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.repo.find({ where: { id: In(ids) }, select: ['id', 'consumed'] });
+    return new Map(rows.map(r => [r.id, r.consumed]));
+  }
+
   async addMessage(
     to: string,
     message: string,

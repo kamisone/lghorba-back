@@ -42,6 +42,9 @@ export class ReminderLog {
   @Column({ type: 'varchar', nullable: true })
   recipientPhone: string | null;
 
+  @Column({ type: 'jsonb', default: '[]' })
+  smsMessageIds: number[];
+
   @Column({ type: 'text', nullable: true })
   messageBody: string | null;
 

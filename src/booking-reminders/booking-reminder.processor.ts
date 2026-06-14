@@ -117,12 +117,15 @@ export class BookingReminderProcessor extends DlqAwareWorker {
     );
 
     try {
+      const smsMessageIds: number[] = [];
       for (const phone of settings.recipientPhones) {
-        await this.smsService.addMessage(phone, message);
+        const sms = await this.smsService.addMessage(phone, message);
+        smsMessageIds.push(sms.id);
       }
       return {
         smsStatus:      'sent',
         recipientPhone: settings.recipientPhones.join(', '),
+        smsMessageIds,
         messageBody:    message,
       };
     } catch (err) {

@@ -11,6 +11,7 @@ import { Repository, FindManyOptions } from 'typeorm';
 import { ReminderLog, ReminderStatus } from './reminder-log.entity';
 import { ReminderSettingsService, UpdateReminderSettingsDto } from './reminder-settings.service';
 import { DEFAULT_EMAIL_SUBJECT, DEFAULT_EMAIL_TEMPLATE, DEFAULT_SMS_TEMPLATE } from './booking-reminders.constants';
+import { SmsService } from '../sms/sms.service';
 
 const SAMPLE_VARS: Record<string, string> = {
   minutesBefore: '60',
@@ -33,6 +34,7 @@ const SAMPLE_VARS: Record<string, string> = {
 export class ReminderSettingsController {
   constructor(
     private readonly settingsService: ReminderSettingsService,
+    private readonly smsService: SmsService,
     @InjectRepository(ReminderLog)
     private readonly logRepo: Repository<ReminderLog>,
   ) {}
@@ -90,6 +92,17 @@ export class ReminderSettingsController {
       skip,
     });
 
-    return { items, total, page: Number(page), limit: take };
+    const allIds = items.flatMap(item => item.smsMessageIds ?? []);
+    const consumedById = await this.smsService.getConsumedStatuses(allIds);
+
+    const itemsWithConsumed = items.map(item => {
+      const ids = item.smsMessageIds ?? [];
+      const smsConsumed = ids.length === 0
+        ? null
+        : ids.every(id => consumedById.get(id) === true);
+      return { ...item, smsConsumed };
+    });
+
+    return { items: itemsWithConsumed, total, page: Number(page), limit: take };
   }
 }
