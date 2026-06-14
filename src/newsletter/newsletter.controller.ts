@@ -72,7 +72,7 @@ export class NewsletterController {
   @Get('track/click/:token')
   async trackClick(@Param('token') token: string, @Query('u') u: string | undefined, @Res() res: Response) {
     await this.service.recordClick(token);
-    const target = u ? decodeURIComponent(u) : (process.env.FRONTEND_URL ?? '/');
+    const target = u ? decodeURIComponent(u) : (process.env.APP_URL ?? '/');
     res.redirect(302, target);
   }
 

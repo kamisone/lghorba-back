@@ -67,7 +67,7 @@ export class ShopOrderEventsListener {
       const order = await this.orderRepo.findOneBy({ id: event.orderId });
       if (!order) return;
 
-      const frontendUrl = process.env.FRONTEND_URL ?? '';
+      const frontendUrl = process.env.APP_URL ?? '';
       await this.email.sendPaymentFailed({
         customerEmail: order.customerEmail,
         customerName:  order.customerName ?? order.customerEmail,
@@ -122,7 +122,7 @@ export class ShopOrderEventsListener {
       const items = await this.itemRepo.findBy({ orderId });
       if (!items.length) return;
 
-      const frontendUrl = process.env.FRONTEND_URL ?? '';
+      const frontendUrl = process.env.APP_URL ?? '';
       // Send one review request for the first item (avoid email flooding on large orders)
       const first = items[0];
       await this.email.sendReviewRequest({

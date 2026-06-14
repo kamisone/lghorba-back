@@ -58,7 +58,7 @@ export class VendorConnectService {
     let stripeConnectId = vendor.stripeConnectId;
     if (!stripeConnectId) stripeConnectId = await this.createAccount(vendorId);
 
-    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:3001';
+    const frontendUrl = process.env.APP_URL ?? 'http://localhost:3001';
     const link = await this.stripe.accountLinks.create({
       account:     stripeConnectId,
       refresh_url: `${frontendUrl}/vendor/onboarding`,

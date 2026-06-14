@@ -48,7 +48,7 @@ export class StockAlertService {
       userIds,
     );
 
-    const shopUrl = process.env.FRONTEND_URL ?? 'https://localhost:3000';
+    const shopUrl = process.env.APP_URL ?? 'https://localhost:3000';
     const productUrl = `${shopUrl}/shop/${product.slug}`;
 
     let sent = 0;
