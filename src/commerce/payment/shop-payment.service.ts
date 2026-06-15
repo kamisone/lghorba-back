@@ -50,7 +50,6 @@ export class ShopPaymentService {
           orderNumber: order.orderNumber,
           platform:    'lghorba-shop',
         },
-        receipt_email: order.customerEmail,
       },
       { idempotencyKey: `shop-order-${order.id}` },
     );
