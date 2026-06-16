@@ -23,7 +23,10 @@ export class SmsController {
   @Public()
   @Get('sms')
   getSmsToSend(@Query('type') type: SmsType = SmsType.OUTBOUND, @Query('to') to?: string) {
-    return this.smsService.pollNext(type, to);
+    // Express/qs decodes '+' in query strings as a space. Phone numbers that start
+    // with '+' (e.g. +33758802028) arrive as ' 33758802028'. Restore the '+'.
+    const normalizedTo = to?.startsWith(' ') ? '+' + to.slice(1) : to;
+    return this.smsService.pollNext(type, normalizedTo);
   }
 
   @Get('sms-all')
@@ -33,7 +36,8 @@ export class SmsController {
 
   @Get('sms/last-consumed')
   getLastConsumed(@Query('to') to: string) {
-    return this.smsService.getLastConsumed(to);
+    const normalizedTo = to?.startsWith(' ') ? '+' + to.slice(1) : to;
+    return this.smsService.getLastConsumed(normalizedTo);
   }
 
   @Public()

@@ -14,22 +14,11 @@ export class SmsService {
     type: SmsType = SmsType.OUTBOUND,
     to?: string,
   ): Promise<SmsMessage | { error: string }> {
-    // When `to` is provided, prioritise messages for that specific number.
-    // If none exist (e.g. relay polling for a car phone but only reminder/notification
-    // messages are queued), fall back to returning any unconsumed outbound so that
-    // admin notifications are not silently dropped.
-    let [sms] = await this.repo.find({
+    const [sms] = await this.repo.find({
       where: { type, consumed: false, ...(to ? { to } : {}) },
       order: { createdAt: 'ASC' },
       take: 1,
     });
-    if (!sms && to) {
-      [sms] = await this.repo.find({
-        where: { type, consumed: false },
-        order: { createdAt: 'ASC' },
-        take: 1,
-      });
-    }
     if (!sms) return { error: 'empty' };
     await this.repo.update(sms.id, { consumed: true });
     await this.pruneConsumedForNumber(sms.to);
