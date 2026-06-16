@@ -87,9 +87,10 @@ export class InvoiceDataBuilderService {
       documentType:    'invoice',
       paymentIntentId: paymentIntentId,
       customer: {
-        email:  booking.user?.email ?? '',
-        name:   booking.user?.name  ?? null,
-        locale: 'fr',
+        email:       booking.user?.email ?? '',
+        name:        booking.user?.name  ?? null,
+        companyName: booking.customerCompanyName ?? null,
+        locale:      'fr',
       },
       seller: {
         name:       process.env.SELLER_NAME            ?? '',

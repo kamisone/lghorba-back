@@ -25,7 +25,7 @@ export interface DocumentInput {
   entityId:        string;
   documentType:    DocumentType;
   paymentIntentId: string | null;
-  customer:   { email: string; name: string | null; locale?: string };
+  customer:   { email: string; name: string | null; companyName?: string | null; locale?: string };
   seller:     { name: string; address: Record<string, string>; vatNumber?: string | null; siret?: string | null };
   financial:  { subtotalCents: number; deliveryCents: number; discountCents: number; taxCents: number; totalCents: number; couponCode?: string | null };
   tax:        { ratePct: number; label?: string | null; country?: string };
@@ -90,9 +90,10 @@ export class DocumentService {
         status:          'issued',
         issuedAt:        new Date(),
 
-        customerEmail:  input.customer.email,
-        customerName:   input.customer.name ?? null,
-        customerLocale: input.customer.locale ?? 'fr',
+        customerEmail:       input.customer.email,
+        customerName:        input.customer.name        ?? null,
+        customerCompanyName: input.customer.companyName ?? null,
+        customerLocale:      input.customer.locale      ?? 'fr',
 
         sellerName:       input.seller.name,
         sellerAddress:    input.seller.address,

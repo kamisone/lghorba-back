@@ -31,8 +31,9 @@ import {
 export const InitiateCheckoutSchema = z.object({
   cartToken:    z.string().uuid(),
   email:        z.string().email().max(300),
-  firstName:    z.string().min(1).max(150),
-  lastName:     z.string().min(1).max(150),
+  firstName:    z.string().max(150).nullish(),
+  lastName:     z.string().max(150).nullish(),
+  companyName:  z.string().max(200).nullish(),
   phone:        z.string().max(50).nullish(),
   line1:        z.string().min(1).max(500),
   line2:        z.string().max(500).nullish(),
@@ -42,6 +43,12 @@ export const InitiateCheckoutSchema = z.object({
   couponCode:   z.string().max(100).nullish(),
   /** Customer's UI locale — determines email language (fr | en, default fr) */
   locale:       z.enum(['fr', 'en']).optional().default('fr'),
+}).superRefine((d, ctx) => {
+  const hasName    = d.firstName?.trim() && d.lastName?.trim();
+  const hasCompany = d.companyName?.trim();
+  if (!hasName && !hasCompany) {
+    ctx.addIssue({ code: 'custom', path: ['firstName'], message: 'Provide first & last name or a company name' });
+  }
 });
 export type InitiateCheckoutDto = z.infer<typeof InitiateCheckoutSchema>;
 
@@ -140,14 +147,15 @@ export class CheckoutService {
 
       const order = await em.save(Order, em.create(Order, {
         orderNumber,
-        status:          'draft',
-        cartToken:       dto.cartToken,
-        customerEmail:   dto.email,
-        customerName:    `${dto.firstName} ${dto.lastName}`.trim(),
-        customerPhone:   dto.phone ?? null,
-        customerLocale:  dto.locale ?? 'fr',
+        status:               'draft',
+        cartToken:            dto.cartToken,
+        customerEmail:        dto.email,
+        customerName:         `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || null,
+        customerCompanyName:  dto.companyName?.trim() || null,
+        customerPhone:        dto.phone ?? null,
+        customerLocale:       dto.locale ?? 'fr',
         shippingAddressSnapshot: {
-          name:    `${dto.firstName} ${dto.lastName}`.trim(),
+          name:    `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || '',
           line1:   dto.line1,
           line2:   dto.line2 ?? '',
           city:    dto.city,

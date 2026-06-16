@@ -21,8 +21,9 @@ export class Document {
   @Column({ type: 'varchar', length: 20,   default: 'issued' }) status: DocumentStatus;
 
   // ── Customer snapshot ──────────────────────────────────────────────────────
-  @Column({ type: 'varchar', length: 300 })            customerEmail: string;
+  @Column({ type: 'varchar', length: 300 })                 customerEmail: string;
   @Column({ type: 'varchar', length: 300, nullable: true }) customerName: string | null;
+  @Column({ type: 'varchar', length: 300, nullable: true }) customerCompanyName: string | null;
   @Column({ type: 'varchar', length: 5,   default: 'fr' }) customerLocale: string;
 
   // ── Seller snapshot (frozen at generation time) ────────────────────────────

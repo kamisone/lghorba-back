@@ -21,9 +21,10 @@ export class Order {
   @Column({ type: 'uuid', nullable: true }) userId: string | null;
   @Column({ type: 'uuid', nullable: true }) customerId: string | null;
 
-  @Column({ type: 'varchar', length: 300 })          customerEmail: string;
+  @Column({ type: 'varchar', length: 300 })                 customerEmail: string;
   @Column({ type: 'varchar', length: 300, nullable: true }) customerName: string | null;
-  @Column({ type: 'varchar', length: 50, nullable: true })  customerPhone: string | null;
+  @Column({ type: 'varchar', length: 300, nullable: true }) customerCompanyName: string | null;
+  @Column({ type: 'varchar', length: 50,  nullable: true }) customerPhone: string | null;
 
   @Column({ type: 'jsonb' }) shippingAddressSnapshot: Record<string, string>;
   @Column({ type: 'jsonb', nullable: true }) billingAddressSnapshot: Record<string, string> | null;

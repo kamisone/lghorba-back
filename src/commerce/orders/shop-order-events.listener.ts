@@ -153,9 +153,10 @@ export class ShopOrderEventsListener {
       documentType:    'receipt',
       paymentIntentId: paymentIntentId ?? null,
       customer: {
-        email:  order.customerEmail,
-        name:   order.customerName ?? null,
-        locale: order.customerLocale ?? 'fr',
+        email:       order.customerEmail,
+        name:        order.customerName        ?? null,
+        companyName: order.customerCompanyName ?? null,
+        locale:      order.customerLocale      ?? 'fr',
       },
       seller: {
         name:      process.env.SELLER_NAME            ?? '',

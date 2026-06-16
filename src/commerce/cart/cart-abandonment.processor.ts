@@ -67,7 +67,7 @@ export class CartAbandonmentProcessor extends DlqAwareWorker {
       return;
     }
 
-    const cartUrl = `${process.env.FRONTEND_URL ?? 'https://localhost:3000'}/shop/cart?token=${cartToken}`;
+    const cartUrl = `${process.env.APP_URL ?? 'https://localhost:3000'}/shop/cart?token=${cartToken}`;
 
     await this.emailService.sendAbandonedCart({
       cartToken,
