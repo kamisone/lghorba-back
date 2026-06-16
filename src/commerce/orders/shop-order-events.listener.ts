@@ -7,6 +7,7 @@ import { OrderItem } from '../entities/order-item.entity';
 import { Shipment } from '../entities/shipment.entity';
 import { ShopEmailService } from '../email/shop-email.service';
 import { DocumentService, DocumentInput } from '../../documents/document.service';
+import { CheckoutSessionService } from '../checkout/checkout-session.service';
 import {
   COMMERCE_EVENTS,
   PaymentSucceededEvent,
@@ -24,6 +25,7 @@ export class ShopOrderEventsListener {
     @InjectRepository(Shipment)  private readonly shipmentRepo: Repository<Shipment>,
     private readonly email:           ShopEmailService,
     private readonly documentService: DocumentService,
+    private readonly sessionService:  CheckoutSessionService,
   ) {}
 
   // ── Payment succeeded → order confirmation email ──────────────────────────
@@ -57,6 +59,11 @@ export class ShopOrderEventsListener {
     this.buildOrderDocumentInput(event.orderId, event.paymentIntentId)
       .then(input => this.documentService.scheduleCreation(input))
       .catch(err => this.logger.error(`Receipt scheduling failed for ${event.orderId}: ${(err as Error).message}`));
+
+    // Mark checkout session complete so resume links become invalid
+    this.orderRepo.findOneBy({ id: event.orderId })
+      .then(order => { if (order?.cartToken) return this.sessionService.markComplete(order.cartToken); })
+      .catch(() => {});
   }
 
   // ── Payment failed → failure email ────────────────────────────────────────

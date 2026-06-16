@@ -9,6 +9,7 @@ import { Cart } from '../entities/cart.entity';
 import { CartItem } from '../entities/cart-item.entity';
 import { Order } from '../entities/order.entity';
 import { ShopEmailService } from '../email/shop-email.service';
+import { CheckoutSessionService } from '../checkout/checkout-session.service';
 import { CART_ABANDONMENT_QUEUE, CartAbandonmentJobData } from './cart-abandonment.constants';
 
 @Processor(CART_ABANDONMENT_QUEUE)
@@ -18,10 +19,11 @@ export class CartAbandonmentProcessor extends DlqAwareWorker {
 
   constructor(
     dlqService: DlqService,
-    @InjectRepository(Cart)     private readonly cartRepo:  Repository<Cart>,
-    @InjectRepository(CartItem) private readonly itemRepo:  Repository<CartItem>,
-    @InjectRepository(Order)    private readonly orderRepo: Repository<Order>,
-    private readonly emailService: ShopEmailService,
+    @InjectRepository(Cart)     private readonly cartRepo:    Repository<Cart>,
+    @InjectRepository(CartItem) private readonly itemRepo:    Repository<CartItem>,
+    @InjectRepository(Order)    private readonly orderRepo:   Repository<Order>,
+    private readonly emailService:  ShopEmailService,
+    private readonly sessionService: CheckoutSessionService,
   ) {
     super(dlqService);
   }
@@ -67,14 +69,28 @@ export class CartAbandonmentProcessor extends DlqAwareWorker {
       return;
     }
 
-    const cartUrl = `${process.env.APP_URL ?? 'https://localhost:3000'}/shop/cart?token=${cartToken}`;
+    const appUrl  = process.env.APP_URL ?? 'https://localhost:3000';
+    const lang    = locale ?? 'fr';
+    const cartUrl = `${appUrl}/shop/cart?token=${cartToken}`;
+
+    // Build resume URL from checkout session if one exists for this cart
+    let resumeUrl: string | undefined;
+    try {
+      const session = await this.sessionService.findByCartToken(cartToken);
+      if (session && !session.completedAt) {
+        resumeUrl = `${appUrl}/${lang}/shop/checkout/resume/${session.resumeToken}`;
+      }
+    } catch {
+      // Never block the email on session lookup failure
+    }
 
     await this.emailService.sendAbandonedCart({
       cartToken,
       customerEmail: email,
       customerName:  name ?? 'Customer',
       cartUrl,
-      locale:        locale ?? 'fr',
+      resumeUrl,
+      locale:        lang,
       items: items.map(i => ({
         title:          i.titleSnapshot,
         quantity:       i.quantity,

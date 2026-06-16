@@ -1,5 +1,6 @@
 import {
-  Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query,
+  BadRequestException, Body, Controller, Get, HttpCode,
+  Param, ParseUUIDPipe, Patch, Post, Put, Query,
 } from '@nestjs/common';
 import { Public } from '../../auth/public.decorator';
 import {
@@ -8,6 +9,10 @@ import {
   UpdateShippingSchema,
 } from './checkout.service';
 import { ShopPaymentService } from '../payment/shop-payment.service';
+import {
+  CheckoutSessionService,
+  UpsertCheckoutSessionSchema,
+} from './checkout-session.service';
 
 @Public()
 @Controller('public/shop/checkout')
@@ -15,7 +20,36 @@ export class CheckoutController {
   constructor(
     private readonly checkoutService:  CheckoutService,
     private readonly paymentService:   ShopPaymentService,
+    private readonly sessionService:   CheckoutSessionService,
   ) {}
+
+  // ── Checkout session (persistent form state + resume support) ────────────
+
+  // GET /public/shop/checkout/session?cartToken=xxx[&locale=fr]
+  @Get('session')
+  getSession(
+    @Query('cartToken') cartToken: string,
+    @Query('locale')    locale: string,
+  ) {
+    if (!cartToken) throw new BadRequestException('cartToken is required');
+    return this.sessionService.findOrCreate(cartToken, locale || 'fr');
+  }
+
+  // PUT /public/shop/checkout/session
+  @Put('session')
+  @HttpCode(200)
+  upsertSession(@Body() body: unknown) {
+    const dto = UpsertCheckoutSessionSchema.parse(body);
+    return this.sessionService.upsert(dto);
+  }
+
+  // GET /public/shop/checkout/resume/:resumeToken
+  @Get('resume/:resumeToken')
+  getByResumeToken(@Param('resumeToken', ParseUUIDPipe) resumeToken: string) {
+    return this.sessionService.findByResumeToken(resumeToken);
+  }
+
+  // ── Core checkout flow ────────────────────────────────────────────────────
 
   // POST /public/shop/checkout
   // Validates cart, computes server-side totals, creates draft order, reserves inventory.

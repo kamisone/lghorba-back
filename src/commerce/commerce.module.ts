@@ -71,6 +71,9 @@ import { CheckoutService } from './checkout/checkout.service';
 import { CheckoutController } from './checkout/checkout.controller';
 import { CheckoutReservationProcessor } from './checkout/checkout-reservation.processor';
 import { CHECKOUT_RESERVATION_QUEUE } from './checkout/checkout-reservation.constants';
+import { CheckoutSession } from './checkout/checkout-session.entity';
+import { CheckoutSessionService } from './checkout/checkout-session.service';
+import { CheckoutSessionCleanupService } from './checkout/checkout-session-cleanup.service';
 import { ProductSearchService } from './catalog/product-search.service';
 import { RecommendationService } from './catalog/recommendation.service';
 import { ShopAnalyticsAggregatorService } from './analytics/shop-analytics-aggregator.service';
@@ -149,6 +152,8 @@ const ENTITIES = [
   OrderStatusRef,
   // Customer groups
   ShopCustomerGroup,
+  // Checkout sessions
+  CheckoutSession,
 ];
 
 @Module({
@@ -210,6 +215,8 @@ const ENTITIES = [
     PricingEngineService,
     CheckoutService,
     CheckoutReservationProcessor,
+    CheckoutSessionService,
+    CheckoutSessionCleanupService,
   ],
   exports: [
     ProductService, InventoryService, CartService, OrdersService,
@@ -217,6 +224,7 @@ const ENTITIES = [
     PriceRuleService, ShopEmailService, BlogProductReferenceService,
     ProductSearchService, RecommendationService, ShopAnalyticsAggregatorService,
     CommerceEventBus, ShopPaymentService,
+    CheckoutSessionService,
   ],
 })
 export class CommerceModule {}

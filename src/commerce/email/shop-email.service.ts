@@ -175,6 +175,7 @@ export interface AbandonedCartPayload {
   customerEmail: string;
   customerName: string;
   cartUrl: string;
+  resumeUrl?: string;
   locale?: string;
   items: Array<{ title: string; quantity: number; unitPriceCents: number }>;
 }
@@ -328,17 +329,20 @@ export class ShopEmailService {
   // ── Abandoned cart ────────────────────────────────────────────────────────
 
   async sendAbandonedCart(payload: AbandonedCartPayload): Promise<void> {
-    const { customerEmail, customerName, cartUrl, items } = payload;
+    const { customerEmail, customerName, cartUrl, resumeUrl, items } = payload;
     const lang     = resolveLang(payload.locale);
     const c        = COPY[lang].abandonedCart;
     const itemList = items.map(i => `<li>${esc(i.title)} × ${i.quantity} — ${fmtCents(i.unitPriceCents * i.quantity, lang)}</li>`).join('');
+    // If a resume URL exists (customer started checkout), link directly to their saved step;
+    // otherwise fall back to the cart page.
+    const ctaUrl   = resumeUrl ?? cartUrl;
 
     const html = baseTemplate(c.subject, `
       <p>${c.greeting(esc(customerName))}</p>
       <p>${c.intro}</p>
       <ul style="margin:12px 0;padding-left:20px">${itemList}</ul>
       <p style="margin:24px 0">
-        <a href="${esc(cartUrl)}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:8px;font-weight:600">${c.cta}</a>
+        <a href="${esc(ctaUrl)}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 24px;text-decoration:none;border-radius:8px;font-weight:600">${c.cta}</a>
       </p>
       <p style="font-size:12px;color:#9ca3af">${c.note}</p>
     `, lang);
