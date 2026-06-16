@@ -14,11 +14,22 @@ export class SmsService {
     type: SmsType = SmsType.OUTBOUND,
     to?: string,
   ): Promise<SmsMessage | { error: string }> {
-    const [sms] = await this.repo.find({
+    // When `to` is provided, prioritise messages for that specific number.
+    // If none exist (e.g. relay polling for a car phone but only reminder/notification
+    // messages are queued), fall back to returning any unconsumed outbound so that
+    // admin notifications are not silently dropped.
+    let [sms] = await this.repo.find({
       where: { type, consumed: false, ...(to ? { to } : {}) },
       order: { createdAt: 'ASC' },
       take: 1,
     });
+    if (!sms && to) {
+      [sms] = await this.repo.find({
+        where: { type, consumed: false },
+        order: { createdAt: 'ASC' },
+        take: 1,
+      });
+    }
     if (!sms) return { error: 'empty' };
     await this.repo.update(sms.id, { consumed: true });
     await this.pruneConsumedForNumber(sms.to);
@@ -84,16 +95,20 @@ export class SmsService {
 
     return { inbound, outbound };
   }
-  async pollAll(): Promise<SmsMessage[] | { error: string }> {
-    const sms = this.repo.find();
-    return sms;
+  async pollAll(): Promise<SmsMessage[]> {
+    return this.repo.find();
   }
 
-  /** Returns the `consumed` flag for each requested message id. Missing ids are omitted. */
+  /** Returns the `consumed` flag for each requested message id.
+   *  Ids absent from the DB were pruned after delivery and are treated as consumed. */
   async getConsumedStatuses(ids: number[]): Promise<Map<number, boolean>> {
     if (ids.length === 0) return new Map();
     const rows = await this.repo.find({ where: { id: In(ids) }, select: ['id', 'consumed'] });
-    return new Map(rows.map(r => [r.id, r.consumed]));
+    const result = new Map(rows.map(r => [r.id, r.consumed]));
+    for (const id of ids) {
+      if (!result.has(id)) result.set(id, true);
+    }
+    return result;
   }
 
   async addMessage(
