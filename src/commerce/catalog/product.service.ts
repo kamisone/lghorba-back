@@ -684,6 +684,15 @@ export class ProductService {
 
     await this.productRepo.save(product);
 
+    // When basePriceCents is explicitly set, clear per-variant price overrides so all
+    // variants fall through to the new base price (computed pricing model). Legacy products
+    // created before basePriceCents existed store an explicit priceCents on each variant,
+    // which wins over basePriceCents in resolveVariantPrice — causing admin price edits to
+    // have no visible effect on the storefront.
+    if (dto.basePriceCents !== undefined && dto.basePriceCents !== null) {
+      await this.variantRepo.update({ productId: id }, { priceCents: null });
+    }
+
     // Keep the default variant's compareAtPriceCents in sync when provided
     if (dto.compareAtPriceCents !== undefined) {
       await this.variantRepo.update(
