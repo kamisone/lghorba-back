@@ -127,7 +127,7 @@ export class RecommendationService {
       reviewCount: string | null;
     }> = await this.dataSource.query(
       `SELECT p.id, p.slug, p.title, p."featuredImageKey",
-              v."priceCents",
+              COALESCE(v."priceCents", p."basePriceCents") AS "priceCents",
               rev."avgRating", rev."reviewCount"
        FROM shop_products p
        LEFT JOIN shop_product_variants v ON v."productId" = p.id AND v."isDefault" = true

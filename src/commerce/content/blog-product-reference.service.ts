@@ -58,7 +58,7 @@ export class BlogProductReferenceService {
           imageUrl:     product.featuredImageKey
                           ? (urlMap.get(product.featuredImageKey) ?? null)
                           : null,
-          priceCents:   defaultVariant?.priceCents ?? null,
+          priceCents:   defaultVariant?.priceCents ?? (product as any).basePriceCents ?? null,
           status:       product.status,
         },
       };

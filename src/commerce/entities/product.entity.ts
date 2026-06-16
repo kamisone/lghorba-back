@@ -49,6 +49,14 @@ export class Product {
   @Column({ type: 'text', nullable: true })                 seoDescription: string | null;
   @Column({ type: 'varchar', length: 2000, nullable: true }) canonicalUrl: string | null;
 
+  /**
+   * Product-level base price in cents.
+   * Effective variant price = basePriceCents + sum(selected option adjustments)
+   * when the variant has no explicit priceCents override.
+   * NULL on legacy products that use per-variant explicit prices exclusively.
+   */
+  @Column({ type: 'int', nullable: true }) basePriceCents: number | null;
+
   @Column({ type: 'boolean', default: false }) featured: boolean;
   @Column({ type: 'varchar', length: 50, default: 'draft' }) status: ProductStatus;
 

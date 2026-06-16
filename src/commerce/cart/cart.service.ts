@@ -17,6 +17,7 @@ import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { TranslationsService } from '../../translations/translations.service';
 import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
 import { CART_ABANDONMENT_QUEUE } from './cart-abandonment.constants';
+import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 
 @Injectable()
 export class CartService {
@@ -142,12 +143,20 @@ export class CartService {
         }
       }
 
+      // Resolve effective unit price using the three-tier model:
+      // variant override → product base + option adjustments
+      const unitPriceCents = resolveVariantPrice({
+        variantPriceCents:     variant.priceCents,
+        basePriceCents:        (product as any).basePriceCents ?? null,
+        optionAdjustmentCents: sumOptionAdjustments((variant as any).options ?? []),
+      });
+
       await this.itemRepo.save(this.itemRepo.create({
         cartId:          cart.id,
         productId:       product.id,
         variantId:       variant.id,
         quantity,
-        unitPriceCents:  variant.priceCents,
+        unitPriceCents,
         titleSnapshot:   product.title,
         skuSnapshot:     variant.sku,
         imageKeySnapshot:            (variant as any).featuredMediaKey ?? product.featuredImageKey ?? null,

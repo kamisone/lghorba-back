@@ -71,7 +71,7 @@ export class InventoryService {
         inv."updatedAt",
         v.sku,
         v.title               AS "variantTitle",
-        v."priceCents",
+        COALESCE(v."priceCents", p."basePriceCents") AS "priceCents",
         v."compareAtPriceCents",
         v."featuredMediaKey"  AS "variantMediaKey",
         p.title               AS "productTitle",

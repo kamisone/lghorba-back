@@ -18,7 +18,13 @@ export class ProductVariant {
   @Column({ type: 'varchar', length: 200, unique: true }) sku: string;
   @Column({ type: 'varchar', length: 500 })               title: string;
 
-  @Column({ type: 'int' })          priceCents: number;
+  /**
+   * Explicit price override for this variant in cents.
+   * NULL means the effective price is computed from:
+   *   product.basePriceCents + sum(selected VariationOptionValue.priceAdjustmentCents)
+   * Set to a non-null value only for bespoke per-variant pricing.
+   */
+  @Column({ type: 'int', nullable: true }) priceCents: number | null;
   @Column({ type: 'int', nullable: true }) compareAtPriceCents: number | null;
 
   @Column({ type: 'varchar', length: 200, nullable: true }) barcode: string | null;

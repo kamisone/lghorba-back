@@ -62,7 +62,9 @@ export class ProductSearchService implements OnModuleInit {
     if (!this.meili.isEnabled) return;
 
     const variants = await this.variantRepo.findBy({ productId: product.id });
-    const prices   = variants.map(v => v.priceCents).filter(Boolean);
+    const prices   = variants
+      .map(v => v.priceCents ?? product.basePriceCents)
+      .filter((p): p is number => p !== null && p !== undefined);
 
     const doc = {
       id:               product.id,
@@ -117,7 +119,9 @@ export class ProductSearchService implements OnModuleInit {
 
     const docs = products.map(p => {
       const variants = variantsByProduct.get(p.id) ?? [];
-      const prices   = variants.map(v => v.priceCents);
+      const prices   = variants
+        .map(v => v.priceCents ?? p.basePriceCents)
+        .filter((x): x is number => x !== null && x !== undefined);
       return {
         id:               p.id,
         slug:             p.slug,

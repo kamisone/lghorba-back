@@ -57,6 +57,14 @@ export class VariationOptionValue {
 
   @Column({ type: 'varchar', length: 10, nullable: true }) swatchType: 'color' | 'image' | null;
 
+  /**
+   * Optional price adjustment in cents applied when this option value is selected.
+   * Positive = price increase (e.g. +500 = +€5.00 for "XL").
+   * Negative = price decrease (e.g. -200 = -€2.00 for "S").
+   * NULL means no adjustment (+0 contribution to the computed price).
+   */
+  @Column({ type: 'int', nullable: true }) priceAdjustmentCents: number | null;
+
   @Column({ type: 'int', default: 0 }) sortOrder: number;
 
   @Column({ type: 'boolean', default: true }) isActive: boolean;

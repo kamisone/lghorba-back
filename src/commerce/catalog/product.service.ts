@@ -25,6 +25,7 @@ import { TranslationsService } from '../../translations/translations.service';
 import { ET_SHOP_PRODUCT, ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
 import { slugify } from '../../common/utils/slug.util';
 import { ProductMediaItem, ResolvedProductMediaItem } from '../entities/product-media-item';
+import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
 
@@ -85,15 +86,18 @@ export const CreateProductSchema = z.object({
   primaryCategoryId:  z.string().uuid().nullish(),
   categoryIds:        z.array(z.string().uuid()).optional(),
   tagIds:             z.array(z.string().uuid()).optional(),
-  // Initial default variant
-  priceCents:         z.number().int().min(0),
+  /**
+   * Product-level base price in cents. The effective price for any variant is:
+   *   basePriceCents + sum(selected option value adjustments)
+   * unless a variant has an explicit priceCents override.
+   */
+  basePriceCents:      z.number().int().min(0),
   compareAtPriceCents: z.number().int().min(0).nullish(),
-  initialStock:       z.number().int().min(0).optional(),
+  initialStock:        z.number().int().min(0).optional(),
 });
 
-export const UpdateProductSchema = CreateProductSchema.omit({ priceCents: true, initialStock: true }).extend({
-  priceCents:  z.number().int().min(0).optional(),
-  status:      z.enum(['draft', 'active', 'archived', 'hidden']).optional(),
+export const UpdateProductSchema = CreateProductSchema.omit({ initialStock: true }).extend({
+  status: z.enum(['draft', 'active', 'archived', 'hidden']).optional(),
 }).partial();
 
 export const CreateVariantSchema = z.object({
@@ -101,7 +105,11 @@ export const CreateVariantSchema = z.object({
   sku:                z.string().min(1).max(200).optional(),
   /** Omit to auto-generate from selected option values (e.g. "Black / M") */
   title:              z.string().min(1).max(500).optional(),
-  priceCents:          z.number().int().min(0),
+  /**
+   * Explicit price override in cents. Omit (or pass null) to use computed pricing:
+   *   effective = product.basePriceCents + sum(selected option adjustments)
+   */
+  priceCents:          z.number().int().min(0).nullish(),
   compareAtPriceCents: z.number().int().min(0).nullish(),
   barcode:             z.string().max(200).nullish(),
   weightGrams:         z.number().int().nullish(),
@@ -114,9 +122,7 @@ export const CreateVariantSchema = z.object({
   options:             z.array(z.object({ optionValueId: z.string().uuid() })).optional(),
 });
 
-export const UpdateVariantSchema = CreateVariantSchema.omit({ initialStock: true }).extend({
-  priceCents: z.number().int().min(0).optional(),
-}).partial();
+export const UpdateVariantSchema = CreateVariantSchema.omit({ initialStock: true }).partial();
 
 export type CreateProductDto   = z.infer<typeof CreateProductSchema>;
 export type UpdateProductDto   = z.infer<typeof UpdateProductSchema>;
@@ -393,6 +399,9 @@ export class ProductService {
     const [raw, total] = await qb.getManyAndCount();
     const withUrls = await this.resolveProductsUrls(raw) as any[];
 
+    // Resolve effective priceCents for computed-pricing variants before sending to the client.
+    for (const p of withUrls) this.resolveVariantPricesInPlace(p);
+
     // Batch-compute stock flags.
     // outOfStock: true only when inventory items exist AND all variants are ≤ 0.
     // defaultVariantOutOfStock: same logic scoped to the default variant only —
@@ -436,6 +445,20 @@ export class ProductService {
 
   // ── Find by ID (admin) ──────────────────────────────────────────────────────
 
+  /**
+   * For variants whose priceCents is null (computed pricing), substitute the product's
+   * basePriceCents so consumers that read priceCents directly always get a valid number.
+   * Option-value adjustments are not applied here — those are resolved at the variant-
+   * picker level via resolveVariantPrice / getVariantAvailabilityMatrix.
+   */
+  private resolveVariantPricesInPlace(product: any): void {
+    for (const v of product.variants ?? []) {
+      if (v.priceCents === null || v.priceCents === undefined) {
+        v.priceCents = product.basePriceCents ?? 0;
+      }
+    }
+  }
+
   async findById(id: string): Promise<any> {
     const product = await this.productRepo.findOne({
       where: { id },
@@ -443,7 +466,9 @@ export class ProductService {
       withDeleted: true,
     });
     if (!product) throw new NotFoundException('Product not found');
-    return this.resolveProductUrls(product);
+    const resolved: any = await this.resolveProductUrls(product);
+    this.resolveVariantPricesInPlace(resolved);
+    return resolved;
   }
 
   // ── Find by slug (public) ───────────────────────────────────────────────────
@@ -455,6 +480,7 @@ export class ProductService {
     });
     if (!product) throw new NotFoundException('Product not found');
     const resolved: any = await this.resolveProductUrls(product);
+    this.resolveVariantPricesInPlace(resolved);
     const withTranslations = await this.translationsService.maybeApplyOne(resolved, ET_SHOP_PRODUCT, lang);
     withTranslations.infoSections = await this.resolveInfoSections(product.id, product.infoSections, lang);
     withTranslations.trustBadges  = await this.resolveTrustBadges(product.id, product.trustBadges, lang);
@@ -577,16 +603,18 @@ export class ProductService {
         featured:          dto.featured ?? false,
         status:            'draft',
         primaryCategoryId: dto.primaryCategoryId ?? null,
+        basePriceCents:    dto.basePriceCents,
         categories,
         tags,
       });
       const saved = await em.save(Product, product);
 
+      // Default variant uses null priceCents — computed from product.basePriceCents + option adjustments
       const variant = em.create(ProductVariant, {
         productId:           saved.id,
         sku:                 dto.sku ?? `${slug}-default`,
         title:               'Default',
-        priceCents:          dto.priceCents,
+        priceCents:          null,
         compareAtPriceCents: dto.compareAtPriceCents ?? null,
         isDefault:           true,
         sortOrder:           0,
@@ -640,6 +668,7 @@ export class ProductService {
       featured:          dto.featured           !== undefined ? dto.featured : product.featured,
       status:            dto.status             ?? product.status,
       primaryCategoryId: dto.primaryCategoryId  !== undefined ? dto.primaryCategoryId ?? null : product.primaryCategoryId,
+      basePriceCents:    dto.basePriceCents      !== undefined ? dto.basePriceCents ?? null : product.basePriceCents,
     });
 
     if (dto.categoryIds !== undefined) {
@@ -655,10 +684,7 @@ export class ProductService {
 
     await this.productRepo.save(product);
 
-    // Keep the default variant's price in sync when caller provides priceCents
-    if (dto.priceCents !== undefined) {
-      await this.variantRepo.update({ productId: id, isDefault: true }, { priceCents: dto.priceCents });
-    }
+    // Keep the default variant's compareAtPriceCents in sync when provided
     if (dto.compareAtPriceCents !== undefined) {
       await this.variantRepo.update(
         { productId: id, isDefault: true },
@@ -821,7 +847,7 @@ export class ProductService {
         title,
         combinationHash,
         variantSlug,
-        priceCents:          dto.priceCents,
+        priceCents:          dto.priceCents ?? null,
         compareAtPriceCents: dto.compareAtPriceCents ?? null,
         barcode:             dto.barcode ?? null,
         weightGrams:         dto.weightGrams ?? null,
@@ -894,12 +920,15 @@ export class ProductService {
     let sortOrder = await this.variantRepo.countBy({ productId });
     const combinations: Array<{ title: string; sku: string; isNew: boolean; combinationHash: string }> = [];
 
-    // Use a reference price from the first existing variant, or 0 for new products
+    // When the product has a basePriceCents, generated variants use null (computed pricing).
+    // Legacy products without basePriceCents fall back to copying the first variant's explicit price.
     const existingVariant = await this.variantRepo.findOne({
       where: { productId },
       order: { createdAt: 'ASC' },
     });
-    const refPriceCents = existingVariant?.priceCents ?? 0;
+    const generatedVariantPrice: number | null = product.basePriceCents !== null
+      ? null
+      : (existingVariant?.priceCents ?? 0);
 
     for (const optionValues of allCombos) {
       const hash = buildCombinationHash(optionValues.map(v => v.id));
@@ -929,7 +958,7 @@ export class ProductService {
           title,
           combinationHash: hash,
           variantSlug,
-          priceCents:  refPriceCents,
+          priceCents:  generatedVariantPrice,
           isDefault,
           sortOrder:   sortOrder++,
         }));
@@ -1019,7 +1048,7 @@ export class ProductService {
         title,
         combinationHash,
         variantSlug,
-        priceCents:          dto.priceCents          ?? variant.priceCents,
+        priceCents:          dto.priceCents           !== undefined ? dto.priceCents ?? null : variant.priceCents,
         compareAtPriceCents: dto.compareAtPriceCents  !== undefined ? dto.compareAtPriceCents ?? null : variant.compareAtPriceCents,
         barcode:             dto.barcode             !== undefined ? dto.barcode ?? null : variant.barcode,
         weightGrams:         dto.weightGrams         !== undefined ? dto.weightGrams ?? null : variant.weightGrams,
@@ -1166,10 +1195,13 @@ export class ProductService {
     const hash = buildCombinationHash(optionValueIds);
     if (!hash) return { status: 'unavailable', variant: null };
 
-    const variant = await this.variantRepo.findOne({
-      where: { productId, combinationHash: hash },
-      relations: ['options'],
-    });
+    const [variant, product] = await Promise.all([
+      this.variantRepo.findOne({
+        where: { productId, combinationHash: hash },
+        relations: ['options', 'options.optionValue'],
+      }),
+      this.productRepo.findOneBy({ id: productId }),
+    ]);
     if (!variant) return { status: 'unavailable', variant: null };
 
     const inventory   = await this.inventoryRepo.findOneBy({ variantId: variant.id });
@@ -1180,13 +1212,19 @@ export class ProductService {
       ? ((await this.assetUrlService.resolveBatch([variant.featuredMediaKey])).get(variant.featuredMediaKey) ?? null)
       : null;
 
+    const effectivePriceCents = resolveVariantPrice({
+      variantPriceCents:     variant.priceCents,
+      basePriceCents:        product?.basePriceCents ?? null,
+      optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
+    });
+
     return {
       status:  !hasInventory || available > 0 ? 'available' : 'out_of_stock',
       variant: {
         id:                  variant.id,
         sku:                 variant.sku,
         title:               variant.title,
-        priceCents:          variant.priceCents,
+        priceCents:          effectivePriceCents,
         compareAtPriceCents: variant.compareAtPriceCents ?? null,
         variantSlug:         variant.variantSlug ?? null,
         featuredMediaUrl,
@@ -1239,7 +1277,7 @@ export class ProductService {
 
     const variants = await this.variantRepo.find({
       where: { productId },
-      relations: ['options'],
+      relations: ['options', 'options.optionValue'],
     });
 
     const inventoryRows = await this.inventoryRepo.findBy({ productId });
@@ -1294,7 +1332,11 @@ export class ProductService {
         id:                  v.id,
         sku:                 v.sku,
         title:               v.title,
-        priceCents:          v.priceCents,
+        priceCents:          resolveVariantPrice({
+          variantPriceCents:     v.priceCents,
+          basePriceCents:        product.basePriceCents,
+          optionAdjustmentCents: sumOptionAdjustments(v.options ?? []),
+        }),
         compareAtPriceCents: v.compareAtPriceCents,
         variantSlug:         v.variantSlug,
         featuredMediaUrl:    v.featuredMediaKey ? (urlMap.get(v.featuredMediaKey) ?? null) : null,
