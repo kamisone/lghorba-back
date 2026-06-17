@@ -23,7 +23,13 @@ export interface VariantPriceComponents {
 
 export function resolveVariantPrice(c: VariantPriceComponents): number {
   if (c.variantPriceCents !== null) return c.variantPriceCents;
-  return (c.basePriceCents ?? 0) + c.optionAdjustmentCents;
+  const computed = (c.basePriceCents ?? 0) + c.optionAdjustmentCents;
+  if (computed < 0) {
+    throw new Error(
+      `Resolved variant price is negative (${computed}): basePriceCents=${c.basePriceCents}, optionAdjustmentCents=${c.optionAdjustmentCents}`,
+    );
+  }
+  return computed;
 }
 
 /**

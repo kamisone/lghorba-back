@@ -14,11 +14,14 @@ import { OrderItem } from '../entities/order-item.entity';
 import { OrderStatusHistory } from '../entities/order-status-history.entity';
 import { ShippingMethod } from '../entities/shipping-method.entity';
 import { ShopPromotion } from '../entities/shop-promotion.entity';
+import { ProductVariant } from '../entities/product-variant.entity';
+import { Product } from '../entities/product.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import { ShippingService } from '../shipping/shipping.service';
 import { CustomerService } from '../customer/customer.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { PricingEngineService, LineItemInput, PricingResult } from '../pricing/pricing-engine.service';
+import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 import { COMMERCE_EVENTS } from '../events/commerce-events';
 import {
   CHECKOUT_RESERVATION_QUEUE,
@@ -92,6 +95,8 @@ export class CheckoutService {
     @InjectRepository(OrderItem)           private readonly itemRepo:    Repository<OrderItem>,
     @InjectRepository(OrderStatusHistory)  private readonly historyRepo: Repository<OrderStatusHistory>,
     @InjectRepository(ShopPromotion)       private readonly promoRepo:   Repository<ShopPromotion>,
+    @InjectRepository(ProductVariant)      private readonly variantRepo: Repository<ProductVariant>,
+    @InjectRepository(Product)             private readonly productRepo: Repository<Product>,
     @InjectQueue(CHECKOUT_RESERVATION_QUEUE) private readonly reservationQueue: Queue,
     private readonly dataSource:       DataSource,
     private readonly inventoryService: InventoryService,
@@ -125,11 +130,14 @@ export class CheckoutService {
 
     const items = cart.items as CartItem[];
 
+    // ── Re-verify cart item prices against current product/variant data ────
+    await this.verifyCartItemPrices(items);
+
     // Load product category IDs for pricing engine
     const productIds = [...new Set(items.map(i => i.productId))];
     const categoryMap = await this.loadProductCategoryIds(productIds);
 
-    // Build line inputs and run pricing engine
+    // Build line inputs with freshly verified prices
     const lineInputs: LineItemInput[] = items.map(item => ({
       variantId:      item.variantId,
       productId:      item.productId,
@@ -360,6 +368,62 @@ export class CheckoutService {
       discountCents: pricing.couponDiscountCents,
       freeShipping:  pricing.freeShipping,
     };
+  }
+
+  // ── Price verification ─────────────────────────────────────────────────────
+
+  private async verifyCartItemPrices(items: CartItem[]): Promise<void> {
+    const variantIds = [...new Set(items.map(i => i.variantId))];
+    const productIds = [...new Set(items.map(i => i.productId))];
+
+    const [variants, products] = await Promise.all([
+      this.variantRepo.find({
+        where: { id: In(variantIds) },
+        relations: ['options', 'options.optionValue'],
+      }),
+      this.productRepo.find({ where: { id: In(productIds) } }),
+    ]);
+
+    const variantMap = new Map(variants.map(v => [v.id, v]));
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    for (const item of items) {
+      const variant = variantMap.get(item.variantId);
+      if (!variant) {
+        throw new BadRequestException(
+          `Variant "${item.variantId}" no longer exists. Please update your cart.`,
+        );
+      }
+
+      const product = productMap.get(item.productId);
+      if (!product) {
+        throw new BadRequestException(
+          `Product "${item.productId}" no longer exists. Please update your cart.`,
+        );
+      }
+
+      if (product.status !== 'active') {
+        throw new BadRequestException(
+          `Product "${product.title}" is no longer available.`,
+        );
+      }
+
+      const currentPrice = resolveVariantPrice({
+        variantPriceCents:     variant.priceCents,
+        basePriceCents:        product.basePriceCents ?? null,
+        optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
+      });
+
+      if (currentPrice !== item.unitPriceCents) {
+        throw new BadRequestException({
+          code: 'PRICE_CHANGED',
+          message: `Price for "${item.titleSnapshot ?? item.variantId}" has changed. Please refresh your cart.`,
+          variantId: item.variantId,
+          cartPriceCents: item.unitPriceCents,
+          currentPriceCents: currentPrice,
+        });
+      }
+    }
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

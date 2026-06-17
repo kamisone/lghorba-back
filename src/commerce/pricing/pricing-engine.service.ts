@@ -144,14 +144,16 @@ export class PricingEngineService {
         }
       }
 
-      totalCategoryDiscount += bestDiscount;
+      const lineTotal = line.unitPriceCents * line.quantity;
+      const clampedDiscount = Math.min(bestDiscount, lineTotal);
+      totalCategoryDiscount += clampedDiscount;
       return {
         variantId:             line.variantId,
         productId:             line.productId,
         quantity:              line.quantity,
         unitPriceCents:        line.unitPriceCents,
-        categoryDiscountCents: bestDiscount,
-        lineTotalCents:        line.unitPriceCents * line.quantity - bestDiscount,
+        categoryDiscountCents: clampedDiscount,
+        lineTotalCents:        lineTotal - clampedDiscount,
         appliedPromotionId:    bestPromoId,
         appliedPromotionName:  bestPromoName,
       };
@@ -210,13 +212,15 @@ export class PricingEngineService {
       }
     }
 
+    const clampedCouponDiscount = Math.min(couponDiscountCents, afterCategorySubtotal);
+
     return {
       lines:                      pricedLines,
       rawSubtotalCents:           rawSubtotal,
       categoryDiscountCents:      totalCategoryDiscount,
       afterCategorySubtotalCents: afterCategorySubtotal,
-      couponDiscountCents,
-      totalDiscountCents:         totalCategoryDiscount + couponDiscountCents,
+      couponDiscountCents:        clampedCouponDiscount,
+      totalDiscountCents:         totalCategoryDiscount + clampedCouponDiscount,
       couponCode:                 validCouponCode,
       appliedCouponPromotionId:   appliedCouponPromoId,
       appliedCouponName,

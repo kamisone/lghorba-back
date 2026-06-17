@@ -4,7 +4,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { z } from 'zod';
 import { Order, OrderStatus } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
@@ -12,7 +12,10 @@ import { OrderStatusHistory } from '../entities/order-status-history.entity';
 import { Cart } from '../entities/cart.entity';
 import { CartItem } from '../entities/cart-item.entity';
 import { ShopPromotion } from '../entities/shop-promotion.entity';
+import { ProductVariant } from '../entities/product-variant.entity';
+import { Product } from '../entities/product.entity';
 import { InventoryService } from '../inventory/inventory.service';
+import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 import { CustomerService } from '../customer/customer.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { COMMERCE_EVENTS, OrderStatusChangedEvent } from '../events/commerce-events';
@@ -58,7 +61,6 @@ export const CreateOrderSchema = z.object({
   shippingMethodId: z.string().uuid().nullish(),
   shippingCents:    z.number().int().min(0).optional(),
   couponCode:       z.string().max(100).nullish(),
-  discountCents:    z.number().int().min(0).optional(),
   userId:           z.string().uuid().nullish(),
 });
 
@@ -81,6 +83,8 @@ export class OrdersService {
     @InjectRepository(OrderStatusHistory) private readonly historyRepo: Repository<OrderStatusHistory>,
     @InjectRepository(Cart)               private readonly cartRepo:    Repository<Cart>,
     @InjectRepository(ShopPromotion)      private readonly promoRepo:   Repository<ShopPromotion>,
+    @InjectRepository(ProductVariant)     private readonly variantRepo: Repository<ProductVariant>,
+    @InjectRepository(Product)            private readonly productRepo: Repository<Product>,
     @InjectQueue(CHECKOUT_RESERVATION_QUEUE) private readonly reservationQueue: Queue,
     private readonly inventoryService: InventoryService,
     private readonly customerService:  CustomerService,
@@ -98,16 +102,19 @@ export class OrdersService {
     if (!cart) throw new NotFoundException('Active cart not found');
     if (!cart.items.length) throw new BadRequestException('Cart is empty');
 
+    const items = cart.items as CartItem[];
+
+    // Re-verify every cart item price against current product/variant data
+    await this.verifyCartItemPrices(items);
+
     return this.dataSource.transaction(async (em) => {
       // Generate order number via sequence
       const seq = await em.query(`SELECT nextval('shop_order_number_seq') AS n`);
       const orderNumber = `ORD-${String(seq[0].n).padStart(6, '0')}`;
 
-      const items = cart.items as CartItem[];
       const subtotalCents = items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
       const shippingCents = dto.shippingCents ?? 0;
-      const discountCents = dto.discountCents ?? 0;
-      const totalCents    = subtotalCents + shippingCents - discountCents;
+      const totalCents    = Math.max(0, subtotalCents + shippingCents);
 
       const order = em.create(Order, {
         orderNumber,
@@ -120,7 +127,7 @@ export class OrdersService {
         billingAddressSnapshot:  dto.billingAddress as Record<string, string> ?? null,
         subtotalCents,
         shippingCents,
-        discountCents,
+        discountCents:   0,
         taxCents:        0,
         totalCents,
         couponCode:      dto.couponCode ?? null,
@@ -338,5 +345,61 @@ export class OrdersService {
       order:   { createdAt: 'DESC' },
       relations: ['items'],
     });
+  }
+
+  // ── Price verification ──────────────────────────────────────────────────────
+
+  private async verifyCartItemPrices(items: CartItem[]): Promise<void> {
+    const variantIds = [...new Set(items.map(i => i.variantId))];
+    const productIds = [...new Set(items.map(i => i.productId))];
+
+    const [variants, products] = await Promise.all([
+      this.variantRepo.find({
+        where: { id: In(variantIds) },
+        relations: ['options', 'options.optionValue'],
+      }),
+      this.productRepo.find({ where: { id: In(productIds) } }),
+    ]);
+
+    const variantMap = new Map(variants.map(v => [v.id, v]));
+    const productMap = new Map(products.map(p => [p.id, p]));
+
+    for (const item of items) {
+      const variant = variantMap.get(item.variantId);
+      if (!variant) {
+        throw new BadRequestException(
+          `Variant "${item.variantId}" no longer exists. Please update your cart.`,
+        );
+      }
+
+      const product = productMap.get(item.productId);
+      if (!product) {
+        throw new BadRequestException(
+          `Product "${item.productId}" no longer exists. Please update your cart.`,
+        );
+      }
+
+      if (product.status !== 'active') {
+        throw new BadRequestException(
+          `Product "${product.title}" is no longer available.`,
+        );
+      }
+
+      const currentPrice = resolveVariantPrice({
+        variantPriceCents:     variant.priceCents,
+        basePriceCents:        product.basePriceCents ?? null,
+        optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
+      });
+
+      if (currentPrice !== item.unitPriceCents) {
+        throw new BadRequestException({
+          code: 'PRICE_CHANGED',
+          message: `Price for "${item.titleSnapshot ?? item.variantId}" has changed. Please refresh your cart.`,
+          variantId: item.variantId,
+          cartPriceCents: item.unitPriceCents,
+          currentPriceCents: currentPrice,
+        });
+      }
+    }
   }
 }
