@@ -92,7 +92,7 @@ export class MediaController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() dto: { altText?: string; tags?: string[]; folderId?: string | null },
+    @Body() dto: { altText?: string; title?: string; tags?: string[]; folderId?: string | null },
   ) {
     return this.media.updateMetadata(id, dto);
   }

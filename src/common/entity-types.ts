@@ -7,3 +7,4 @@ export const ET_SHOP_VARIATION_OPTION = 'shop_variation_option';
 export const ET_SHOP_SHIPPING_METHOD  = 'shop_shipping_method';
 export const ET_BLOG_POST             = 'blog_post';
 export const ET_BLOG_CATEGORY         = 'blog_category';
+export const ET_MEDIA_ASSET           = 'media_asset';

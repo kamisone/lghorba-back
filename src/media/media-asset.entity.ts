@@ -23,6 +23,7 @@ export class MediaAsset {
   @Column({ type: 'int', nullable: true })              durationSeconds: number | null;
 
   @Column({ type: 'varchar', length: 500, nullable: true }) altText: string | null;
+  @Column({ type: 'varchar', length: 500, nullable: true }) title: string | null;
 
   /** Free-form tags for organization */
   @Column({ type: 'text', array: true, default: '{}' }) tags: string[];

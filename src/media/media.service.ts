@@ -186,12 +186,13 @@ export class MediaService {
 
   async updateMetadata(
     id: string,
-    dto: { altText?: string; tags?: string[]; folderId?: string | null },
+    dto: { altText?: string; title?: string; tags?: string[]; folderId?: string | null },
   ): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
     const asset = await this.assetRepo.findOneBy({ id });
     if (!asset) throw new NotFoundException('Media asset not found');
 
     if (dto.altText   !== undefined) asset.altText  = dto.altText;
+    if (dto.title     !== undefined) asset.title    = dto.title ?? null;
     if (dto.tags      !== undefined) asset.tags     = dto.tags;
     if ('folderId' in dto)           asset.folderId = dto.folderId ?? null;
     await this.assetRepo.save(asset);
