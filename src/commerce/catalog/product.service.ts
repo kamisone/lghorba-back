@@ -996,8 +996,8 @@ export class ProductService {
     }
 
     // Delete stale variants — those whose hash is not in the current full valid set.
-    // This removes the initial "Default" variant (null hash) and any partial-combination
-    // variants left over from a previously smaller set of attributes.
+    // The original default variant (null combinationHash) is preserved so it can
+    // be restored when all variation attributes are removed from the product.
     const validHashes = new Set(
       allCombos.map(ovs => buildCombinationHash(ovs.map(v => v.id))).filter(Boolean) as string[],
     );
@@ -1006,7 +1006,7 @@ export class ProductService {
       select: ['id', 'combinationHash'],
     });
     const staleIds = allVariants
-      .filter(v => !v.combinationHash || !validHashes.has(v.combinationHash))
+      .filter(v => v.combinationHash && !validHashes.has(v.combinationHash))
       .map(v => v.id);
 
     let deleted = 0;
@@ -1143,6 +1143,19 @@ export class ProductService {
       }
 
       await em.delete(ProductVariantAttribute, { productId, attributeId });
+
+      // When only the original default variant remains (null combinationHash),
+      // re-mark it as the default so the product works as a simple product again.
+      const remaining = await em.find(ProductVariant, {
+        where: { productId },
+        select: ['id', 'combinationHash', 'isDefault'],
+      });
+      const original = remaining.find(v => !v.combinationHash);
+      if (original && remaining.length === 1 && !original.isDefault) {
+        original.isDefault = true;
+        await em.save(ProductVariant, original);
+      }
+
       return { deletedVariants: variantIds.length };
     });
   }
@@ -1284,10 +1297,16 @@ export class ProductService {
       order: { sortOrder: 'ASC' },
     });
 
-    const variants = await this.variantRepo.find({
+    let variants = await this.variantRepo.find({
       where: { productId },
       relations: ['options', 'options.optionValue'],
     });
+
+    // Exclude the preserved original default variant (null combinationHash)
+    // when variation attributes exist — it shouldn't appear in the option picker.
+    if (productAttrs.length > 0) {
+      variants = variants.filter(v => v.combinationHash !== null);
+    }
 
     const inventoryRows = await this.inventoryRepo.findBy({ productId });
     const hasInventory  = inventoryRows.length > 0;

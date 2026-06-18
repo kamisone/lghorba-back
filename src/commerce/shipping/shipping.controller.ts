@@ -45,11 +45,12 @@ export class ShippingPublicController {
   constructor(private readonly shipping: ShippingService) {}
 
   @Get('methods')
-  getMethods(
+  async getMethods(
     @Query('country') country: string,
     @Query('subtotal') subtotal?: string,
     @Query('lang') lang?: string,
   ) {
-    return this.shipping.getMethodsForCountry(country, subtotal ? parseInt(subtotal, 10) : 0, lang);
+    const result = await this.shipping.getMethodsForCountry(country, subtotal ? parseInt(subtotal, 10) : 0, lang);
+    return result;
   }
 }

@@ -17,7 +17,7 @@ import { ShopPromotion } from '../entities/shop-promotion.entity';
 import { ProductVariant } from '../entities/product-variant.entity';
 import { Product } from '../entities/product.entity';
 import { InventoryService } from '../inventory/inventory.service';
-import { ShippingService } from '../shipping/shipping.service';
+import { ShippingService, ZoneInfo } from '../shipping/shipping.service';
 import { CustomerService } from '../customer/customer.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { PricingEngineService, LineItemInput, PricingResult } from '../pricing/pricing-engine.service';
@@ -80,6 +80,7 @@ export interface CheckoutSnapshot {
     estimatedDaysMin: number;
     estimatedDaysMax: number;
   }>;
+  zoneInfo:             ZoneInfo | null;
   reservationExpiresAt: string | null;
 }
 
@@ -124,8 +125,8 @@ export class CheckoutService {
     // rather than creating a duplicate (and double-reserving inventory).
     const existing = await this.orderRepo.findOneBy({ cartToken: dto.cartToken, status: In(['draft', 'awaiting_payment']) });
     if (existing) {
-      const methods = await this.shippingService.getMethodsForCountry(dto.country, existing.subtotalCents);
-      return this.toSnapshot(existing, methods);
+      const { zone, methods } = await this.shippingService.getMethodsForCountry(dto.country, existing.subtotalCents);
+      return this.toSnapshot(existing, methods, zone);
     }
 
     const items = cart.items as CartItem[];
@@ -224,8 +225,8 @@ export class CheckoutService {
       { entityId: snapshot.id, source: 'CheckoutService.initiate' },
     );
 
-    const shippingMethods = await this.shippingService.getMethodsForCountry(dto.country, snapshot.subtotalCents);
-    return this.toSnapshot(snapshot, shippingMethods);
+    const { zone: shippingZone, methods: shippingMethods } = await this.shippingService.getMethodsForCountry(dto.country, snapshot.subtotalCents);
+    return this.toSnapshot(snapshot, shippingMethods, shippingZone);
   }
 
   // ── Update shipping selection ──────────────────────────────────────────────
@@ -239,14 +240,14 @@ export class CheckoutService {
       // as a no-op rather than erroring, so the checkout flow can resume.
       if (order.status === 'awaiting_payment') {
         const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
-        const methods = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
-        return this.toSnapshot(order, methods);
+        const { zone, methods } = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
+        return this.toSnapshot(order, methods, zone);
       }
       throw new BadRequestException('Order is no longer modifiable');
     }
 
     const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
-    const methods = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
+    const { zone, methods } = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
     const method = methods.find(m => m.id === dto.shippingMethodId);
     if (!method) throw new BadRequestException('Shipping method not available for this order');
 
@@ -261,7 +262,7 @@ export class CheckoutService {
       + shippingCents;
     await this.orderRepo.save(order);
 
-    return this.toSnapshot(order, methods);
+    return this.toSnapshot(order, methods, zone);
   }
 
   // ── Transition draft → awaiting_payment ───────────────────────────────────
@@ -325,10 +326,11 @@ export class CheckoutService {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
     const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
-    const methods = order.status === 'draft'
-      ? await this.shippingService.getMethodsForCountry(country, order.subtotalCents)
-      : [];
-    return this.toSnapshot(order, methods);
+    if (order.status === 'draft') {
+      const { zone, methods } = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
+      return this.toSnapshot(order, methods, zone);
+    }
+    return this.toSnapshot(order, [], null);
   }
 
   // ── Validate coupon (public endpoint, no side effects) ────────────────────
@@ -449,7 +451,7 @@ export class CheckoutService {
     return map;
   }
 
-  private toSnapshot(order: Order, shippingMethods: ShippingMethod[]): CheckoutSnapshot {
+  private toSnapshot(order: Order, shippingMethods: ShippingMethod[], zone: ZoneInfo | null): CheckoutSnapshot {
     return {
       orderId:               order.id,
       orderNumber:           order.orderNumber,
@@ -468,6 +470,7 @@ export class CheckoutService {
         estimatedDaysMin: m.estimatedDaysMin,
         estimatedDaysMax: m.estimatedDaysMax,
       })),
+      zoneInfo:             zone,
       reservationExpiresAt: order.reservationExpiresAt?.toISOString() ?? null,
     };
   }

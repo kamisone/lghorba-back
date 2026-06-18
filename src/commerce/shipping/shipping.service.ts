@@ -8,9 +8,12 @@ import { TranslationsService } from '../../translations/translations.service';
 import { ET_SHOP_SHIPPING_METHOD } from '../../common/entity-types';
 
 export const UpsertZoneSchema = z.object({
-  name:         z.string().min(1).max(200),
-  countryCodes: z.array(z.string().min(2).max(2)),
-  isActive:     z.boolean().optional(),
+  name:                        z.string().min(1).max(200),
+  countryCodes:                z.array(z.string().min(2).max(2)),
+  isActive:                    z.boolean().optional(),
+  surchargeCents:              z.number().int().min(0).optional(),
+  freeShippingThresholdCents:  z.number().int().min(0).nullish(),
+  estimatedDeliveryDays:       z.string().max(100).nullish(),
 });
 export const UpsertMethodSchema = z.object({
   zoneId:           z.string().uuid(),
@@ -26,6 +29,19 @@ export const UpsertMethodSchema = z.object({
 export type UpsertZoneDto   = z.infer<typeof UpsertZoneSchema>;
 export type UpsertMethodDto = z.infer<typeof UpsertMethodSchema>;
 
+export interface ZoneInfo {
+  id:                         string;
+  name:                       string;
+  surchargeCents:             number;
+  freeShippingThresholdCents: number | null;
+  estimatedDeliveryDays:      string | null;
+}
+
+export interface ShippingQuoteResult {
+  zone:    ZoneInfo | null;
+  methods: any[];
+}
+
 @Injectable()
 export class ShippingService {
   constructor(
@@ -34,40 +50,59 @@ export class ShippingService {
     private readonly translationsService: TranslationsService,
   ) {}
 
-  async getMethodsForCountry(countryCode: string, cartTotalCents: number, lang?: string): Promise<any[]> {
-    // Find zones that include this country
+  async getMethodsForCountry(countryCode: string, cartTotalCents: number, lang?: string): Promise<ShippingQuoteResult> {
+    const zone = await this.resolveZoneForCountry(countryCode);
+    if (!zone) return { zone: null, methods: [] };
+
+    const methods = await this.methodRepo.find({
+      where: { zoneId: zone.id, isActive: true },
+      order: { sortOrder: 'ASC' },
+    });
+
+    const priced = this.applyZonePricing(methods, zone, cartTotalCents);
+    const translated = await this.translationsService.maybeApply(priced, ET_SHOP_SHIPPING_METHOD, lang);
+
+    return {
+      zone: {
+        id:                         zone.id,
+        name:                       zone.name,
+        surchargeCents:             zone.surchargeCents,
+        freeShippingThresholdCents: zone.freeShippingThresholdCents,
+        estimatedDeliveryDays:      zone.estimatedDeliveryDays,
+      },
+      methods: translated,
+    };
+  }
+
+  private async resolveZoneForCountry(countryCode: string): Promise<ShippingZone | null> {
     const zones = await this.zoneRepo
       .createQueryBuilder('z')
       .where(':code = ANY(z.countryCodes)', { code: countryCode })
       .andWhere('z.isActive = true')
       .getMany();
 
-    let methods: ShippingMethod[];
-    if (!zones.length) {
-      // Fallback: zones with empty countryCodes = worldwide
-      const worldwide = await this.zoneRepo.find({ where: { isActive: true } });
-      if (!worldwide.length) return [];
-      methods = await this.methodRepo.find({
-        where: { zoneId: worldwide[0].id, isActive: true },
-        order: { sortOrder: 'ASC' },
-      });
-    } else {
-      methods = await this.methodRepo.find({
-        where: { zoneId: zones[0].id, isActive: true },
-        order: { sortOrder: 'ASC' },
-      });
-    }
+    if (zones.length) return zones[0];
 
-    const result: any[] = this.applyFreeShipping(methods, cartTotalCents);
-    return this.translationsService.maybeApply(result, ET_SHOP_SHIPPING_METHOD, lang);
+    const worldwide = await this.zoneRepo
+      .createQueryBuilder('z')
+      .where('z.countryCodes = :empty', { empty: '{}' })
+      .andWhere('z.isActive = true')
+      .getOne();
+
+    return worldwide ?? null;
   }
 
-  private applyFreeShipping(methods: ShippingMethod[], cartTotalCents: number): ShippingMethod[] {
+  private applyZonePricing(methods: ShippingMethod[], zone: ShippingZone, cartTotalCents: number): any[] {
+    const zoneFree = zone.freeShippingThresholdCents !== null
+      && cartTotalCents >= zone.freeShippingThresholdCents;
+
     return methods.map(m => {
-      if (m.freeAboveCents !== null && cartTotalCents >= m.freeAboveCents) {
-        return { ...m, priceCents: 0 };
-      }
-      return m;
+      const methodFree = m.freeAboveCents !== null && cartTotalCents >= m.freeAboveCents;
+
+      return {
+        ...m,
+        priceCents: (zoneFree || methodFree) ? 0 : m.priceCents + zone.surchargeCents,
+      };
     });
   }
 
@@ -77,16 +112,24 @@ export class ShippingService {
 
   async createZone(dto: UpsertZoneDto): Promise<ShippingZone> {
     return this.zoneRepo.save(this.zoneRepo.create({
-      name:         dto.name,
-      countryCodes: dto.countryCodes,
-      isActive:     dto.isActive ?? true,
+      name:                        dto.name,
+      countryCodes:                dto.countryCodes,
+      isActive:                    dto.isActive ?? true,
+      surchargeCents:              dto.surchargeCents ?? 0,
+      freeShippingThresholdCents:  dto.freeShippingThresholdCents ?? null,
+      estimatedDeliveryDays:       dto.estimatedDeliveryDays ?? null,
     }));
   }
 
   async updateZone(id: string, dto: Partial<UpsertZoneDto>): Promise<ShippingZone> {
     const zone = await this.zoneRepo.findOneBy({ id });
     if (!zone) throw new NotFoundException('Shipping zone not found');
-    Object.assign(zone, dto);
+    if (dto.name !== undefined)                        zone.name = dto.name;
+    if (dto.countryCodes !== undefined)                 zone.countryCodes = dto.countryCodes;
+    if (dto.isActive !== undefined)                     zone.isActive = dto.isActive;
+    if (dto.surchargeCents !== undefined)               zone.surchargeCents = dto.surchargeCents;
+    if (dto.freeShippingThresholdCents !== undefined)   zone.freeShippingThresholdCents = dto.freeShippingThresholdCents ?? null;
+    if (dto.estimatedDeliveryDays !== undefined)        zone.estimatedDeliveryDays = dto.estimatedDeliveryDays ?? null;
     return this.zoneRepo.save(zone);
   }
 
