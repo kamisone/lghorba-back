@@ -95,6 +95,11 @@ import { PaymentTransactionAdminController } from './payment/payment-transaction
 import { ShipmentAdminController } from './shipping/shipment.controller';
 import { CustomerGroupAdminController } from './customer/customer-group.controller';
 import { CommerceEventLogAdminController } from './events/commerce-event-log.controller';
+import { CommerceNotificationLog } from './notifications/commerce-notification-log.entity';
+import { CommerceNotificationService } from './notifications/commerce-notification.service';
+import { CommerceNotificationController } from './notifications/commerce-notification.controller';
+import { SmsModule } from '../sms/sms.module';
+import { PlatformSettings } from '../platform-settings/platform-settings.entity';
 
 // Controllers
 import { ProductAdminController } from './catalog/product-admin.controller';
@@ -158,7 +163,8 @@ const ENTITIES = [
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature(ENTITIES),
+    TypeOrmModule.forFeature([...ENTITIES, CommerceNotificationLog, PlatformSettings]),
+    SmsModule,
     BullModule.registerQueue({ name: CART_ABANDONMENT_QUEUE }),
     BullModule.registerQueue({ name: CHECKOUT_RESERVATION_QUEUE }),
     DocumentsModule,
@@ -200,6 +206,7 @@ const ENTITIES = [
     ShipmentAdminController,
     CustomerGroupAdminController,
     CommerceEventLogAdminController,
+    CommerceNotificationController,
   ],
   providers: [
     ProductService, InventoryService, CartService, OrdersService,
@@ -217,6 +224,7 @@ const ENTITIES = [
     CheckoutReservationProcessor,
     CheckoutSessionService,
     CheckoutSessionCleanupService,
+    CommerceNotificationService,
   ],
   exports: [
     ProductService, InventoryService, CartService, OrdersService,

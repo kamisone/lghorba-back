@@ -6,6 +6,7 @@ import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { Shipment } from '../entities/shipment.entity';
 import { ShopEmailService } from '../email/shop-email.service';
+import { CommerceNotificationService } from '../notifications/commerce-notification.service';
 import { DocumentService, DocumentInput } from '../../documents/document.service';
 import { CheckoutSessionService } from '../checkout/checkout-session.service';
 import {
@@ -24,6 +25,7 @@ export class ShopOrderEventsListener {
     @InjectRepository(OrderItem) private readonly itemRepo:     Repository<OrderItem>,
     @InjectRepository(Shipment)  private readonly shipmentRepo: Repository<Shipment>,
     private readonly email:           ShopEmailService,
+    private readonly adminNotif:      CommerceNotificationService,
     private readonly documentService: DocumentService,
     private readonly sessionService:  CheckoutSessionService,
   ) {}
@@ -51,6 +53,13 @@ export class ShopOrderEventsListener {
           unitPriceCents: i.unitPriceCents,
         })),
       });
+      this.adminNotif.notify({
+        event:       'payment_succeeded',
+        orderId:     order.id,
+        orderNumber: order.orderNumber,
+        summary:     `New order ${order.orderNumber} — ${(order.totalCents / 100).toFixed(2)} €`,
+        detailUrl:   `/admin/shop/orders/${order.id}`,
+      }).catch(e => this.logger.error(`Admin notif failed for ${event.orderId}: ${(e as Error).message}`));
     } catch (err) {
       this.logger.error(`Order confirmation email failed for ${event.orderId}: ${(err as Error).message}`);
     }
@@ -82,6 +91,13 @@ export class ShopOrderEventsListener {
         retryUrl:      `${frontendUrl}/shop`,
         locale:        order.customerLocale,
       });
+      this.adminNotif.notify({
+        event:       'payment_failed',
+        orderId:     order.id,
+        orderNumber: order.orderNumber,
+        summary:     `Payment failed for order ${order.orderNumber}`,
+        detailUrl:   `/admin/shop/orders/${order.id}`,
+      }).catch(() => {});
     } catch (err) {
       this.logger.error(`Payment failed email failed for ${event.orderId}: ${(err as Error).message}`);
     }
@@ -96,6 +112,18 @@ export class ShopOrderEventsListener {
     }
     if (event.toStatus === 'delivered') {
       await this.sendReviewRequests(event.orderId);
+    }
+    if (event.toStatus === 'cancelled') {
+      const order = await this.orderRepo.findOneBy({ id: event.orderId });
+      if (order) {
+        this.adminNotif.notify({
+          event:       'order_cancelled',
+          orderId:     order.id,
+          orderNumber: order.orderNumber,
+          summary:     `Order ${order.orderNumber} was cancelled`,
+          detailUrl:   `/admin/shop/orders/${order.id}`,
+        }).catch(() => {});
+      }
     }
   }
 
