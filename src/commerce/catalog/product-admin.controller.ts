@@ -1,15 +1,26 @@
 import {
   Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Put, Query,
+  UploadedFile, UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { GcsService } from '../../gcs/gcs.service';
+import { AssetUrlService } from '../../asset-url/asset-url.service';
 import {
   CreateProductSchema, CreateVariantSchema, ProductService, UpdateProductSchema, UpdateVariantSchema,
 } from './product.service';
 
+const MAX_DOC_BYTES = 20 * 1024 * 1024;
+const ALLOWED_DOC_MIMES = ['application/pdf'];
+
 @Controller('admin/shop/products')
 export class ProductAdminController {
-  constructor(private readonly products: ProductService) {}
+  constructor(
+    private readonly products: ProductService,
+    private readonly gcs: GcsService,
+    private readonly urls: AssetUrlService,
+  ) {}
 
   @Get()
   list(
@@ -169,6 +180,34 @@ export class ProductAdminController {
     @Param('optionValueId') optionValueId: string,
   ) {
     return this.products.removeProductOptionImage(productId, optionValueId);
+  }
+
+  // ── Document upload ──────────────────────────────────────────────────────
+
+  @Post(':id/documents/upload')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadDocument(
+    @Param('id') productId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file || !ALLOWED_DOC_MIMES.includes(file.mimetype)) {
+      throw new Error('Only PDF files are accepted');
+    }
+    if (file.size > MAX_DOC_BYTES) {
+      throw new Error('File too large (max 20 MB)');
+    }
+
+    const ext = file.originalname.split('.').pop()?.toLowerCase() ?? 'pdf';
+    const storageKey = `documents/products/${productId}/${Date.now()}.${ext}`;
+    await this.gcs.upload(file.buffer, storageKey, file.mimetype, 'publicRead');
+    const url = await this.urls.resolve(storageKey);
+
+    return {
+      storageKey,
+      url,
+      originalFilename: file.originalname,
+      sizeBytes: file.size,
+    };
   }
 
 }

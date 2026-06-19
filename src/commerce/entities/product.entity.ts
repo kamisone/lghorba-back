@@ -10,6 +10,7 @@ import { ProductMediaItem } from './product-media-item';
 import { ProductInfoSection } from './product-info-section';
 import { ProductTrustBadge } from './product-trust-badge';
 import { ProductFaq } from './product-faq';
+import { ProductDocument } from './product-document';
 
 export type ProductStatus = 'draft' | 'active' | 'archived' | 'out_of_stock' | 'hidden';
 
@@ -44,6 +45,9 @@ export class Product {
 
   /** Ordered FAQ entries shown near the bottom of the PDP and used for FAQPage JSON-LD. */
   @Column({ type: 'jsonb', default: () => "'[]'" }) faqs: ProductFaq[];
+
+  /** Downloadable PDF documents (notice, fiche technique, etc.) */
+  @Column({ type: 'jsonb', default: () => "'[]'" }) documents: ProductDocument[];
 
   @Column({ type: 'varchar', length: 500, nullable: true }) seoTitle: string | null;
   @Column({ type: 'text', nullable: true })                 seoDescription: string | null;

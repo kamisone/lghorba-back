@@ -76,6 +76,14 @@ export const CreateProductSchema = z.object({
   infoSections:       z.array(ProductInfoSectionSchema).optional(),
   trustBadges:        z.array(ProductTrustBadgeSchema).optional(),
   faqs:               z.array(ProductFaqSchema).optional(),
+  documents:          z.array(z.object({
+    id:               z.string().min(1).max(100),
+    title:            z.string().min(1).max(300),
+    storageKey:       z.string().min(1).max(1000),
+    originalFilename: z.string().min(1).max(500),
+    sizeBytes:        z.number().int().min(0),
+    sortOrder:        z.number().int().optional(),
+  })).optional(),
   featuredImageKey:   z.string().max(1000).nullish(),
   galleryImageKeys:   z.array(z.string().max(1000)).optional(),
   media:              z.array(ProductMediaItemSchema).optional(),
@@ -209,6 +217,17 @@ function normalizeFaqs(faqs: z.infer<typeof ProductFaqSchema>[]): ProductFaq[] {
     answer:    f.answer,
     sortOrder: i,
     isActive:  f.isActive ?? true,
+  }));
+}
+
+function normalizeDocuments(docs: Array<{ id: string; title: string; storageKey: string; originalFilename: string; sizeBytes: number; sortOrder?: number }>): import('../entities/product-document').ProductDocument[] {
+  return docs.map((d, i) => ({
+    id:               d.id,
+    title:            d.title,
+    storageKey:       d.storageKey,
+    originalFilename: d.originalFilename,
+    sizeBytes:        d.sizeBytes,
+    sortOrder:        d.sortOrder ?? i,
   }));
 }
 
@@ -468,6 +487,7 @@ export class ProductService {
     if (!product) throw new NotFoundException('Product not found');
     const resolved: any = await this.resolveProductUrls(product);
     this.resolveVariantPricesInPlace(resolved);
+    resolved.documents = await this.resolveDocuments(product.id, product.documents ?? []);
     return resolved;
   }
 
@@ -485,6 +505,7 @@ export class ProductService {
     withTranslations.infoSections = await this.resolveInfoSections(product.id, product.infoSections, lang);
     withTranslations.trustBadges  = await this.resolveTrustBadges(product.id, product.trustBadges, lang);
     withTranslations.faqs         = await this.resolveFaqs(product.id, product.faqs, lang);
+    withTranslations.documents    = await this.resolveDocuments(product.id, product.documents ?? [], lang);
     return withTranslations;
   }
 
@@ -565,6 +586,19 @@ export class ProductService {
     );
   }
 
+  private async resolveDocuments(
+    productId: string, docs: import('../entities/product-document').ProductDocument[], lang?: string,
+  ): Promise<Array<import('../entities/product-document').ProductDocument & { url: string }>> {
+    const translated = await this.resolveTranslatableList(
+      productId, docs, lang, 'document', ['title'],
+      d => !!d.title?.trim(),
+    );
+    return Promise.all(translated.map(async d => ({
+      ...d,
+      url: await this.assetUrlService.resolve(d.storageKey),
+    })));
+  }
+
   // ── Create ──────────────────────────────────────────────────────────────────
 
   async create(dto: CreateProductDto): Promise<Product> {
@@ -594,6 +628,7 @@ export class ProductService {
         infoSections:      dto.infoSections ? normalizeInfoSections(dto.infoSections) : [],
         trustBadges:       dto.trustBadges  ? normalizeTrustBadges(dto.trustBadges)  : [],
         faqs:              dto.faqs         ? normalizeFaqs(dto.faqs)                : [],
+        documents:         dto.documents    ? normalizeDocuments(dto.documents)      : [],
         featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
         galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? []),
         media,
@@ -659,6 +694,7 @@ export class ProductService {
       infoSections:      dto.infoSections       !== undefined ? normalizeInfoSections(dto.infoSections) : product.infoSections,
       trustBadges:       dto.trustBadges        !== undefined ? normalizeTrustBadges(dto.trustBadges)  : product.trustBadges,
       faqs:              dto.faqs               !== undefined ? normalizeFaqs(dto.faqs)               : product.faqs,
+      documents:         dto.documents          !== undefined ? normalizeDocuments(dto.documents)     : product.documents,
       featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
       galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? product.galleryImageKeys),
       media,
