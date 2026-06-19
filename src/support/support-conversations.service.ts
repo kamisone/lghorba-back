@@ -79,11 +79,13 @@ export class SupportConversationsService {
     guestName: string | undefined,
     content: string,
     clientId?: string,
+    pageUrl?: string,
   ): Promise<{ conversation: SupportConversation; message: SupportMessage & { clientId?: string } }> {
     const conversation = await this.convRepo.save(
       this.convRepo.create({
         guestToken,
         guestName: guestName ?? null,
+        pageUrl:   pageUrl ?? null,
         status:    ConversationStatus.WAITING_ADMIN,
       }),
     );

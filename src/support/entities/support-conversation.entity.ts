@@ -25,6 +25,9 @@ export class SupportConversation {
   guestName: string | null;
 
   @Column({ nullable: true })
+  pageUrl: string | null;
+
+  @Column({ nullable: true })
   assignedAdminId: string | null;
 
   @Column({ type: 'varchar', default: ConversationStatus.WAITING_ADMIN })
