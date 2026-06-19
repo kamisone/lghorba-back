@@ -73,6 +73,10 @@ export class CommerceNotificationService {
   }
 
   async updateSettings(patch: Partial<CommerceNotifSettings>): Promise<CommerceNotifSettings> {
+    if (patch.smsPhones) {
+      patch.smsPhones = patch.smsPhones.map(p => p.replace(/\s+/g, '').replace(/^00/, '+'));
+    }
+
     const updates: { key: string; value: string }[] = [];
     if (patch.smsEnabled     !== undefined) updates.push({ key: COMMERCE_NOTIF_KEYS.smsEnabled,     value: String(patch.smsEnabled) });
     if (patch.smsPhones      !== undefined) updates.push({ key: COMMERCE_NOTIF_KEYS.smsPhones,      value: JSON.stringify(patch.smsPhones) });

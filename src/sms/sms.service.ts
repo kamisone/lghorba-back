@@ -108,7 +108,12 @@ export class SmsService {
     if (!to || !message) {
       throw new HttpException('body params invalid', 400);
     }
-    const sms = this.repo.create({ to, message, type });
+    const normalized = this.normalizePhone(to);
+    const sms = this.repo.create({ to: normalized, message, type });
     return this.repo.save(sms);
+  }
+
+  private normalizePhone(raw: string): string {
+    return raw.replace(/\s+/g, '').replace(/^00/, '+');
   }
 }
