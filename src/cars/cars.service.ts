@@ -19,7 +19,13 @@ import { SearchCarsDto } from './dto/search-cars.dto';
 import { haversineKm } from '../common/utils/map.util';
 import { UpdateCarDto } from './dto/update-car.dto';
 
-type CarWithRentStatus = Car & { isCurrentlyRented: boolean; isTrackingActive: boolean };
+type CarWithRentStatus = Car & {
+  isCurrentlyRented: boolean;
+  isTrackingActive: boolean;
+  currentRentEnd: string | null;
+  nextBookingStart: string | null;
+  nextBookingEnd: string | null;
+};
 
 @Injectable()
 export class CarsService {
@@ -297,17 +303,54 @@ export class CarsService {
   async findAll(): Promise<CarWithRentStatus[]> {
     const cars = await this.repo.find();
     if (cars.length === 0) return [];
-    // Single query for all active sessions; derive both sets from the result
-    const activeSessions = await this.sessionRepo.find({
-      where: { status: RentSessionStatus.ACTIVE },
-      select: ['carId', 'trackingPaused'],
-    });
+
+    const now = new Date();
+
+    const [activeSessions, currentBookings, nextBookings] = await Promise.all([
+      this.sessionRepo.find({
+        where: { status: RentSessionStatus.ACTIVE },
+        select: ['carId', 'trackingPaused', 'bookingId'],
+      }),
+      this.bookingRepo
+        .createQueryBuilder('b')
+        .select(['b.carId', 'b.endDateTime'])
+        .where('b.status = :status', { status: 'confirmed' })
+        .andWhere('b."startDateTime" <= :now AND b."endDateTime" >= :now', { now })
+        .getMany(),
+      this.bookingRepo
+        .createQueryBuilder('b')
+        .select(['b.carId', 'b.startDateTime', 'b.endDateTime'])
+        .where('b.status = :status', { status: 'confirmed' })
+        .andWhere('b."startDateTime" > :now', { now })
+        .orderBy('b."startDateTime"', 'ASC')
+        .getMany(),
+    ]);
+
     const rentedIds   = new Set(activeSessions.map((s) => s.carId));
     const trackingIds = new Set(activeSessions.filter((s) => !s.trackingPaused).map((s) => s.carId));
+
+    const currentEndMap = new Map<string, string>();
+    for (const b of currentBookings) {
+      currentEndMap.set(b.carId, b.endDateTime.toISOString());
+    }
+
+    const nextBookingMap = new Map<string, { start: string; end: string }>();
+    for (const b of nextBookings) {
+      if (!nextBookingMap.has(b.carId)) {
+        nextBookingMap.set(b.carId, {
+          start: b.startDateTime.toISOString(),
+          end:   b.endDateTime.toISOString(),
+        });
+      }
+    }
+
     return cars.map((car) =>
       Object.assign(car, {
-        isCurrentlyRented: rentedIds.has(car.id),
-        isTrackingActive:  trackingIds.has(car.id),
+        isCurrentlyRented:  rentedIds.has(car.id),
+        isTrackingActive:   trackingIds.has(car.id),
+        currentRentEnd:     currentEndMap.get(car.id) ?? null,
+        nextBookingStart:   nextBookingMap.get(car.id)?.start ?? null,
+        nextBookingEnd:     nextBookingMap.get(car.id)?.end ?? null,
       }),
     );
   }
@@ -315,11 +358,31 @@ export class CarsService {
   async findOne(id: string): Promise<CarWithRentStatus> {
     const car = await this.repo.findOne({ where: { id } });
     if (!car) throw new NotFoundException(`Car ${id} not found`);
-    const [rentedCount, trackingCount] = await Promise.all([
+    const now = new Date();
+    const [rentedCount, trackingCount, currentBooking, nextBooking] = await Promise.all([
       this.sessionRepo.count({ where: { carId: id, status: RentSessionStatus.ACTIVE } }),
       this.sessionRepo.count({ where: { carId: id, status: RentSessionStatus.ACTIVE, trackingPaused: false } }),
+      this.bookingRepo
+        .createQueryBuilder('b')
+        .select(['b.endDateTime'])
+        .where('b."carId" = :id AND b.status = :s', { id, s: 'confirmed' })
+        .andWhere('b."startDateTime" <= :now AND b."endDateTime" >= :now', { now })
+        .getOne(),
+      this.bookingRepo
+        .createQueryBuilder('b')
+        .select(['b.startDateTime', 'b.endDateTime'])
+        .where('b."carId" = :id AND b.status = :s', { id, s: 'confirmed' })
+        .andWhere('b."startDateTime" > :now', { now })
+        .orderBy('b."startDateTime"', 'ASC')
+        .getOne(),
     ]);
-    return Object.assign(car, { isCurrentlyRented: rentedCount > 0, isTrackingActive: trackingCount > 0 });
+    return Object.assign(car, {
+      isCurrentlyRented:  rentedCount > 0,
+      isTrackingActive:   trackingCount > 0,
+      currentRentEnd:     currentBooking?.endDateTime?.toISOString() ?? null,
+      nextBookingStart:   nextBooking?.startDateTime?.toISOString() ?? null,
+      nextBookingEnd:     nextBooking?.endDateTime?.toISOString() ?? null,
+    });
   }
 
   private async resolveParkingFields(
