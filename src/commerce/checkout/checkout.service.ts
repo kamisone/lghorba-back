@@ -127,6 +127,39 @@ export class CheckoutService {
     // rather than creating a duplicate (and double-reserving inventory).
     const existing = await this.orderRepo.findOneBy({ cartToken: dto.cartToken, status: In(['draft', 'awaiting_payment']) });
     if (existing) {
+      const items = cart.items as CartItem[];
+      const productIds = [...new Set(items.map(i => i.productId))];
+      const categoryMap = await this.loadProductCategoryIds(productIds);
+      const lineInputs: LineItemInput[] = items.map(item => ({
+        variantId:      item.variantId,
+        productId:      item.productId,
+        categoryIds:    categoryMap.get(item.productId) ?? [],
+        quantity:       item.quantity,
+        unitPriceCents: item.unitPriceCents,
+      }));
+      const pricing = await this.pricingEngine.compute(lineInputs, dto.couponCode ?? null);
+
+      existing.customerEmail       = dto.email;
+      existing.customerName        = `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || null;
+      existing.customerCompanyName = dto.companyName?.trim() || null;
+      existing.customerPhone       = dto.phone ?? null;
+      existing.customerLocale      = dto.locale ?? 'fr';
+      existing.shippingAddressSnapshot = {
+        name:    `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || '',
+        line1:   dto.line1,
+        line2:   dto.line2 ?? '',
+        city:    dto.city,
+        zip:     dto.zip,
+        country: dto.country,
+      };
+      existing.subtotalCents         = pricing.rawSubtotalCents;
+      existing.categoryDiscountCents = pricing.categoryDiscountCents;
+      existing.discountCents         = pricing.couponDiscountCents;
+      existing.totalCents            = pricing.afterCategorySubtotalCents - pricing.couponDiscountCents + existing.shippingCents;
+      existing.couponCode            = pricing.couponCode;
+      existing.pricingSnapshot       = pricing as unknown as Record<string, unknown>;
+      await this.orderRepo.save(existing);
+
       const { zone, methods } = await this.shippingService.getMethodsForCountry(dto.country, existing.subtotalCents);
       return this.toSnapshot(existing, methods, zone);
     }

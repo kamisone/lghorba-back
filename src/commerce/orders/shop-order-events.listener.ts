@@ -62,7 +62,7 @@ export class ShopOrderEventsListener {
         event:         'payment_succeeded',
         orderId:       order.id,
         orderNumber:   order.orderNumber,
-        summary:       `New order ${order.orderNumber} — ${(order.totalCents / 100).toFixed(2)} €`,
+        summary:       `New order ${order.orderNumber} - ${(order.totalCents / 100).toFixed(2)} EUR`,
         detailUrl:     `/admin/shop/orders/${order.id}`,
         customerName:  order.customerName ?? undefined,
         customerEmail: order.customerEmail,
