@@ -112,6 +112,9 @@ export class ShopOrderEventsListener {
 
   @OnEvent(COMMERCE_EVENTS.ORDER_STATUS_CHANGED)
   async onStatusChanged(event: OrderStatusChangedEvent): Promise<void> {
+    if (event.toStatus === 'processing') {
+      await this.sendPreparingEmail(event.orderId);
+    }
     if (event.toStatus === 'shipped') {
       await this.sendShippingEmail(event.orderId);
     }
@@ -132,6 +135,23 @@ export class ShopOrderEventsListener {
     }
   }
 
+  private async sendPreparingEmail(orderId: string): Promise<void> {
+    try {
+      const order = await this.orderRepo.findOneBy({ id: orderId });
+      if (!order) return;
+
+      await this.email.sendOrderPreparing({
+        orderNumber:   order.orderNumber,
+        customerEmail: order.customerEmail,
+        customerName:  order.customerName ?? order.customerEmail,
+        locale:        order.customerLocale,
+        trackingToken: order.trackingToken,
+      });
+    } catch (err) {
+      this.logger.error(`Preparing email failed for ${orderId}: ${(err as Error).message}`);
+    }
+  }
+
   private async sendShippingEmail(orderId: string): Promise<void> {
     try {
       const order    = await this.orderRepo.findOneBy({ id: orderId });
@@ -149,6 +169,7 @@ export class ShopOrderEventsListener {
         trackingNumber: shipment?.trackingNumber ?? null,
         carrier:        shipment?.carrier ?? null,
         locale:         order.customerLocale,
+        trackingToken:  order.trackingToken,
       });
     } catch (err) {
       this.logger.error(`Shipping email failed for ${orderId}: ${(err as Error).message}`);

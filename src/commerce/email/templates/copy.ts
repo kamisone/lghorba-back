@@ -27,6 +27,14 @@ export const COPY = {
       helpText:    "Si vous avez la moindre question, n'hésitez pas à contacter notre service client.",
     },
 
+    orderPreparing: {
+      subject:    (n: string) => `Votre commande ${n} est en cours de préparation`,
+      greeting:   (name: string) => `Bonjour ${name},`,
+      intro:      (n: string) => `Bonne nouvelle ! Votre commande <strong>${n}</strong> est en cours de préparation par notre équipe.`,
+      body:       "Nous mettons tout en œuvre pour vous l'expédier dans les meilleurs délais. Vous recevrez un email dès que votre colis sera en route.",
+      trackOrder: 'Suivre ma commande',
+    },
+
     orderShipped: {
       subject:    (n: string) => `Votre commande ${n} est en route !`,
       greeting:   (name: string) => `Bonjour ${name},`,
@@ -93,6 +101,14 @@ export const COPY = {
       orderRef:    'Order reference',
       trackOrder:  'Track my order',
       helpText:    'If you have any questions, feel free to reach out to our support team.',
+    },
+
+    orderPreparing: {
+      subject:    (n: string) => `Your order ${n} is being prepared`,
+      greeting:   (name: string) => `Hello ${name},`,
+      intro:      (n: string) => `Good news! Your order <strong>${n}</strong> is now being prepared by our team.`,
+      body:       "We're working to ship it as soon as possible. You'll receive another email once your package is on its way.",
+      trackOrder: 'Track my order',
     },
 
     orderShipped: {

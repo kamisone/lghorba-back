@@ -6,6 +6,7 @@ import { renderPaymentFailed } from './templates/payment-failed';
 import { renderReviewRequest } from './templates/review-request';
 import { renderStockAlert } from './templates/stock-alert';
 import { renderAbandonedCart } from './templates/abandoned-cart';
+import { renderOrderPreparing } from './templates/order-preparing';
 
 // ── Payload interfaces ────────────────────────────────────────────────────────
 
@@ -32,6 +33,7 @@ export interface OrderShippedPayload {
   trackingNumber: string | null;
   carrier: string | null;
   locale?: string;
+  trackingToken?: string | null;
 }
 
 export interface ReviewRequestPayload {
@@ -109,15 +111,42 @@ export class ShopEmailService {
     this.logger.log(`Order confirmed email sent to ${payload.customerEmail} for ${payload.orderNumber} [${lang}]`);
   }
 
+  // ── Order preparing ────────────────────────────────────────────────────────
+
+  async sendOrderPreparing(payload: {
+    orderNumber: string;
+    customerEmail: string;
+    customerName: string;
+    locale?: string;
+    trackingToken?: string | null;
+  }): Promise<void> {
+    const lang = resolveLang(payload.locale);
+    const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
+    const { subject, html } = renderOrderPreparing({
+      customerName: payload.customerName,
+      orderNumber:  payload.orderNumber,
+      trackingUrl:  appUrl && payload.trackingToken
+        ? `${appUrl}/${lang}/shop/orders/track/${payload.orderNumber}?token=${payload.trackingToken}`
+        : undefined,
+    }, lang);
+
+    await this.send(payload.customerEmail, subject, html);
+    this.logger.log(`Order preparing email sent to ${payload.customerEmail} for ${payload.orderNumber} [${lang}]`);
+  }
+
   // ── Order shipped ─────────────────────────────────────────────────────────
 
   async sendOrderShipped(payload: OrderShippedPayload): Promise<void> {
     const lang = resolveLang(payload.locale);
+    const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
     const { subject, html } = renderOrderShipped({
       customerName:   payload.customerName,
       orderNumber:    payload.orderNumber,
       trackingNumber: payload.trackingNumber,
       carrier:        payload.carrier,
+      trackingUrl:    appUrl && payload.trackingToken
+        ? `${appUrl}/${lang}/shop/orders/track/${payload.orderNumber}?token=${payload.trackingToken}`
+        : undefined,
     }, lang);
 
     await this.send(payload.customerEmail, subject, html);
