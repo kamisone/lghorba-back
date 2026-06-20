@@ -5,6 +5,7 @@ import { createTransport, Transporter } from 'nodemailer';
 import { PlatformSettings } from '../../platform-settings/platform-settings.entity';
 import { SmsService } from '../../sms/sms.service';
 import { CommerceNotificationLog } from './commerce-notification-log.entity';
+import { baseLayout, ctaButton, divider, esc, fmtCents } from '../email/templates/layout';
 import {
   COMMERCE_NOTIF_KEYS,
   COMMERCE_NOTIF_DEFAULTS,
@@ -25,6 +26,14 @@ export interface AdminNotifPayload {
   orderNumber?: string;
   summary:      string;
   detailUrl?:   string;
+  customerName?:  string;
+  customerEmail?: string;
+  subtotalCents?: number;
+  shippingCents?: number;
+  discountCents?: number;
+  totalCents?:    number;
+  couponCode?:    string | null;
+  items?:         Array<{ title: string; quantity: number; unitPriceCents: number }>;
 }
 
 @Injectable()
@@ -181,32 +190,73 @@ export class CommerceNotificationService {
   }
 
   private buildEmailHtml(payload: AdminNotifPayload, appUrl: string): string {
-    const detailLink = payload.detailUrl
-      ? `<a href="${appUrl}${payload.detailUrl}" style="display:inline-block;margin-top:16px;padding:10px 20px;background:#00466E;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;">View Details</a>`
+    const label = this.eventLabel(payload.event);
+
+    let itemsHtml = '';
+    if (payload.items && payload.items.length > 0) {
+      const rows = payload.items.map(i => `
+        <tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#1e293b;">${esc(i.title)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:center;font-size:13px;color:#475569;">${i.quantity}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:13px;font-weight:600;color:#0f172a;">${fmtCents(i.unitPriceCents * i.quantity, 'fr')}</td>
+        </tr>`).join('');
+
+      itemsHtml = `
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0 0;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="text-align:left;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;padding:8px 12px;border-bottom:2px solid #e2e8f0;">Product</th>
+              <th style="text-align:center;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;padding:8px 12px;border-bottom:2px solid #e2e8f0;">Qty</th>
+              <th style="text-align:right;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;padding:8px 12px;border-bottom:2px solid #e2e8f0;">Total</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
+    }
+
+    let pricingHtml = '';
+    if (payload.totalCents !== undefined) {
+      const lines: string[] = [];
+      if (payload.subtotalCents !== undefined) {
+        lines.push(this.summaryRow('Subtotal', fmtCents(payload.subtotalCents, 'fr')));
+      }
+      if (payload.shippingCents !== undefined && payload.shippingCents > 0) {
+        lines.push(this.summaryRow('Shipping', fmtCents(payload.shippingCents, 'fr')));
+      }
+      if (payload.discountCents !== undefined && payload.discountCents > 0) {
+        const discountLabel = payload.couponCode ? `Discount (${esc(payload.couponCode)})` : 'Discount';
+        lines.push(this.summaryRow(discountLabel, `<span style="color:#dc2626;">-${fmtCents(payload.discountCents, 'fr')}</span>`));
+      }
+      lines.push(`
+        <tr>
+          <td style="padding:10px 12px 0;font-size:15px;font-weight:800;color:#0f172a;border-top:2px solid #e2e8f0;">Total</td>
+          <td style="padding:10px 12px 0;font-size:15px;font-weight:800;color:#0f172a;text-align:right;border-top:2px solid #e2e8f0;">${fmtCents(payload.totalCents, 'fr')}</td>
+        </tr>`);
+      pricingHtml = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:12px 0 0;">${lines.join('')}</table>`;
+    }
+
+    const customerHtml = payload.customerName || payload.customerEmail
+      ? `<p style="margin:12px 0 0;font-size:13px;color:#64748b;">Customer: <strong style="color:#0f172a;">${esc(payload.customerName ?? '')} </strong>${payload.customerEmail ? `<span style="color:#475569;">${esc(payload.customerEmail)}</span>` : ''}</p>`
       : '';
 
-    return `
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"></head>
-<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 16px;">
-<tr><td align="center">
-<table width="520" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.06);">
-  <tr><td style="background:#001829;padding:20px 28px;">
-    <span style="color:#fff;font-size:16px;font-weight:700;">${this.sellerName}</span>
-  </td></tr>
-  <tr><td style="padding:28px;">
-    <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">${this.eventLabel(payload.event)}</p>
-    <p style="margin:0 0 4px;font-size:18px;font-weight:700;color:#0f172a;">${payload.summary}</p>
-    ${payload.orderNumber ? `<p style="margin:0;font-size:14px;color:#64748b;">Order #${payload.orderNumber}</p>` : ''}
-    ${detailLink}
-  </td></tr>
-  <tr><td style="padding:16px 28px;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;">
-    Admin notification · ${this.sellerName}
-  </td></tr>
-</table>
-</td></tr></table>
-</body></html>`;
+    const body = `
+      <p style="margin:0 0 4px;font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;">${esc(label)}</p>
+      <p style="margin:0 0 4px;font-size:20px;font-weight:800;color:#0f172a;">${esc(payload.summary)}</p>
+      ${payload.orderNumber ? `<p style="margin:0;font-size:14px;color:#64748b;">Order <strong style="color:#0f172a;">#${esc(payload.orderNumber)}</strong></p>` : ''}
+      ${customerHtml}
+      ${itemsHtml}
+      ${pricingHtml}
+      ${payload.detailUrl ? divider() + ctaButton('View in Admin', `${appUrl}${payload.detailUrl}`) : ''}
+    `;
+
+    return baseLayout(`[Admin] ${label}`, body, 'fr');
+  }
+
+  private summaryRow(label: string, value: string): string {
+    return `<tr>
+      <td style="padding:5px 12px;font-size:13px;color:#475569;">${label}</td>
+      <td style="padding:5px 12px;font-size:13px;font-weight:600;color:#0f172a;text-align:right;">${value}</td>
+    </tr>`;
   }
 
   private eventLabel(event: string): string {

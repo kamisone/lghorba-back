@@ -59,11 +59,23 @@ export class ShopOrderEventsListener {
         })),
       });
       this.adminNotif.notify({
-        event:       'payment_succeeded',
-        orderId:     order.id,
-        orderNumber: order.orderNumber,
-        summary:     `New order ${order.orderNumber} — ${(order.totalCents / 100).toFixed(2)} €`,
-        detailUrl:   `/admin/shop/orders/${order.id}`,
+        event:         'payment_succeeded',
+        orderId:       order.id,
+        orderNumber:   order.orderNumber,
+        summary:       `New order ${order.orderNumber} — ${(order.totalCents / 100).toFixed(2)} €`,
+        detailUrl:     `/admin/shop/orders/${order.id}`,
+        customerName:  order.customerName ?? undefined,
+        customerEmail: order.customerEmail,
+        subtotalCents: order.subtotalCents,
+        shippingCents: order.shippingCents,
+        discountCents: order.discountCents,
+        totalCents:    order.totalCents,
+        couponCode:    order.couponCode,
+        items:         items.map(i => ({
+          title:          i.titleSnapshot,
+          quantity:       i.quantity,
+          unitPriceCents: i.unitPriceCents,
+        })),
       }).catch(e => this.logger.error(`Admin notif failed for ${event.orderId}: ${(e as Error).message}`));
     } catch (err) {
       this.logger.error(`Order confirmation email failed for ${event.orderId}: ${(err as Error).message}`);
