@@ -4,12 +4,14 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { randomUUID } from 'crypto';
 import { DataSource, In, Repository } from 'typeorm';
 import { z } from 'zod';
 import { Order, OrderStatus } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { OrderStatusHistory } from '../entities/order-status-history.entity';
 import { Cart } from '../entities/cart.entity';
+import { Shipment } from '../entities/shipment.entity';
 import { CartItem } from '../entities/cart-item.entity';
 import { ShopPromotion } from '../entities/shop-promotion.entity';
 import { ProductVariant } from '../entities/product-variant.entity';
@@ -85,6 +87,7 @@ export class OrdersService {
     @InjectRepository(ShopPromotion)      private readonly promoRepo:   Repository<ShopPromotion>,
     @InjectRepository(ProductVariant)     private readonly variantRepo: Repository<ProductVariant>,
     @InjectRepository(Product)            private readonly productRepo: Repository<Product>,
+    @InjectRepository(Shipment)           private readonly shipmentRepo: Repository<Shipment>,
     @InjectQueue(CHECKOUT_RESERVATION_QUEUE) private readonly reservationQueue: Queue,
     private readonly inventoryService: InventoryService,
     private readonly customerService:  CustomerService,
@@ -131,6 +134,7 @@ export class OrdersService {
         taxCents:        0,
         totalCents,
         couponCode:      dto.couponCode ?? null,
+        trackingToken:    randomUUID(),
         shippingMethodId: dto.shippingMethodId ?? null,
       });
       const savedOrder = await em.save(Order, order);
@@ -337,6 +341,62 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Order not found');
     return order;
+  }
+
+  async trackOrder(
+    orderNumber: string,
+    auth: { token?: string; email?: string },
+  ): Promise<Record<string, unknown>> {
+    const order = await this.orderRepo.findOne({
+      where: { orderNumber },
+      relations: ['items', 'statusHistory'],
+    });
+    if (!order) throw new NotFoundException('Order not found');
+
+    const authorized =
+      (auth.token && order.trackingToken === auth.token) ||
+      (auth.email && order.customerEmail.toLowerCase() === auth.email.toLowerCase());
+    if (!authorized) throw new NotFoundException('Order not found');
+
+    const shipment = await this.shipmentRepo.findOne({
+      where: { orderId: order.id },
+      order: { createdAt: 'DESC' },
+    });
+
+    const timeline = (order.statusHistory ?? [])
+      .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .map((h: any) => ({ status: h.toStatus, date: h.createdAt, note: h.note }));
+
+    return {
+      orderNumber:   order.orderNumber,
+      status:        order.status,
+      customerName:  order.customerName,
+      totalCents:    order.totalCents,
+      subtotalCents: order.subtotalCents,
+      shippingCents: order.shippingCents,
+      discountCents: order.discountCents,
+      couponCode:    order.couponCode,
+      createdAt:     order.createdAt,
+      items: (order.items ?? []).map((i: any) => ({
+        title:          i.titleSnapshot,
+        sku:            i.skuSnapshot,
+        imageKey:       i.imageKeySnapshot,
+        quantity:       i.quantity,
+        unitPriceCents: i.unitPriceCents,
+        totalCents:     i.totalCents,
+        options:        i.optionsSnapshot,
+      })),
+      shipping: shipment ? {
+        status:             shipment.status,
+        carrier:            shipment.carrier,
+        trackingNumber:     shipment.trackingNumber,
+        trackingUrl:        shipment.trackingUrl,
+        shippedAt:          shipment.shippedAt,
+        deliveredAt:        shipment.deliveredAt,
+        estimatedDeliveryAt: shipment.estimatedDeliveryAt,
+      } : null,
+      timeline,
+    };
   }
 
   async customerOrders(email: string): Promise<Order[]> {

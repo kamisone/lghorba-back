@@ -59,6 +59,7 @@ export class Order {
   /** ISO 639-1 locale captured at checkout (fr | en) — drives email language */
   @Column({ type: 'varchar', length: 10, default: 'fr' }) customerLocale: string;
 
+  @Column({ type: 'uuid', nullable: true, unique: true }) trackingToken: string | null;
   @Column({ type: 'varchar', length: 100, nullable: true }) cartToken: string | null;
   @Column({ type: 'varchar', length: 500, nullable: true }) paymentIntentId: string | null;
   @Column({ type: 'timestamptz', nullable: true }) reservationExpiresAt: Date | null;

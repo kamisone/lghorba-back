@@ -2,6 +2,7 @@ import {
   BadRequestException, Injectable, Logger, NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { DataSource, In, Repository } from 'typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -82,6 +83,7 @@ export interface CheckoutSnapshot {
   }>;
   zoneInfo:             ZoneInfo | null;
   reservationExpiresAt: string | null;
+  trackingToken:        string | null;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -178,6 +180,7 @@ export class CheckoutService {
         taxCents:               0,
         totalCents:             pricing.afterCategorySubtotalCents - pricing.couponDiscountCents,
         couponCode:             pricing.couponCode,
+        trackingToken:           randomUUID(),
         shippingMethodId:       null,
         pricingSnapshot:        pricing as unknown as Record<string, unknown>,
         reservationExpiresAt:   expiresAt,
@@ -472,6 +475,7 @@ export class CheckoutService {
       })),
       zoneInfo:             zone,
       reservationExpiresAt: order.reservationExpiresAt?.toISOString() ?? null,
+      trackingToken:        order.trackingToken ?? null,
     };
   }
 }

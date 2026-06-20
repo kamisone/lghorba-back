@@ -16,6 +16,7 @@ export interface OrderConfirmedPayload {
   customerName: string;
   totalCents: number;
   locale?: string;
+  trackingToken?: string | null;
   items: Array<{ title: string; quantity: number; unitPriceCents: number }>;
 }
 
@@ -91,7 +92,9 @@ export class ShopEmailService {
       orderNumber:  payload.orderNumber,
       totalCents:   payload.totalCents,
       items:        payload.items,
-      orderUrl:     appUrl ? `${appUrl}/${lang}/shop` : undefined,
+      orderUrl:     appUrl && payload.trackingToken
+        ? `${appUrl}/${lang}/shop/orders/track/${payload.orderNumber}?token=${payload.trackingToken}`
+        : undefined,
     }, lang);
 
     await this.send(payload.customerEmail, subject, html);

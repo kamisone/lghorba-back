@@ -47,6 +47,7 @@ export class ShopOrderEventsListener {
         customerName:  order.customerName ?? order.customerEmail,
         totalCents:    order.totalCents,
         locale:        order.customerLocale,
+        trackingToken: order.trackingToken,
         items: items.map(i => ({
           title:         i.titleSnapshot,
           quantity:      i.quantity,

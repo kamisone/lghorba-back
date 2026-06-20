@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, Param, Post,
+  Body, Controller, Get, NotFoundException, Param, Post, Query,
 } from '@nestjs/common';
 import { Public } from '../../auth/public.decorator';
 import { OrdersService, CreateOrderSchema, CreateOrderDto } from './orders.service';
@@ -15,14 +15,18 @@ export class OrdersPublicController {
     return this.orders.createFromCart(dto);
   }
 
-  // Lookup by order number — safe to expose because the number space is large
-  // enough to prevent enumeration and the number is only given to the customer.
   @Get(':orderNumber')
   getByNumber(@Param('orderNumber') orderNumber: string) {
     return this.orders.findByNumber(orderNumber);
   }
 
-  // Removed: GET customer/:email was unauthenticated and returned all orders
-  // for any email address — this is an order-data leak. Customer order history
-  // must go through an authenticated endpoint.
+  @Get(':orderNumber/track')
+  async track(
+    @Param('orderNumber') orderNumber: string,
+    @Query('token') token?: string,
+    @Query('email') email?: string,
+  ) {
+    if (!token && !email) throw new NotFoundException('Order not found');
+    return this.orders.trackOrder(orderNumber, { token, email });
+  }
 }
