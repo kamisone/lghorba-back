@@ -118,11 +118,20 @@ export class SmsService {
       throw new HttpException('body params invalid', 400);
     }
     const normalized = this.normalizePhone(to);
-    const sms = this.repo.create({ to: normalized, message, type });
+    const sanitized = this.sanitizeForGsm(message);
+    const sms = this.repo.create({ to: normalized, message: sanitized, type });
     return this.repo.save(sms);
   }
 
   private normalizePhone(raw: string): string {
     return raw.replace(/\s+/g, '').replace(/^00/, '+');
+  }
+
+  private sanitizeForGsm(text: string): string {
+    return text
+      .replace(/€/g, 'EUR')
+      .replace(/[—–]/g, '-')
+      .replace(/['']/g, "'")
+      .replace(/[""]/g, '"');
   }
 }

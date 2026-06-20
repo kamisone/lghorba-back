@@ -146,9 +146,7 @@ export class CommerceNotificationService {
     const lines   = [`[${this.sellerName}] ${payload.summary}`];
     if (payload.orderNumber) lines.push(`#${payload.orderNumber}`);
     if (payload.detailUrl)   lines.push(`${appUrl}${payload.detailUrl}`);
-    const message = lines.join('\n')
-      .replace(/€/g, 'EUR')
-      .replace(/[—–]/g, '-');
+    const message = lines.join('\n');
 
     for (const phone of phones) {
       try {
