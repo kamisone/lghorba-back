@@ -100,6 +100,15 @@ export class SmsService {
     return result;
   }
 
+  async ack(id: number): Promise<{ ok: boolean }> {
+    const sms = await this.repo.findOneBy({ id });
+    if (!sms) return { ok: false };
+    if (!sms.consumed) {
+      await this.repo.update(id, { consumed: true });
+    }
+    return { ok: true };
+  }
+
   async addMessage(
     to: string,
     message: string,

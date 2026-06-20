@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { z } from 'zod';
 import { Public } from '../auth/public.decorator';
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
@@ -40,6 +40,12 @@ export class SmsController {
     // Express decodes '+' as space in query strings; restore it then strip whitespace
     const restored = raw.startsWith(' ') ? '+' + raw.slice(1) : raw;
     return restored.replace(/\s+/g, '').replace(/^00/, '+');
+  }
+
+  @Public()
+  @Post('sms/ack/:id')
+  async ackSms(@Param('id') id: string) {
+    return this.smsService.ack(parseInt(id, 10));
   }
 
   @Public()
