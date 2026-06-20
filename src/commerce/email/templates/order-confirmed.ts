@@ -4,7 +4,11 @@ import { baseLayout, ctaButton, divider, mutedText, esc, fmtCents } from './layo
 export interface OrderConfirmedData {
   customerName: string;
   orderNumber: string;
+  subtotalCents: number;
+  shippingCents: number;
+  discountCents: number;
   totalCents: number;
+  couponCode?: string | null;
   items: Array<{ title: string; quantity: number; unitPriceCents: number }>;
   orderUrl?: string;
 }
@@ -20,11 +24,28 @@ export function renderOrderConfirmed(data: OrderConfirmedData, lang: Lang): { su
       <td style="padding:10px 12px;border-bottom:1px solid #f1f5f9;text-align:right;font-size:14px;font-weight:600;color:#0f172a;">${fmtCents(i.unitPriceCents * i.quantity, lang)}</td>
     </tr>`).join('');
 
+  const summaryRows: string[] = [];
+
+  summaryRows.push(summaryRow(c.subtotal, fmtCents(data.subtotalCents, lang)));
+
+  if (data.shippingCents > 0) {
+    summaryRows.push(summaryRow(c.shipping, fmtCents(data.shippingCents, lang)));
+  } else {
+    summaryRows.push(summaryRow(c.shipping, `<span style="color:#16a34a;font-weight:600;">${c.freeShipping}</span>`));
+  }
+
+  if (data.discountCents > 0) {
+    const label = data.couponCode
+      ? `${c.discount} <span style="font-size:12px;color:#64748b;">(${c.promoCode}: ${esc(data.couponCode)})</span>`
+      : c.discount;
+    summaryRows.push(summaryRow(label, `<span style="color:#dc2626;">-${fmtCents(data.discountCents, lang)}</span>`));
+  }
+
   const body = `
     <p style="margin:0 0 6px;font-size:15px;">${c.greeting(esc(data.customerName))}</p>
     <p style="margin:0 0 20px;font-size:15px;">${c.intro}</p>
 
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 8px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 0;">
       <thead>
         <tr style="background:#f8fafc;">
           <th style="text-align:left;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;padding:10px 12px;border-bottom:2px solid #e2e8f0;">${c.colProduct}</th>
@@ -34,12 +55,21 @@ export function renderOrderConfirmed(data: OrderConfirmedData, lang: Lang): { su
         </tr>
       </thead>
       <tbody>${itemRows}</tbody>
-      <tfoot>
-        <tr>
-          <td colspan="3" style="padding:14px 12px 0;font-weight:800;font-size:15px;color:#0f172a;">${c.colTotal}</td>
-          <td style="padding:14px 12px 0;font-weight:800;font-size:15px;text-align:right;color:#0f172a;">${fmtCents(data.totalCents, lang)}</td>
-        </tr>
-      </tfoot>
+    </table>
+
+    <!-- Price breakdown -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:16px 0 0;">
+      ${summaryRows.join('')}
+      <tr>
+        <td colspan="2" style="padding:12px 12px 0;border-top:2px solid #e2e8f0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="font-size:16px;font-weight:800;color:#0f172a;">${c.grandTotal}</td>
+              <td style="font-size:16px;font-weight:800;color:#0f172a;text-align:right;">${fmtCents(data.totalCents, lang)}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
     </table>
 
     ${divider()}
@@ -54,4 +84,12 @@ export function renderOrderConfirmed(data: OrderConfirmedData, lang: Lang): { su
     subject: c.subject(data.orderNumber),
     html: baseLayout(c.subject(data.orderNumber), body, lang),
   };
+}
+
+function summaryRow(label: string, value: string): string {
+  return `
+    <tr>
+      <td style="padding:6px 12px;font-size:14px;color:#475569;">${label}</td>
+      <td style="padding:6px 12px;font-size:14px;font-weight:600;color:#0f172a;text-align:right;">${value}</td>
+    </tr>`;
 }

@@ -14,7 +14,11 @@ export interface OrderConfirmedPayload {
   orderNumber: string;
   customerEmail: string;
   customerName: string;
+  subtotalCents: number;
+  shippingCents: number;
+  discountCents: number;
   totalCents: number;
+  couponCode?: string | null;
   locale?: string;
   trackingToken?: string | null;
   items: Array<{ title: string; quantity: number; unitPriceCents: number }>;
@@ -88,11 +92,15 @@ export class ShopEmailService {
     const lang = resolveLang(payload.locale);
     const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
     const { subject, html } = renderOrderConfirmed({
-      customerName: payload.customerName,
-      orderNumber:  payload.orderNumber,
-      totalCents:   payload.totalCents,
-      items:        payload.items,
-      orderUrl:     appUrl && payload.trackingToken
+      customerName:  payload.customerName,
+      orderNumber:   payload.orderNumber,
+      subtotalCents: payload.subtotalCents,
+      shippingCents: payload.shippingCents,
+      discountCents: payload.discountCents,
+      totalCents:    payload.totalCents,
+      couponCode:    payload.couponCode,
+      items:         payload.items,
+      orderUrl:      appUrl && payload.trackingToken
         ? `${appUrl}/${lang}/shop/orders/track/${payload.orderNumber}?token=${payload.trackingToken}`
         : undefined,
     }, lang);

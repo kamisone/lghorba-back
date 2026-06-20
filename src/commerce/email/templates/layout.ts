@@ -13,6 +13,7 @@ export { esc };
 
 const BRAND_PRIMARY = '#00466E';
 const BRAND_DARK    = '#001829';
+const BRAND_MID     = '#005C8F';
 const BRAND_ACCENT  = '#8DC220';
 
 export function baseLayout(title: string, body: string, lang: Lang = 'fr'): string {
@@ -20,6 +21,7 @@ export function baseLayout(title: string, body: string, lang: Lang = 'fr'): stri
   const seller = esc(process.env.SELLER_NAME ?? 'vitecamion');
   const footer = COPY[lang].footer(year, seller);
   const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
+  const logoUrl = appUrl ? `${appUrl}/assets/logo_vitecamion_icon.png` : '';
 
   return `<!DOCTYPE html>
 <html lang="${lang}" dir="ltr">
@@ -35,20 +37,26 @@ export function baseLayout(title: string, body: string, lang: Lang = 'fr'): stri
     <tr><td align="center" style="padding:32px 16px;">
 
       <!-- Main card -->
-      <table role="presentation" width="580" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.06);">
+      <table role="presentation" width="580" cellpadding="0" cellspacing="0" style="max-width:580px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,24,41,0.08);">
 
         <!-- Header bar -->
         <tr>
-          <td style="background:${BRAND_DARK};padding:24px 32px;">
+          <td style="background:linear-gradient(135deg, ${BRAND_DARK} 0%, ${BRAND_PRIMARY} 100%);padding:24px 32px;">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
               <tr>
-                <td>
-                  ${appUrl ? `<a href="${appUrl}" style="text-decoration:none;"><span style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.02em;">${seller}</span></a>` : `<span style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.02em;">${seller}</span>`}
+                <td style="vertical-align:middle;">
+                  ${appUrl ? `<a href="${appUrl}" style="text-decoration:none;display:inline-flex;align-items:center;">` : ''}
+                  ${logoUrl ? `<img src="${logoUrl}" alt="" width="32" height="32" style="display:inline-block;vertical-align:middle;border:0;margin-right:10px;" />` : ''}
+                  <span style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:-0.02em;vertical-align:middle;">${seller}</span>
+                  ${appUrl ? '</a>' : ''}
                 </td>
               </tr>
             </table>
           </td>
         </tr>
+
+        <!-- Accent stripe -->
+        <tr><td style="height:3px;background:${BRAND_ACCENT};font-size:0;line-height:0;">&nbsp;</td></tr>
 
         <!-- Body content -->
         <tr>
@@ -59,8 +67,17 @@ export function baseLayout(title: string, body: string, lang: Lang = 'fr'): stri
 
         <!-- Footer -->
         <tr>
-          <td style="padding:20px 32px;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.5;">
-            ${footer}
+          <td style="padding:20px 32px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="font-size:12px;color:#94a3b8;line-height:1.5;">
+                  ${footer}
+                </td>
+                ${appUrl ? `<td style="text-align:right;vertical-align:middle;">
+                  <a href="${appUrl}" style="color:${BRAND_MID};font-size:12px;font-weight:600;text-decoration:none;">${seller}</a>
+                </td>` : ''}
+              </tr>
+            </table>
           </td>
         </tr>
 
@@ -92,7 +109,7 @@ export function accentButton(label: string, href: string): string {
 }
 
 export function divider(): string {
-  return '<hr style="border:none;border-top:1px solid #f1f5f9;margin:20px 0;">';
+  return '<hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;">';
 }
 
 export function mutedText(text: string): string {
