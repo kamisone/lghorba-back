@@ -223,18 +223,34 @@ export class ProductSearchService implements OnModuleInit {
     // avoids referencing `p` from an outer scope where it isn't visible).
     let tsIdx = 0;
 
+    const wordIdxs: number[] = [];
+
     if (q) {
       params.push(`%${q}%`);
       const likeIdx = params.length;
       params.push(q);
       tsIdx = params.length;
+
+      const words = q.split(/\s+/).filter(w => w.length >= 2);
+      let wordClause = '';
+      if (words.length > 1) {
+        const wordParts = words.map(w => {
+          params.push(`%${w}%`);
+          const wi = params.length;
+          wordIdxs.push(wi);
+          return `(p.title ILIKE $${wi} OR p."shortDescription" ILIKE $${wi} OR p.brand ILIKE $${wi} OR p.sku ILIKE $${wi})`;
+        });
+        wordClause = `OR ${wordParts.join(' OR ')}`;
+      }
+
       conditions.push(
         `(p.title ILIKE $${likeIdx}
           OR p."shortDescription" ILIKE $${likeIdx}
           OR p.brand ILIKE $${likeIdx}
           OR p.sku   ILIKE $${likeIdx}
           OR to_tsvector('simple', coalesce(p.title,'') || ' ' || coalesce(p."shortDescription",'') || ' ' || coalesce(p.brand,'') || ' ' || coalesce(p.sku,''))
-             @@ plainto_tsquery('simple', $${tsIdx}))`,
+             @@ plainto_tsquery('simple', $${tsIdx})
+          ${wordClause})`,
       );
     }
 
@@ -264,14 +280,19 @@ export class ProductSearchService implements OnModuleInit {
     if (filters.minPrice) { params.push(filters.minPrice); priceHaving += ` AND min_price >= $${params.length}`; }
     if (filters.maxPrice) { params.push(filters.maxPrice); priceHaving += ` AND min_price <= $${params.length}`; }
 
-    // Rank is computed inside the subquery (parameterized) so the outer ORDER BY
-    // can reference `sub.rank_score` without needing `p` in scope.
-    const rankSelect = tsIdx
-      ? `, ts_rank(
-           to_tsvector('simple', coalesce(p.title,'') || ' ' || coalesce(p."shortDescription",'')),
-           plainto_tsquery('simple', $${tsIdx})
-         ) AS rank_score`
-      : ', 0 AS rank_score';
+    // Rank: full-phrase match gets 1000 points, each individual word match adds 1.
+    // ts_rank is added as a tiebreaker within the same tier.
+    let rankSelect: string;
+    if (!tsIdx) {
+      rankSelect = ', 0 AS rank_score';
+    } else {
+      const phraseBoost = `CASE WHEN p.title ILIKE $${tsIdx - 1} OR p.brand ILIKE $${tsIdx - 1} THEN 1000 ELSE 0 END`;
+      const wordBoost = wordIdxs.length > 0
+        ? ' + ' + wordIdxs.map(wi => `CASE WHEN p.title ILIKE $${wi} OR p.brand ILIKE $${wi} OR p."shortDescription" ILIKE $${wi} THEN 1 ELSE 0 END`).join(' + ')
+        : '';
+      const tsRank = `ts_rank(to_tsvector('simple', coalesce(p.title,'') || ' ' || coalesce(p."shortDescription",'')), plainto_tsquery('simple', $${tsIdx}))`;
+      rankSelect = `, (${phraseBoost}${wordBoost}) + ${tsRank} AS rank_score`;
+    }
 
     // ── Main hits query ───────────────────────────────────────────────────────
     params.push(hitsPerPage);
@@ -321,10 +342,23 @@ export class ProductSearchService implements OnModuleInit {
       const lIdx = facetParams.length;
       facetParams.push(q);
       const tIdx = facetParams.length;
+
+      const fWords = q.split(/\s+/).filter(w => w.length >= 2);
+      let fWordClause = '';
+      if (fWords.length > 1) {
+        const fWordParts = fWords.map(w => {
+          facetParams.push(`%${w}%`);
+          const wi = facetParams.length;
+          return `(p.title ILIKE $${wi} OR p."shortDescription" ILIKE $${wi} OR p.brand ILIKE $${wi} OR p.sku ILIKE $${wi})`;
+        });
+        fWordClause = `OR ${fWordParts.join(' OR ')}`;
+      }
+
       facetConditions.push(
         `(p.title ILIKE $${lIdx} OR p."shortDescription" ILIKE $${lIdx} OR p.brand ILIKE $${lIdx} OR p.sku ILIKE $${lIdx}
           OR to_tsvector('simple', coalesce(p.title,'') || ' ' || coalesce(p."shortDescription",'') || ' ' || coalesce(p.brand,'') || ' ' || coalesce(p.sku,''))
-             @@ plainto_tsquery('simple', $${tIdx}))`,
+             @@ plainto_tsquery('simple', $${tIdx})
+          ${fWordClause})`,
       );
     }
     if (filters.category) {
@@ -394,17 +428,42 @@ export class ProductSearchService implements OnModuleInit {
     }
 
     // DB fallback for autocomplete
-    const like = `%${query.trim()}%`;
+    const q = query.trim();
+    const like = `%${q}%`;
+    const words = q.split(/\s+/).filter(w => w.length >= 2);
+
+    if (words.length <= 1) {
+      const rows: Array<{ id: string; slug: string; title: string }> =
+        await this.productRepo.manager.query(
+          `SELECT p.id, p.slug, p.title
+           FROM shop_products p
+           WHERE p.status = 'active'
+             AND p."deletedAt" IS NULL
+             AND (p.title ILIKE $1 OR p.brand ILIKE $1 OR p.sku ILIKE $1)
+           ORDER BY p.featured DESC, p."createdAt" DESC
+           LIMIT $2`,
+          [like, limit],
+        );
+      return rows;
+    }
+
+    const params: unknown[] = [like];
+    const wordParts = words.map(w => {
+      params.push(`%${w}%`);
+      const i = params.length;
+      return `(p.title ILIKE $${i} OR p.brand ILIKE $${i} OR p."shortDescription" ILIKE $${i})`;
+    });
+    params.push(limit);
     const rows: Array<{ id: string; slug: string; title: string }> =
       await this.productRepo.manager.query(
         `SELECT p.id, p.slug, p.title
          FROM shop_products p
          WHERE p.status = 'active'
            AND p."deletedAt" IS NULL
-           AND (p.title ILIKE $1 OR p.brand ILIKE $1 OR p.sku ILIKE $1)
+           AND (p.title ILIKE $1 OR p.brand ILIKE $1 OR p.sku ILIKE $1 OR ${wordParts.join(' OR ')})
          ORDER BY p.featured DESC, p."createdAt" DESC
-         LIMIT $2`,
-        [like, limit],
+         LIMIT $${params.length}`,
+        params,
       );
     return rows;
   }

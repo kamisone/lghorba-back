@@ -413,7 +413,27 @@ export class ProductService {
     if (categoryId) qb.andWhere('cat.id = :categoryId', { categoryId });
     if (tagId) qb.andWhere('tag.id = :tagId', { tagId });
     if (featured !== undefined) qb.andWhere('p.featured = :featured', { featured });
-    if (search) qb.andWhere('p.title ILIKE :q', { q: `%${search}%` });
+    if (search) {
+      const words = search.trim().split(/\s+/).filter(w => w.length >= 2);
+      if (words.length <= 1) {
+        qb.andWhere('(p.title ILIKE :q OR p.brand ILIKE :q OR p."shortDescription" ILIKE :q)', { q: `%${search.trim()}%` });
+      } else {
+        const wordConditions = words.map((_, i) => `(p.title ILIKE :sw${i} OR p.brand ILIKE :sw${i} OR p."shortDescription" ILIKE :sw${i})`);
+        const wordParams: Record<string, string> = {};
+        words.forEach((w, i) => { wordParams[`sw${i}`] = `%${w}%`; });
+        qb.andWhere(
+          `(p.title ILIKE :q OR p.brand ILIKE :q OR p."shortDescription" ILIKE :q OR ${wordConditions.join(' OR ')})`,
+          { q: `%${search.trim()}%`, ...wordParams },
+        );
+        const rankExpr = `CASE WHEN p.title ILIKE :q OR p.brand ILIKE :q THEN 1000 ELSE 0 END + ${
+          words.map((_, i) => `CASE WHEN p.title ILIKE :sw${i} OR p.brand ILIKE :sw${i} OR p."shortDescription" ILIKE :sw${i} THEN 1 ELSE 0 END`).join(' + ')
+        }`;
+        qb.addSelect(rankExpr, 'search_rank');
+        qb.orderBy('search_rank', 'DESC');
+        qb.addOrderBy('p.featured', 'DESC');
+        qb.addOrderBy('p.createdAt', 'DESC');
+      }
+    }
 
     const [raw, total] = await qb.getManyAndCount();
     const withUrls = await this.resolveProductsUrls(raw) as any[];
