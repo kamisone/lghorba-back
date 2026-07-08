@@ -50,19 +50,53 @@ export class CarsService {
   ) {}
 
   async findAllPublic(lang?: string) {
-    const today = new Date().toISOString().slice(0, 10);
-    const [cars, blockedIds, healthMap] = await Promise.all([
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const [cars, blockedIds, healthMap, futureBookings, futureBlocks] = await Promise.all([
       this.findAll(),
       this.availabilityService.getBlockedCarIds(today),
       this.vehicleHealthService.getHealthMap(),
+      this.bookingRepo
+        .createQueryBuilder('b')
+        .select(['b.carId', 'b.startDateTime', 'b.endDateTime'])
+        .where('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+        .andWhere('b.endDateTime > :now', { now })
+        .getMany(),
+      this.availabilityService.findEndingOnOrAfter(today),
     ]);
-    const publicCars = cars.map((car) => ({
+
+    const bookingsByCar = new Map<string, { start: Date; end: Date }[]>();
+    for (const b of futureBookings) {
+      const list = bookingsByCar.get(b.carId) ?? [];
+      list.push({ start: b.startDateTime, end: b.endDateTime });
+      bookingsByCar.set(b.carId, list);
+    }
+    const blocksByCar = new Map<string, { startDate: string; endDate: string }[]>();
+    for (const bl of futureBlocks) {
+      const list = blocksByCar.get(bl.carId) ?? [];
+      list.push({ startDate: bl.startDate, endDate: bl.endDate });
+      blocksByCar.set(bl.carId, list);
+    }
+
+    const publicCars = cars.map((car) => {
+      const healthBlocked = ['unsafe', 'critical'].includes(healthMap.get(car.id) ?? 'healthy');
+      const isAvailable = !car.isCurrentlyRented && !blockedIds.has(car.id) && !healthBlocked;
+      // No date when health-blocked or rented with unknown return time
+      const unknownReturn = car.isCurrentlyRented && !car.currentRentEnd;
+      const nextAvailableDate = isAvailable || healthBlocked || unknownReturn
+        ? null
+        : this.computeNextAvailableDate(
+            bookingsByCar.get(car.id) ?? [],
+            blocksByCar.get(car.id) ?? [],
+          );
+      return {
       id: car.id,
       name: car.name,
       description: car.description,
       hasPhoto: car.photo !== null,
       healthStatus: healthMap.get(car.id) ?? 'healthy',
-      isAvailable: !car.isCurrentlyRented && !blockedIds.has(car.id) && !['unsafe','critical'].includes(healthMap.get(car.id) ?? 'healthy'),
+      isAvailable,
+      nextAvailableDate,
       brand: car.brand,
       model: car.model,
       finishing: car.finishing,
@@ -79,13 +113,37 @@ export class CarsService {
       deliveryEnabled: car.deliveryEnabled,
       deliveryType: car.deliveryType,
       deliveryRadiusKm: car.deliveryRadiusKm,
-    }));
+      };
+    });
     if (!lang || lang === 'fr') return publicCars;
     return this.translationsService.applyToEntities(
       publicCars as Record<string, unknown>[],
       'car',
       lang,
     );
+  }
+
+  /**
+   * First day (starting tomorrow) whose 10:00–11:00 UTC slot is free of
+   * bookings and admin blocks — same heuristic as checkAvailability probing.
+   */
+  private computeNextAvailableDate(
+    bookings: { start: Date; end: Date }[],
+    blocks: { startDate: string; endDate: string }[],
+  ): string | null {
+    const base = new Date();
+    base.setUTCHours(10, 0, 0, 0);
+    base.setUTCDate(base.getUTCDate() + 1);
+    for (let i = 0; i < 365; i++) {
+      const slotStart = new Date(base.getTime() + i * 86_400_000);
+      const slotEnd = new Date(slotStart.getTime() + 3_600_000);
+      const date = slotStart.toISOString().slice(0, 10);
+      const conflict =
+        bookings.some((b) => b.start < slotEnd && b.end > slotStart) ||
+        blocks.some((bl) => bl.startDate <= date && bl.endDate >= date);
+      if (!conflict) return date;
+    }
+    return null;
   }
 
   async findOnePublic(id: string, lang?: string) {

@@ -51,6 +51,14 @@ export class VehicleAvailabilityService {
     return new Set(rows.map(r => r.carId));
   }
 
+  /** All blocks (any car) ending on or after the given date (YYYY-MM-DD). Single query. */
+  findEndingOnOrAfter(date: string): Promise<VehicleAvailability[]> {
+    return this.repo
+      .createQueryBuilder('va')
+      .where('va.endDate >= :date', { date })
+      .getMany();
+  }
+
   /** Check if a datetime range overlaps any availability block (for booking/search). */
   async isBlocked(carId: string, startDateTime: string, endDateTime: string): Promise<VehicleAvailability | null> {
     const startDate = startDateTime.slice(0, 10);
