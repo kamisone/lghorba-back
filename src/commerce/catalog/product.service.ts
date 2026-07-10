@@ -25,6 +25,7 @@ import { TranslationsService } from '../../translations/translations.service';
 import { ET_SHOP_PRODUCT, ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
 import { slugify } from '../../common/utils/slug.util';
 import { ProductMediaItem, ResolvedProductMediaItem } from '../entities/product-media-item';
+import { ProductStoryItem, ResolvedProductStoryItem } from '../entities/product-story-item';
 import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
@@ -65,6 +66,18 @@ export const ProductFaqSchema = z.object({
   isActive:  z.boolean().optional(),
 });
 
+export const ProductStoryItemSchema = z.object({
+  /** Omit when adding a new item — the server assigns a stable id. */
+  id:          z.string().min(1).max(100).optional(),
+  key:         z.string().min(1).max(1000),
+  location:    z.enum(['side', 'narrative']),
+  altText:     z.string().max(500).nullish(),
+  title:       z.string().max(300).optional(),
+  description: z.string().max(5000).optional(),
+  sortOrder:   z.number().int().optional(),
+  isActive:    z.boolean().optional(),
+});
+
 export const CreateProductSchema = z.object({
   title:              z.string().min(1).max(500),
   slug:               z.string().min(1).max(300).optional(),
@@ -76,6 +89,8 @@ export const CreateProductSchema = z.object({
   infoSections:       z.array(ProductInfoSectionSchema).optional(),
   trustBadges:        z.array(ProductTrustBadgeSchema).optional(),
   faqs:               z.array(ProductFaqSchema).optional(),
+  storyGallery:       z.array(ProductStoryItemSchema).optional(),
+  storyNarrativeTitle: z.string().max(300).nullish(),
   documents:          z.array(z.object({
     id:               z.string().min(1).max(100),
     title:            z.string().min(1).max(300),
@@ -220,6 +235,24 @@ function normalizeFaqs(faqs: z.infer<typeof ProductFaqSchema>[]): ProductFaq[] {
   }));
 }
 
+/**
+ * Assigns stable ids to new story items and re-derives sortOrder from array
+ * position within each location (side and narrative are ordered independently).
+ */
+function normalizeStoryGallery(items: z.infer<typeof ProductStoryItemSchema>[]): ProductStoryItem[] {
+  const counters: Record<string, number> = { side: 0, narrative: 0 };
+  return items.map(s => ({
+    id:          s.id ?? randomUUID(),
+    key:         s.key,
+    location:    s.location,
+    altText:     s.altText?.trim() ? s.altText : null,
+    title:       s.title ?? '',
+    description: s.description ?? '',
+    sortOrder:   counters[s.location]++,
+    isActive:    s.isActive ?? true,
+  }));
+}
+
 function normalizeDocuments(docs: Array<{ id: string; title: string; storageKey: string; originalFilename: string; sizeBytes: number; sortOrder?: number }>): import('../entities/product-document').ProductDocument[] {
   return docs.map((d, i) => ({
     id:               d.id,
@@ -282,6 +315,7 @@ export class ProductService {
       keys.push({ key: m.key, field: 'media' });
       if (m.posterKey) keys.push({ key: m.posterKey, field: 'media' });
     }
+    for (const s of product.storyGallery ?? []) keys.push({ key: s.key, field: 'storyGallery' });
     this.mediaService
       .syncEntityUsages('product', product.id, keys)
       .catch(err => this.logger.warn(`Media usage sync failed for product ${product.id}: ${(err as Error).message}`));
@@ -303,9 +337,11 @@ export class ProductService {
     featuredImageUrl:  string | null;
     galleryImageUrls:  string[];
     media:             ResolvedProductMediaItem[];
+    storyGallery:      ResolvedProductStoryItem[];
   }> {
     const variants = (product as any).variants as Array<{ mediaKeys?: string[]; mediaUrls?: string[] }> | undefined;
     const media = product.media ?? [];
+    const story = product.storyGallery ?? [];
 
     const allKeys = new Set<string>();
     if (product.featuredImageKey)        allKeys.add(product.featuredImageKey);
@@ -314,6 +350,7 @@ export class ProductService {
       allKeys.add(m.key);
       if (m.posterKey) allKeys.add(m.posterKey);
     }
+    for (const s of story) allKeys.add(s.key);
     if (variants) {
       for (const v of variants) for (const k of v.mediaKeys ?? []) allKeys.add(k);
     }
@@ -345,6 +382,7 @@ export class ProductService {
       featuredImageUrl: product.featuredImageKey ? (urlMap.get(product.featuredImageKey) ?? null) : null,
       galleryImageUrls: (product.galleryImageKeys ?? []).map(k => urlMap.get(k)).filter(Boolean) as string[],
       media: resolvedMedia,
+      storyGallery: story.map(s => ({ ...s, url: urlMap.get(s.key) ?? '' })),
     });
   }
 
@@ -526,6 +564,7 @@ export class ProductService {
     withTranslations.trustBadges  = await this.resolveTrustBadges(product.id, product.trustBadges, lang);
     withTranslations.faqs         = await this.resolveFaqs(product.id, product.faqs, lang);
     withTranslations.documents    = await this.resolveDocuments(product.id, product.documents ?? [], lang);
+    withTranslations.storyGallery = await this.resolveStoryGallery(product.id, resolved.storyGallery ?? [], lang);
     return withTranslations;
   }
 
@@ -606,6 +645,22 @@ export class ProductService {
     );
   }
 
+  /**
+   * Sorts Story Gallery items by sortOrder, overlays FR/EN translations for
+   * the requested lang (stored as `storyItem:{id}:title|description` rows
+   * against the product's translation entity), and drops inactive items or
+   * items whose image URL could not be resolved. Items keep their `location`
+   * so the storefront can split side vs narrative.
+   */
+  private resolveStoryGallery(
+    productId: string, items: ResolvedProductStoryItem[], lang?: string,
+  ): Promise<ResolvedProductStoryItem[]> {
+    return this.resolveTranslatableList(
+      productId, items, lang, 'storyItem', ['title', 'description'],
+      s => s.isActive && !!s.url,
+    );
+  }
+
   private async resolveDocuments(
     productId: string, docs: import('../entities/product-document').ProductDocument[], lang?: string,
   ): Promise<Array<import('../entities/product-document').ProductDocument & { url: string }>> {
@@ -648,6 +703,8 @@ export class ProductService {
         infoSections:      dto.infoSections ? normalizeInfoSections(dto.infoSections) : [],
         trustBadges:       dto.trustBadges  ? normalizeTrustBadges(dto.trustBadges)  : [],
         faqs:              dto.faqs         ? normalizeFaqs(dto.faqs)                : [],
+        storyGallery:      dto.storyGallery ? normalizeStoryGallery(dto.storyGallery) : [],
+        storyNarrativeTitle: dto.storyNarrativeTitle?.trim() ? dto.storyNarrativeTitle : null,
         documents:         dto.documents    ? normalizeDocuments(dto.documents)      : [],
         featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
         galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? []),
@@ -714,6 +771,8 @@ export class ProductService {
       infoSections:      dto.infoSections       !== undefined ? normalizeInfoSections(dto.infoSections) : product.infoSections,
       trustBadges:       dto.trustBadges        !== undefined ? normalizeTrustBadges(dto.trustBadges)  : product.trustBadges,
       faqs:              dto.faqs               !== undefined ? normalizeFaqs(dto.faqs)               : product.faqs,
+      storyGallery:      dto.storyGallery       !== undefined ? normalizeStoryGallery(dto.storyGallery) : product.storyGallery,
+      storyNarrativeTitle: dto.storyNarrativeTitle !== undefined ? (dto.storyNarrativeTitle?.trim() ? dto.storyNarrativeTitle : null) : product.storyNarrativeTitle,
       documents:         dto.documents          !== undefined ? normalizeDocuments(dto.documents)     : product.documents,
       featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
       galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? product.galleryImageKeys),

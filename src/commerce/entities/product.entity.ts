@@ -11,6 +11,7 @@ import { ProductInfoSection } from './product-info-section';
 import { ProductTrustBadge } from './product-trust-badge';
 import { ProductFaq } from './product-faq';
 import { ProductDocument } from './product-document';
+import { ProductStoryItem } from './product-story-item';
 
 export type ProductStatus = 'draft' | 'active' | 'archived' | 'out_of_stock' | 'hidden';
 
@@ -45,6 +46,16 @@ export class Product {
 
   /** Ordered FAQ entries shown near the bottom of the PDP and used for FAQPage JSON-LD. */
   @Column({ type: 'jsonb', default: () => "'[]'" }) faqs: ProductFaq[];
+
+  /** Ordered Story Gallery images (side + narrative locations) shown on the PDP. */
+  @Column({ type: 'jsonb', default: () => "'[]'" }) storyGallery: ProductStoryItem[];
+
+  /**
+   * Optional heading shown above the Narrative Gallery (Location 2).
+   * FR default text; EN translation stored as a top-level `storyNarrativeTitle`
+   * row in the translations table. Hidden on the PDP when empty.
+   */
+  @Column({ type: 'varchar', length: 300, nullable: true }) storyNarrativeTitle: string | null;
 
   /** Downloadable PDF documents (notice, fiche technique, etc.) */
   @Column({ type: 'jsonb', default: () => "'[]'" }) documents: ProductDocument[];
