@@ -565,6 +565,21 @@ export class ProductService {
     withTranslations.faqs         = await this.resolveFaqs(product.id, product.faqs, lang);
     withTranslations.documents    = await this.resolveDocuments(product.id, product.documents ?? [], lang);
     withTranslations.storyGallery = await this.resolveStoryGallery(product.id, resolved.storyGallery ?? [], lang);
+
+    // Same computation as the listing's outOfStock flag: true only when
+    // inventory items exist AND every variant is at 0 or below.
+    const stockRows: Array<{ allOutOfStock: boolean }> = await this.dataSource.query(
+      `SELECT CASE
+                WHEN COUNT(ii.id) = 0 THEN false
+                ELSE BOOL_AND(COALESCE(ii.available, 0) <= 0)
+              END AS "allOutOfStock"
+       FROM shop_product_variants pv
+       LEFT JOIN shop_inventory_items ii ON ii."variantId" = pv.id
+       WHERE pv."productId" = $1`,
+      [product.id],
+    );
+    withTranslations.outOfStock = !!stockRows[0]?.allOutOfStock;
+
     return withTranslations;
   }
 
