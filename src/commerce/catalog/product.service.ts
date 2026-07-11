@@ -628,6 +628,7 @@ export class ProductService {
     withTranslations.faqs         = await this.resolveFaqs(product.id, product.faqs, lang);
     withTranslations.documents    = await this.resolveDocuments(product.id, product.documents ?? [], lang);
     withTranslations.storyGallery = await this.resolveStoryGallery(product.id, resolved.storyGallery ?? [], lang);
+    withTranslations.socialVideos = await this.resolveSocialVideos(product.id, resolved.socialVideos ?? [], lang);
 
     // Same computation as the listing's outOfStock flag: true only when
     // inventory items exist AND every variant is at 0 or below.
@@ -736,6 +737,19 @@ export class ProductService {
     return this.resolveTranslatableList(
       productId, items, lang, 'storyItem', ['title', 'description'],
       s => s.isActive && !!s.url,
+    );
+  }
+
+  /**
+   * Sorts social videos by sortOrder and overlays the per-video badge title
+   * translation (`socialVideo:{id}:title` rows) for the requested lang.
+   */
+  private resolveSocialVideos(
+    productId: string, items: ResolvedProductSocialVideo[], lang?: string,
+  ): Promise<ResolvedProductSocialVideo[]> {
+    return this.resolveTranslatableList(
+      productId, items, lang, 'socialVideo', ['title'],
+      v => !!v.url,
     );
   }
 
