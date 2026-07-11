@@ -12,6 +12,7 @@ import { ProductTrustBadge } from './product-trust-badge';
 import { ProductFaq } from './product-faq';
 import { ProductDocument } from './product-document';
 import { ProductStoryItem } from './product-story-item';
+import { ProductSocialVideo } from './product-social-video';
 
 export type ProductStatus = 'draft' | 'active' | 'archived' | 'out_of_stock' | 'hidden';
 
@@ -49,6 +50,16 @@ export class Product {
 
   /** Ordered Story Gallery images (side + narrative locations) shown on the PDP. */
   @Column({ type: 'jsonb', default: () => "'[]'" }) storyGallery: ProductStoryItem[];
+
+  /** Ordered social/reels videos shown in a vertical carousel on the PDP. */
+  @Column({ type: 'jsonb', default: () => "'[]'" }) socialVideos: ProductSocialVideo[];
+
+  /**
+   * Optional heading shown above the Social Videos carousel. FR default text;
+   * EN translation stored as a top-level `socialVideosTitle` row in the
+   * translations table. The storefront falls back to a localized default when empty.
+   */
+  @Column({ type: 'varchar', length: 300, nullable: true }) socialVideosTitle: string | null;
 
   /**
    * Optional heading shown above the Narrative Gallery (Location 2).

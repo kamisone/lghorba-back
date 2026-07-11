@@ -26,6 +26,7 @@ import { ET_SHOP_PRODUCT, ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from 
 import { slugify } from '../../common/utils/slug.util';
 import { ProductMediaItem, ResolvedProductMediaItem } from '../entities/product-media-item';
 import { ProductStoryItem, ResolvedProductStoryItem } from '../entities/product-story-item';
+import { ProductSocialVideo, ResolvedProductSocialVideo } from '../entities/product-social-video';
 import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
@@ -78,6 +79,15 @@ export const ProductStoryItemSchema = z.object({
   isActive:    z.boolean().optional(),
 });
 
+export const ProductSocialVideoSchema = z.object({
+  /** Omit when adding a new video — the server assigns a stable id. */
+  id:        z.string().min(1).max(100).optional(),
+  key:       z.string().min(1).max(1000),
+  title:     z.string().max(300).nullish(),
+  sortOrder: z.number().int().optional(),
+  isActive:  z.boolean().optional(),
+});
+
 export const CreateProductSchema = z.object({
   title:              z.string().min(1).max(500),
   slug:               z.string().min(1).max(300).optional(),
@@ -90,6 +100,8 @@ export const CreateProductSchema = z.object({
   trustBadges:        z.array(ProductTrustBadgeSchema).optional(),
   faqs:               z.array(ProductFaqSchema).optional(),
   storyGallery:       z.array(ProductStoryItemSchema).optional(),
+  socialVideos:       z.array(ProductSocialVideoSchema).optional(),
+  socialVideosTitle:  z.string().max(300).nullish(),
   storyNarrativeTitle: z.string().max(300).nullish(),
   documents:          z.array(z.object({
     id:               z.string().min(1).max(100),
@@ -253,6 +265,17 @@ function normalizeStoryGallery(items: z.infer<typeof ProductStoryItemSchema>[]):
   }));
 }
 
+/** Assigns stable ids to new social videos and re-derives sortOrder from array position. */
+function normalizeSocialVideos(items: z.infer<typeof ProductSocialVideoSchema>[]): ProductSocialVideo[] {
+  return items.map((v, i) => ({
+    id:        v.id ?? randomUUID(),
+    key:       v.key,
+    title:     v.title?.trim() ? v.title : null,
+    sortOrder: i,
+    isActive:  v.isActive ?? true,
+  }));
+}
+
 function normalizeDocuments(docs: Array<{ id: string; title: string; storageKey: string; originalFilename: string; sizeBytes: number; sortOrder?: number }>): import('../entities/product-document').ProductDocument[] {
   return docs.map((d, i) => ({
     id:               d.id,
@@ -316,6 +339,7 @@ export class ProductService {
       if (m.posterKey) keys.push({ key: m.posterKey, field: 'media' });
     }
     for (const s of product.storyGallery ?? []) keys.push({ key: s.key, field: 'storyGallery' });
+    for (const v of product.socialVideos ?? []) keys.push({ key: v.key, field: 'socialVideos' });
     this.mediaService
       .syncEntityUsages('product', product.id, keys)
       .catch(err => this.logger.warn(`Media usage sync failed for product ${product.id}: ${(err as Error).message}`));
@@ -338,15 +362,28 @@ export class ProductService {
     galleryImageUrls:  string[];
     media:             ResolvedProductMediaItem[];
     storyGallery:      ResolvedProductStoryItem[];
+    socialVideos:      ResolvedProductSocialVideo[];
   }> {
     const variants = (product as any).variants as Array<{ mediaKeys?: string[]; mediaUrls?: string[] }> | undefined;
     const media = product.media ?? [];
     const story = product.storyGallery ?? [];
+    const social = (product.socialVideos ?? []).filter(v => v.isActive !== false);
 
     // Video assets first — their transcode output keys (HLS/MP4/poster) join the URL batch
-    const videoKeys = media.filter(m => m.type === 'video').map(m => m.key);
+    const videoKeys = [
+      ...media.filter(m => m.type === 'video').map(m => m.key),
+      ...social.map(v => v.key),
+    ];
     const assetMap = new Map((await (this.mediaService?.findByStorageKeys(videoKeys) ?? Promise.resolve([])))
       .map(a => [a.storageKey, a]));
+
+    const addTranscodeKeys = (keys: Set<string>, sourceKey: string) => {
+      const asset = assetMap.get(sourceKey);
+      if (asset?.transcodeStatus !== 'ready') return;
+      if (asset.hlsKey)        keys.add(asset.hlsKey);
+      if (asset.mp4Key)        keys.add(asset.mp4Key);
+      if (asset.autoPosterKey) keys.add(asset.autoPosterKey);
+    };
 
     const allKeys = new Set<string>();
     if (product.featuredImageKey)        allKeys.add(product.featuredImageKey);
@@ -354,14 +391,13 @@ export class ProductService {
     for (const m of media) {
       allKeys.add(m.key);
       if (m.posterKey) allKeys.add(m.posterKey);
-      const asset = assetMap.get(m.key);
-      if (asset?.transcodeStatus === 'ready') {
-        if (asset.hlsKey)        allKeys.add(asset.hlsKey);
-        if (asset.mp4Key)        allKeys.add(asset.mp4Key);
-        if (asset.autoPosterKey) allKeys.add(asset.autoPosterKey);
-      }
+      addTranscodeKeys(allKeys, m.key);
     }
     for (const s of story) allKeys.add(s.key);
+    for (const v of social) {
+      allKeys.add(v.key);
+      addTranscodeKeys(allKeys, v.key);
+    }
     if (variants) {
       for (const v of variants) for (const k of v.mediaKeys ?? []) allKeys.add(k);
     }
@@ -391,11 +427,25 @@ export class ProductService {
       };
     });
 
+    const resolvedSocial: ResolvedProductSocialVideo[] = social.map(v => {
+      const asset = assetMap.get(v.key);
+      const ready = asset?.transcodeStatus === 'ready';
+      const mp4Url = ready && asset?.mp4Key ? urlMap.get(asset.mp4Key) : undefined;
+      return {
+        ...v,
+        url:             mp4Url ?? urlMap.get(v.key) ?? '',
+        hlsUrl:          ready && asset?.hlsKey ? (urlMap.get(asset.hlsKey) ?? null) : null,
+        posterUrl:       ready && asset?.autoPosterKey ? (urlMap.get(asset.autoPosterKey) ?? null) : null,
+        durationSeconds: asset?.durationSeconds ?? null,
+      };
+    }).filter(v => v.url);
+
     return Object.assign(product, {
       featuredImageUrl: product.featuredImageKey ? (urlMap.get(product.featuredImageKey) ?? null) : null,
       galleryImageUrls: (product.galleryImageKeys ?? []).map(k => urlMap.get(k)).filter(Boolean) as string[],
       media: resolvedMedia,
       storyGallery: story.map(s => ({ ...s, url: urlMap.get(s.key) ?? '' })),
+      socialVideos: resolvedSocial,
     });
   }
 
@@ -732,6 +782,8 @@ export class ProductService {
         trustBadges:       dto.trustBadges  ? normalizeTrustBadges(dto.trustBadges)  : [],
         faqs:              dto.faqs         ? normalizeFaqs(dto.faqs)                : [],
         storyGallery:      dto.storyGallery ? normalizeStoryGallery(dto.storyGallery) : [],
+        socialVideos:      dto.socialVideos ? normalizeSocialVideos(dto.socialVideos) : [],
+        socialVideosTitle: dto.socialVideosTitle?.trim() ? dto.socialVideosTitle : null,
         storyNarrativeTitle: dto.storyNarrativeTitle?.trim() ? dto.storyNarrativeTitle : null,
         documents:         dto.documents    ? normalizeDocuments(dto.documents)      : [],
         featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
@@ -800,6 +852,8 @@ export class ProductService {
       trustBadges:       dto.trustBadges        !== undefined ? normalizeTrustBadges(dto.trustBadges)  : product.trustBadges,
       faqs:              dto.faqs               !== undefined ? normalizeFaqs(dto.faqs)               : product.faqs,
       storyGallery:      dto.storyGallery       !== undefined ? normalizeStoryGallery(dto.storyGallery) : product.storyGallery,
+      socialVideos:      dto.socialVideos       !== undefined ? normalizeSocialVideos(dto.socialVideos) : product.socialVideos,
+      socialVideosTitle: dto.socialVideosTitle  !== undefined ? (dto.socialVideosTitle?.trim() ? dto.socialVideosTitle : null) : product.socialVideosTitle,
       storyNarrativeTitle: dto.storyNarrativeTitle !== undefined ? (dto.storyNarrativeTitle?.trim() ? dto.storyNarrativeTitle : null) : product.storyNarrativeTitle,
       documents:         dto.documents          !== undefined ? normalizeDocuments(dto.documents)     : product.documents,
       featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
