@@ -24,11 +24,13 @@ export class QuickRepliesController {
     @Query('search')   search?: string,
     @Query('category') category?: string,
     @Query('active')   active?: string,
+    @Query('carId', new ParseUUIDPipe({ optional: true })) carId?: string,
   ) {
     return this.service.findAll({
       search:   search?.trim() || undefined,
       category: category?.trim() || undefined,
       active:   active === 'true' ? true : active === 'false' ? false : undefined,
+      carId,
     });
   }
 

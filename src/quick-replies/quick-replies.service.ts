@@ -8,6 +8,8 @@ export interface ListQuickRepliesOptions {
   search?:   string;
   category?: string;
   active?:   boolean;
+  // When set, returns global replies plus the ones linked to this car.
+  carId?:    string;
 }
 
 @Injectable()
@@ -18,8 +20,14 @@ export class QuickRepliesService {
   ) {}
 
   findAll(opts: ListQuickRepliesOptions = {}): Promise<QuickReply[]> {
-    const qb = this.repo.createQueryBuilder('qr');
+    // Only id/name of the linked car are selected — enough to label car-specific replies.
+    const qb = this.repo.createQueryBuilder('qr')
+      .leftJoin('qr.car', 'car')
+      .addSelect(['car.id', 'car.name']);
 
+    if (opts.carId) {
+      qb.andWhere('(qr.carId IS NULL OR qr.carId = :carId)', { carId: opts.carId });
+    }
     if (opts.active !== undefined) {
       qb.andWhere('qr.isActive = :active', { active: opts.active });
     }
@@ -61,6 +69,7 @@ export class QuickRepliesService {
       body:     dto.body,
       category: dto.category ?? 'general',
       isActive: dto.isActive ?? true,
+      carId:    dto.carId ?? null,
     });
     return this.repo.save(reply);
   }
@@ -71,6 +80,7 @@ export class QuickRepliesService {
     if (dto.body     !== undefined) reply.body     = dto.body;
     if (dto.category !== undefined) reply.category = dto.category;
     if (dto.isActive !== undefined) reply.isActive = dto.isActive;
+    if (dto.carId    !== undefined) reply.carId    = dto.carId;
     return this.repo.save(reply);
   }
 

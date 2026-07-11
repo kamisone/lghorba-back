@@ -1,13 +1,24 @@
 import {
-  Column, CreateDateColumn, Entity, Index, PrimaryGeneratedColumn, UpdateDateColumn,
+  Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne,
+  PrimaryGeneratedColumn, UpdateDateColumn,
 } from 'typeorm';
+import { Car } from '../cars/car.entity';
 
 @Entity('quick_replies')
 @Index('IDX_quick_replies_category', ['category'])
 @Index('IDX_quick_replies_active', ['isActive'])
+@Index('IDX_quick_replies_car', ['carId'])
 export class QuickReply {
   @PrimaryGeneratedColumn('uuid')
   id: string;
+
+  // Null = global reply (shown for every car); set = only shown on that car's Messages tab.
+  @ManyToOne(() => Car, { nullable: true, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'carId' })
+  car: Car | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  carId: string | null;
 
   @Column({ type: 'varchar', length: 150 })
   title: string;

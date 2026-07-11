@@ -16,6 +16,8 @@ export const CreateQuickReplySchema = z.object({
   body:     text('Body', 2, 4000),
   category: categorySlug.optional().default('general'),
   isActive: z.boolean().optional().default(true),
+  // Null/omitted = global reply; a car id restricts it to that car's Messages tab.
+  carId:    z.string().uuid('carId must be a valid UUID').nullable().optional(),
 });
 export type CreateQuickReplyDto = z.infer<typeof CreateQuickReplySchema>;
 
@@ -24,5 +26,6 @@ export const UpdateQuickReplySchema = z.object({
   body:     text('Body', 2, 4000).optional(),
   category: categorySlug.optional(),
   isActive: z.boolean().optional(),
+  carId:    z.string().uuid('carId must be a valid UUID').nullable().optional(),
 });
 export type UpdateQuickReplyDto = z.infer<typeof UpdateQuickReplySchema>;
