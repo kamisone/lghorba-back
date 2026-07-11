@@ -1,5 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
 import * as crypto from 'crypto';
 import { GcsService } from '../gcs/gcs.service';
@@ -7,6 +9,7 @@ import { AssetUrlService } from '../asset-url/asset-url.service';
 import { MediaAsset } from './media-asset.entity';
 import { MediaFolder } from './media-folder.entity';
 import { MediaUsage, MediaEntityType } from './media-usage.entity';
+import { TRANSCODE_JOB, TranscodeJobData, VIDEO_TRANSCODE_QUEUE } from './video-transcode.constants';
 
 export interface MediaListOptions {
   search?:    string;
@@ -52,7 +55,22 @@ export class MediaService {
     @InjectRepository(MediaUsage)  private readonly usageRepo:  Repository<MediaUsage>,
     private readonly gcs:  GcsService,
     private readonly urls: AssetUrlService,
+    @InjectQueue(VIDEO_TRANSCODE_QUEUE) private readonly transcodeQueue: Queue<TranscodeJobData>,
   ) {}
+
+  /** Queues HLS/MP4 transcoding for a video asset. Never throws — upload must not fail on queue issues. */
+  private async enqueueTranscode(assetId: string): Promise<void> {
+    try {
+      await this.transcodeQueue.add(TRANSCODE_JOB, { assetId }, {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 30_000 },
+        removeOnComplete: true,
+        removeOnFail: false,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to enqueue transcode for asset ${assetId}: ${err}`);
+    }
+  }
 
   // ── Upload ────────────────────────────────────────────────────────────────
 
@@ -79,6 +97,12 @@ export class MediaService {
       if (folderId !== undefined && existing.folderId !== folderId) {
         await this.assetRepo.update(existing.id, { folderId: folderId ?? null });
         existing.folderId = folderId ?? null;
+      }
+      // Opportunistic backfill: legacy videos uploaded before the transcode pipeline
+      if (getMediaKind(existing.mimeType) === 'video' && existing.transcodeStatus == null) {
+        await this.assetRepo.update(existing.id, { transcodeStatus: 'pending' });
+        existing.transcodeStatus = 'pending';
+        await this.enqueueTranscode(existing.id);
       }
       const url = await this.urls.resolve(existing.storageKey);
       return { ...existing, url, mediaType: getMediaKind(existing.mimeType) };
@@ -109,8 +133,11 @@ export class MediaService {
       uploadedBy:       uploadedBy ?? null,
       folderId:         resolvedFolderId,
       tags:             [],
+      transcodeStatus:  kind === 'video' ? 'pending' : null,
     });
     await this.assetRepo.save(asset);
+
+    if (kind === 'video') await this.enqueueTranscode(asset.id);
 
     const url = await this.urls.resolve(storageKey);
     return { ...asset, url, mediaType: kind };

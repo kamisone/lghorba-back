@@ -22,6 +22,21 @@ export class MediaAsset {
   /** Video duration in seconds — extracted on upload for video/* assets */
   @Column({ type: 'int', nullable: true })              durationSeconds: number | null;
 
+  // ── Video transcode outputs (video/* assets only; null = not transcoded) ──
+
+  /** GCS key of the HLS master playlist (.m3u8) */
+  @Column({ type: 'varchar', length: 1000, nullable: true }) hlsKey: string | null;
+
+  /** GCS key of the optimized MP4 fallback rendition */
+  @Column({ type: 'varchar', length: 1000, nullable: true }) mp4Key: string | null;
+
+  /** GCS key of the auto-extracted poster frame (JPEG) */
+  @Column({ type: 'varchar', length: 1000, nullable: true }) autoPosterKey: string | null;
+
+  /** null = legacy asset / not a video — never enqueued for transcoding */
+  @Column({ type: 'varchar', length: 20, nullable: true })
+  transcodeStatus: 'pending' | 'processing' | 'ready' | 'failed' | null;
+
   @Column({ type: 'varchar', length: 500, nullable: true }) altText: string | null;
   @Column({ type: 'varchar', length: 500, nullable: true }) title: string | null;
 

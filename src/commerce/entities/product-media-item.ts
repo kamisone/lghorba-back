@@ -14,6 +14,8 @@ export interface ProductMediaItem {
 export interface ResolvedProductMediaItem extends ProductMediaItem {
   url:             string;
   posterUrl:       string | null;
+  /** HLS master playlist URL — present when the video has a ready transcode */
+  hlsUrl?:         string | null;
   durationSeconds?: number | null;
   mimeType?:       string | null;
 }

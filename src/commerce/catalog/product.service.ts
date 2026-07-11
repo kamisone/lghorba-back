@@ -343,12 +343,23 @@ export class ProductService {
     const media = product.media ?? [];
     const story = product.storyGallery ?? [];
 
+    // Video assets first — their transcode output keys (HLS/MP4/poster) join the URL batch
+    const videoKeys = media.filter(m => m.type === 'video').map(m => m.key);
+    const assetMap = new Map((await (this.mediaService?.findByStorageKeys(videoKeys) ?? Promise.resolve([])))
+      .map(a => [a.storageKey, a]));
+
     const allKeys = new Set<string>();
     if (product.featuredImageKey)        allKeys.add(product.featuredImageKey);
     for (const k of product.galleryImageKeys ?? []) allKeys.add(k);
     for (const m of media) {
       allKeys.add(m.key);
       if (m.posterKey) allKeys.add(m.posterKey);
+      const asset = assetMap.get(m.key);
+      if (asset?.transcodeStatus === 'ready') {
+        if (asset.hlsKey)        allKeys.add(asset.hlsKey);
+        if (asset.mp4Key)        allKeys.add(asset.mp4Key);
+        if (asset.autoPosterKey) allKeys.add(asset.autoPosterKey);
+      }
     }
     for (const s of story) allKeys.add(s.key);
     if (variants) {
@@ -363,16 +374,18 @@ export class ProductService {
       }
     }
 
-    const videoKeys = media.filter(m => m.type === 'video').map(m => m.key);
-    const assetMap = new Map((await (this.mediaService?.findByStorageKeys(videoKeys) ?? Promise.resolve([])))
-      .map(a => [a.storageKey, a]));
-
     const resolvedMedia: ResolvedProductMediaItem[] = media.map(m => {
       const asset = assetMap.get(m.key);
+      const ready = asset?.transcodeStatus === 'ready';
+      // Prefer the optimized MP4 rendition over the raw upload once transcoded
+      const mp4Url = ready && asset?.mp4Key ? urlMap.get(asset.mp4Key) : undefined;
       return {
         ...m,
-        url:             urlMap.get(m.key) ?? '',
-        posterUrl:       m.posterKey ? (urlMap.get(m.posterKey) ?? null) : null,
+        url:             mp4Url ?? urlMap.get(m.key) ?? '',
+        hlsUrl:          ready && asset?.hlsKey ? (urlMap.get(asset.hlsKey) ?? null) : null,
+        posterUrl:       m.posterKey
+          ? (urlMap.get(m.posterKey) ?? null)
+          : (ready && asset?.autoPosterKey ? (urlMap.get(asset.autoPosterKey) ?? null) : null),
         durationSeconds: asset?.durationSeconds ?? null,
         mimeType:        asset?.mimeType ?? null,
       };

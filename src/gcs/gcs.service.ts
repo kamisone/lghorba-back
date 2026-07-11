@@ -37,6 +37,25 @@ export class GcsService {
     }
   }
 
+  /** Streams a large object to a local file — avoids buffering videos in RAM. */
+  async downloadToFile(objectName: string, destination: string): Promise<void> {
+    await this.storage.bucket(this.bucketName).file(objectName).download({ destination });
+  }
+
+  /** Streams a local file to GCS — used for transcode outputs (segments, renditions). */
+  async uploadFromFile(
+    localPath: string,
+    objectName: string,
+    contentType: string,
+    predefinedAcl?: 'publicRead' | 'private',
+  ): Promise<void> {
+    await this.storage.bucket(this.bucketName).upload(localPath, {
+      destination: objectName,
+      contentType,
+      ...(predefinedAcl ? { predefinedAcl } : {}),
+    });
+  }
+
   async delete(objectName: string): Promise<void> {
     await this.storage.bucket(this.bucketName).file(objectName).delete({ ignoreNotFound: true });
   }
