@@ -449,12 +449,28 @@ export class ProductService {
     });
   }
 
-  // List resolution: only featured image needed for product cards.
-  private async resolveProductsUrls<T extends Product>(products: T[]): Promise<(T & { featuredImageUrl: string | null })[]> {
+  // List resolution: featured image + up to MAX_CARD_IMAGES gallery images for
+  // the listing cards' hover/arrow image switcher.
+  private async resolveProductsUrls<T extends Product>(products: T[]): Promise<(T & { featuredImageUrl: string | null; cardImageUrls: string[] })[]> {
     if (!products.length) return [];
-    const keys = products.map(p => p.featuredImageKey).filter(Boolean) as string[];
-    const urlMap = await this.assetUrlService.resolveBatch(keys);
-    return products.map(p => Object.assign(p, { featuredImageUrl: p.featuredImageKey ? (urlMap.get(p.featuredImageKey) ?? null) : null }));
+    const MAX_CARD_IMAGES = 5;
+
+    const cardKeys = products.map(p => {
+      const keys: string[] = [];
+      if (p.featuredImageKey) keys.push(p.featuredImageKey);
+      for (const m of p.media ?? []) {
+        if (keys.length >= MAX_CARD_IMAGES) break;
+        if (m.type !== 'image' || keys.includes(m.key)) continue;
+        keys.push(m.key);
+      }
+      return keys;
+    });
+
+    const urlMap = await this.assetUrlService.resolveBatch([...new Set(cardKeys.flat())]);
+    return products.map((p, i) => Object.assign(p, {
+      featuredImageUrl: p.featuredImageKey ? (urlMap.get(p.featuredImageKey) ?? null) : null,
+      cardImageUrls:    cardKeys[i].map(k => urlMap.get(k)).filter(Boolean) as string[],
+    }));
   }
 
   // ── Admin list ──────────────────────────────────────────────────────────────
