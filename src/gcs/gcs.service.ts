@@ -25,11 +25,13 @@ export class GcsService {
     objectName: string,
     contentType: string,
     predefinedAcl?: 'publicRead' | 'private',
+    cacheControl?: string,
   ): Promise<void> {
     try {
       await this.storage.bucket(this.bucketName).file(objectName).save(buffer, {
         contentType,
         ...(predefinedAcl ? { predefinedAcl } : {}),
+        ...(cacheControl ? { metadata: { cacheControl } } : {}),
       });
     } catch (err: unknown) {
       this.logger.error(`GCS upload failed [${objectName}]: ${JSON.stringify(err)}`);
@@ -48,11 +50,13 @@ export class GcsService {
     objectName: string,
     contentType: string,
     predefinedAcl?: 'publicRead' | 'private',
+    cacheControl?: string,
   ): Promise<void> {
     await this.storage.bucket(this.bucketName).upload(localPath, {
       destination: objectName,
       contentType,
       ...(predefinedAcl ? { predefinedAcl } : {}),
+      ...(cacheControl ? { metadata: { cacheControl } } : {}),
     });
   }
 

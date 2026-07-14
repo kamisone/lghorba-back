@@ -27,6 +27,9 @@ const HLS_RUNGS = [
 
 const SEGMENT_SECONDS = 4;
 
+/** Segments are content-addressed by asset id and never mutate once transcoded. */
+const HLS_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+
 const CONTENT_TYPES: Record<string, string> = {
   '.m3u8': 'application/vnd.apple.mpegurl',
   '.m4s':  'video/iso.segment',
@@ -95,7 +98,13 @@ export class VideoTranscodeProcessor extends DlqAwareWorker {
       const files = await fs.readdir(outDir);
       for (const file of files) {
         const contentType = CONTENT_TYPES[path.extname(file)] ?? 'application/octet-stream';
-        await this.gcs.uploadFromFile(path.join(outDir, file), `${keyPrefix}/${file}`, contentType, 'publicRead');
+        await this.gcs.uploadFromFile(
+          path.join(outDir, file),
+          `${keyPrefix}/${file}`,
+          contentType,
+          'publicRead',
+          HLS_CACHE_CONTROL,
+        );
       }
 
       await this.assetRepo.update(asset.id, {
