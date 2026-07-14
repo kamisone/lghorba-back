@@ -280,7 +280,6 @@ config();
     ThrottlerModule.forRoot([
       { name: 'auth', ttl: 15 * 60 * 1000, limit: 10 },
       { name: 'contact', ttl: 15 * 60 * 1000, limit: 5 },
-      { name: 'reviews', ttl: 15 * 60 * 1000, limit: 12 },
     ]),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),

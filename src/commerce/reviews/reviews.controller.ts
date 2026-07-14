@@ -10,12 +10,10 @@ import {
   Query,
   Req,
   UploadedFiles,
-  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../auth/public.decorator';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
@@ -91,8 +89,6 @@ export class ReviewsPublicController {
 
   @Post('verify-order')
   @HttpCode(200)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ reviews: { ttl: 15 * 60 * 1000, limit: 12 } })
   verifyOrder(
     @Body(new ZodValidationPipe(VerifyOrderSchema)) dto: VerifyOrderDto,
   ) {
@@ -101,8 +97,6 @@ export class ReviewsPublicController {
 
   @Post()
   @HttpCode(201)
-  @UseGuards(ThrottlerGuard)
-  @Throttle({ reviews: { ttl: 15 * 60 * 1000, limit: 12 } })
   @UseInterceptors(
     FilesInterceptor('media', 5, {
       limits: { fileSize: MAX_VIDEO_BYTES, files: 5 },
