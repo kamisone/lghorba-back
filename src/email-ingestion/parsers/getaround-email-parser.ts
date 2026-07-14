@@ -76,9 +76,13 @@ export class GetaroundEmailParser implements ProviderEmailParser {
     const targets = [subject, body];
     for (const t of targets) {
       // "B123456789", "#123456", or explicit label "Réservation 123456"
+      // (?=[A-Z0-9]*\d) requires a digit in the captured token, so this fallback can't
+      // capture a vehicle brand/model word when "référence"/"réservation" happens to be
+      // immediately followed by one with no real id in between (same bug class fixed in
+      // the Turo parser — see extractReservationNumber there for the concrete failure case).
       const m = t.match(/\bB(\d{7,12})\b/)
              ?? t.match(/#\s*(\d{5,12})\b/)
-             ?? t.match(/(?:r[eé]f[eé]rence|r[eé]servation)\s*(?:n[o°]\.?|:)?\s*([A-Z0-9]{5,12})\b/i);
+             ?? t.match(/(?:r[eé]f[eé]rence|r[eé]servation)\s*(?:n[o°]\.?|:)?\s*((?=[A-Z0-9]*\d)[A-Z0-9]{5,12})\b/i);
       if (m) return m[1].toUpperCase();
     }
     return null;

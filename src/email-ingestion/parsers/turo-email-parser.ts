@@ -95,16 +95,21 @@ export class TuroEmailParser implements ProviderEmailParser {
     const targets = [subject, body];
     for (const t of targets) {
       // Try labeled format first: "Numéro de réservation 57089279" or "Reservation #12345678"
-      // This must run before the bare "#XXXX" pattern to avoid matching CSS hex colors
-      const labeled = t.match(/(?:r[eé]servation|trip|booking)\s*(?:no\.?|number|#|num[eé]ro(?:\s+de\s+r[eé]servation)?)?\s*:?\s*([A-Z0-9]{5,12})\b/i);
+      // This must run before the bare "#XXXX" pattern to avoid matching CSS hex colors.
+      // The (?=[A-Z0-9]*\d) lookahead requires at least one digit in the captured token —
+      // every real reservation id is numeric/alphanumeric-with-digits, but without this
+      // guard the anchor's optional label/colon groups can all match zero-width, so
+      // "Booked trip" immediately followed by a vehicle brand name (e.g. "Booked trip
+      // Peugeot 208" in the flattened HTML) would wrongly capture "Peugeot" as the id.
+      const labeled = t.match(/(?:r[eé]servation|trip|booking)\s*(?:no\.?|number|#|num[eé]ro(?:\s+de\s+r[eé]servation)?)?\s*:?\s*((?=[A-Z0-9]*\d)[A-Z0-9]{5,12})\b/i);
       if (labeled) return labeled[1].toUpperCase();
 
       // "Numéro de réservation57089279" (no separator)
-      const numLabel = t.match(/num[eé]ro\s+de\s+r[eé]servation\s*:?\s*([A-Z0-9]{5,12})\b/i);
+      const numLabel = t.match(/num[eé]ro\s+de\s+r[eé]servation\s*:?\s*((?=[A-Z0-9]*\d)[A-Z0-9]{5,12})\b/i);
       if (numLabel) return numLabel[1].toUpperCase();
 
       // Bare "#12345678" — only after labeled patterns failed to avoid CSS color false-positives
-      const hash = t.match(/(?<![A-Z0-9])#\s*([A-Z0-9]{5,12})\b/i);
+      const hash = t.match(/(?<![A-Z0-9])#\s*((?=[A-Z0-9]*\d)[A-Z0-9]{5,12})\b/i);
       if (hash) return hash[1].toUpperCase();
     }
     return null;
