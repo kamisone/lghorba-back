@@ -7,6 +7,7 @@ import { MediaModule } from '../media/media.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { DlqModule } from '../dlq/dlq.module';
 import { TranslationsModule } from '../translations/translations.module';
+import { AntiSpamModule } from '../common/anti-spam/anti-spam.module';
 
 // Entities
 import { Product } from './entities/product.entity';
@@ -86,9 +87,15 @@ import { CartAdminController } from './cart/cart-admin.controller';
 import { ShopPromotionAdminController } from './pricing/shop-promotion.controller';
 import { PromotionPublicController } from './pricing/promotion-public.controller';
 import { CountryService } from './catalog/country.service';
-import { CountryPublicController, CountryAdminController } from './catalog/country.controller';
+import {
+  CountryPublicController,
+  CountryAdminController,
+} from './catalog/country.controller';
 import { PaymentTypeAdminController } from './payment/payment-type.controller';
-import { VariantAttributeAdminController, VariantAttributePublicController } from './catalog/variant-attribute.controller';
+import {
+  VariantAttributeAdminController,
+  VariantAttributePublicController,
+} from './catalog/variant-attribute.controller';
 import { UserPaymentMethodAdminController } from './payment/user-payment-method.controller';
 import { OrderStatusRefAdminController } from './orders/order-status-ref.controller';
 import { PaymentTransactionAdminController } from './payment/payment-transaction.controller';
@@ -110,39 +117,73 @@ import { CartController } from './cart/cart.controller';
 import { OrdersAdminController } from './orders/orders-admin.controller';
 import { OrdersPublicController } from './orders/orders-public.controller';
 import { CustomerAdminController } from './customer/customer.controller';
-import { CollectionAdminController, CollectionPublicController } from './merchandising/collection.controller';
+import {
+  CollectionAdminController,
+  CollectionPublicController,
+} from './merchandising/collection.controller';
 import { ShopPaymentController } from './payment/shop-payment.controller';
-import { ShippingAdminController, ShippingPublicController } from './shipping/shipping.controller';
-import { ReviewsAdminController, ReviewsPublicController } from './reviews/reviews.controller';
+import {
+  ShippingAdminController,
+  ShippingPublicController,
+} from './shipping/shipping.controller';
+import {
+  ReviewsAdminController,
+  ReviewsPublicController,
+} from './reviews/reviews.controller';
 import { ShopAnalyticsController } from './analytics/shop-analytics.controller';
 import { WishlistController } from './wishlist/wishlist.controller';
 import { PriceRuleAdminController } from './pricing/price-rule.controller';
-import { BlogProductReferenceAdminController, BlogProductReferencePublicController } from './content/blog-product-reference.controller';
-import { ProductSearchPublicController, ProductSearchAdminController } from './catalog/product-search.controller';
+import {
+  BlogProductReferenceAdminController,
+  BlogProductReferencePublicController,
+} from './content/blog-product-reference.controller';
+import {
+  ProductSearchPublicController,
+  ProductSearchAdminController,
+} from './catalog/product-search.controller';
 
 const ENTITIES = [
   // Catalog
-  Product, ProductVariant, ProductCategory, ProductTag,
+  Product,
+  ProductVariant,
+  ProductCategory,
+  ProductTag,
   // Variations (product_configuration domain)
-  VariantAttribute, VariantOption, VariationOptionValue, ProductVariantAttribute, ProductOptionValueImage,
+  VariantAttribute,
+  VariantOption,
+  VariationOptionValue,
+  ProductVariantAttribute,
+  ProductOptionValueImage,
   // Inventory
-  InventoryItem, InventoryMovement,
+  InventoryItem,
+  InventoryMovement,
   // Cart (shopping_cart domain)
-  Cart, CartItem,
+  Cart,
+  CartItem,
   // Orders (shop_order domain)
-  Order, OrderItem, OrderStatusHistory,
+  Order,
+  OrderItem,
+  OrderStatusHistory,
   // Payments (payment domain)
-  PaymentTransaction, PaymentType, UserPaymentMethod,
+  PaymentTransaction,
+  PaymentType,
+  UserPaymentMethod,
   // Shipping
-  ShippingZone, ShippingMethod, Shipment,
+  ShippingZone,
+  ShippingMethod,
+  Shipment,
   // Reviews
   ProductReview,
   // Promotions
   ShopPromotion,
   // Customers + Address domain
-  ShopCustomer, ShopCustomerAddress, Address, Country,
+  ShopCustomer,
+  ShopCustomerAddress,
+  Address,
+  Country,
   // Merchandising
-  ShopCollection, ShopCollectionProduct,
+  ShopCollection,
+  ShopCollectionProduct,
   // Wishlist
   ShopWishlistItem,
   // Pricing rules
@@ -152,7 +193,8 @@ const ENTITIES = [
   // Events
   CommerceEventLog,
   // Promotion scope junction tables
-  PromotionCategory, PromotionProduct,
+  PromotionCategory,
+  PromotionProduct,
   // Order status reference table
   OrderStatusRef,
   // Customer groups
@@ -163,7 +205,11 @@ const ENTITIES = [
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([...ENTITIES, CommerceNotificationLog, PlatformSettings]),
+    TypeOrmModule.forFeature([
+      ...ENTITIES,
+      CommerceNotificationLog,
+      PlatformSettings,
+    ]),
     SmsModule,
     BullModule.registerQueue({ name: CART_ABANDONMENT_QUEUE }),
     BullModule.registerQueue({ name: CHECKOUT_RESERVATION_QUEUE }),
@@ -174,22 +220,31 @@ const ENTITIES = [
     PaymentsModule,
     DlqModule,
     TranslationsModule,
+    AntiSpamModule,
   ],
   controllers: [
-    ProductAdminController, ProductPublicController, VariantStockController,
+    ProductAdminController,
+    ProductPublicController,
+    VariantStockController,
     InventoryAdminController,
     CartController,
-    OrdersAdminController, OrdersPublicController,
+    OrdersAdminController,
+    OrdersPublicController,
     CustomerAdminController,
-    CollectionAdminController, CollectionPublicController,
+    CollectionAdminController,
+    CollectionPublicController,
     ShopPaymentController,
-    ShippingAdminController, ShippingPublicController,
-    ReviewsAdminController, ReviewsPublicController,
+    ShippingAdminController,
+    ShippingPublicController,
+    ReviewsAdminController,
+    ReviewsPublicController,
     ShopAnalyticsController,
     WishlistController,
     PriceRuleAdminController,
-    BlogProductReferenceAdminController, BlogProductReferencePublicController,
-    ProductSearchPublicController, ProductSearchAdminController,
+    BlogProductReferenceAdminController,
+    BlogProductReferencePublicController,
+    ProductSearchPublicController,
+    ProductSearchAdminController,
     CategoryAdminController,
     CartAdminController,
     ShopPromotionAdminController,
@@ -209,12 +264,25 @@ const ENTITIES = [
     CommerceNotificationController,
   ],
   providers: [
-    ProductService, InventoryService, CartService, OrdersService,
-    CustomerService, CollectionService, ShopPaymentService, CountryService,
-    ShippingService, ReviewsService, ShopAnalyticsService, WishlistService,
-    PriceRuleService, ShopEmailService, ShopOrderEventsListener,
-    CartAbandonmentProcessor, BlogProductReferenceService,
-    ProductSearchService, RecommendationService,
+    ProductService,
+    InventoryService,
+    CartService,
+    OrdersService,
+    CustomerService,
+    CollectionService,
+    ShopPaymentService,
+    CountryService,
+    ShippingService,
+    ReviewsService,
+    ShopAnalyticsService,
+    WishlistService,
+    PriceRuleService,
+    ShopEmailService,
+    ShopOrderEventsListener,
+    CartAbandonmentProcessor,
+    BlogProductReferenceService,
+    ProductSearchService,
+    RecommendationService,
     ShopAnalyticsAggregatorService,
     StockAlertService,
     CommerceEventBus,
@@ -227,11 +295,21 @@ const ENTITIES = [
     CommerceNotificationService,
   ],
   exports: [
-    ProductService, InventoryService, CartService, OrdersService,
-    CustomerService, CollectionService, ReviewsService,
-    PriceRuleService, ShopEmailService, BlogProductReferenceService,
-    ProductSearchService, RecommendationService, ShopAnalyticsAggregatorService,
-    CommerceEventBus, ShopPaymentService,
+    ProductService,
+    InventoryService,
+    CartService,
+    OrdersService,
+    CustomerService,
+    CollectionService,
+    ReviewsService,
+    PriceRuleService,
+    ShopEmailService,
+    BlogProductReferenceService,
+    ProductSearchService,
+    RecommendationService,
+    ShopAnalyticsAggregatorService,
+    CommerceEventBus,
+    ShopPaymentService,
     CheckoutSessionService,
   ],
 })

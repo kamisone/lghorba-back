@@ -31,13 +31,17 @@ export class RecommendationService {
   // ── Frequently bought together ────────────────────────────────────────────
   // SQL: find products that most often appear in the same completed orders.
 
-  async getFrequentlyBoughtTogether(productId: string, limit = 6): Promise<ProductSummary[]> {
+  async getFrequentlyBoughtTogether(
+    productId: string,
+    limit = 6,
+  ): Promise<ProductSummary[]> {
     const cacheKey = `shop:reco:fbt:${productId}:${limit}`;
     const cached = await this.redis.client.get(cacheKey);
     if (cached) return JSON.parse(cached) as ProductSummary[];
 
-    const rows: Array<{ productId: string; co_count: string }> = await this.dataSource.query(
-      `SELECT i2."productId", COUNT(*) AS co_count
+    const rows: Array<{ productId: string; co_count: string }> =
+      await this.dataSource.query(
+        `SELECT i2."productId", COUNT(*) AS co_count
        FROM shop_order_items i1
        JOIN shop_order_items i2
          ON i1."orderId" = i2."orderId"
@@ -49,30 +53,39 @@ export class RecommendationService {
        GROUP BY i2."productId"
        ORDER BY co_count DESC
        LIMIT $2`,
-      [productId, limit],
-    );
+        [productId, limit],
+      );
 
-    const ids = rows.map(r => r.productId);
+    const ids = rows.map((r) => r.productId);
     if (!ids.length) {
       await this.redis.client.set(cacheKey, '[]', 'EX', TTL_SECONDS);
       return [];
     }
 
     const result = await this.fetchSummaries(ids);
-    await this.redis.client.set(cacheKey, JSON.stringify(result), 'EX', TTL_SECONDS);
+    await this.redis.client.set(
+      cacheKey,
+      JSON.stringify(result),
+      'EX',
+      TTL_SECONDS,
+    );
     return result;
   }
 
   // ── Similar products ──────────────────────────────────────────────────────
   // SQL: products sharing the most category/tag overlaps.
 
-  async getSimilarProducts(productId: string, limit = 6): Promise<ProductSummary[]> {
+  async getSimilarProducts(
+    productId: string,
+    limit = 6,
+  ): Promise<ProductSummary[]> {
     const cacheKey = `shop:reco:similar:${productId}:${limit}`;
     const cached = await this.redis.client.get(cacheKey);
     if (cached) return JSON.parse(cached) as ProductSummary[];
 
-    const rows: Array<{ id: string; overlap: string }> = await this.dataSource.query(
-      `SELECT p.id,
+    const rows: Array<{ id: string; overlap: string }> =
+      await this.dataSource.query(
+        `SELECT p.id,
               COUNT(DISTINCT cat."categoryId") + COUNT(DISTINCT tag."tagId") AS overlap
        FROM shop_products p
        LEFT JOIN shop_product_category_map cat ON cat."productId" = p.id
@@ -91,17 +104,22 @@ export class RecommendationService {
        GROUP BY p.id
        ORDER BY overlap DESC
        LIMIT $2`,
-      [productId, limit],
-    );
+        [productId, limit],
+      );
 
-    const ids = rows.map(r => r.id);
+    const ids = rows.map((r) => r.id);
     if (!ids.length) {
       await this.redis.client.set(cacheKey, '[]', 'EX', TTL_SECONDS);
       return [];
     }
 
     const result = await this.fetchSummaries(ids);
-    await this.redis.client.set(cacheKey, JSON.stringify(result), 'EX', TTL_SECONDS);
+    await this.redis.client.set(
+      cacheKey,
+      JSON.stringify(result),
+      'EX',
+      TTL_SECONDS,
+    );
     return result;
   }
 
@@ -134,7 +152,7 @@ export class RecommendationService {
        LEFT JOIN (
          SELECT "productId", AVG(rating) AS "avgRating", COUNT(*) AS "reviewCount"
          FROM shop_product_reviews
-         WHERE status = 'published'
+         WHERE status = 'approved'
          GROUP BY "productId"
        ) rev ON rev."productId" = p.id
        WHERE p.id = ANY($1::uuid[])
@@ -144,20 +162,27 @@ export class RecommendationService {
     );
 
     const urlMap = await this.assetUrl.resolveBatch(
-      rows.map(r => r.featuredImageKey).filter((k): k is string => k != null),
+      rows.map((r) => r.featuredImageKey).filter((k): k is string => k != null),
     );
 
     const idOrder = new Map(ids.map((id, i) => [id, i]));
-    const mapped: ProductSummary[] = rows.map(r => ({
-      id:               r.id,
-      slug:             r.slug,
-      title:            r.title,
-      featuredImageUrl: r.featuredImageKey ? (urlMap.get(r.featuredImageKey) ?? null) : null,
-      minPriceCents:    r.priceCents != null ? parseInt(r.priceCents, 10) : null,
-      averageRating:    r.avgRating != null ? Math.round(parseFloat(r.avgRating) * 10) / 10 : null,
-      reviewCount:      r.reviewCount != null ? parseInt(r.reviewCount, 10) : 0,
+    const mapped: ProductSummary[] = rows.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      featuredImageUrl: r.featuredImageKey
+        ? urlMap.get(r.featuredImageKey) ?? null
+        : null,
+      minPriceCents: r.priceCents != null ? parseInt(r.priceCents, 10) : null,
+      averageRating:
+        r.avgRating != null
+          ? Math.round(parseFloat(r.avgRating) * 10) / 10
+          : null,
+      reviewCount: r.reviewCount != null ? parseInt(r.reviewCount, 10) : 0,
     }));
 
-    return mapped.sort((a, b) => (idOrder.get(a.id) ?? 999) - (idOrder.get(b.id) ?? 999));
+    return mapped.sort(
+      (a, b) => (idOrder.get(a.id) ?? 999) - (idOrder.get(b.id) ?? 999),
+    );
   }
 }

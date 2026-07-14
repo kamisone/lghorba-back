@@ -1,19 +1,60 @@
 import {
-  Body, Controller, Get, HttpCode, Param, Patch, Post, Query,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UploadedFiles,
+  UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { Request } from 'express';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../../auth/public.decorator';
-import { ReviewsService, CreateReviewSchema, CreateReviewDto } from './reviews.service';
 import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import {
+  ReviewsService,
+  MAX_VIDEO_BYTES,
+  VerifyOrderSchema,
+  VerifyOrderDto,
+  SubmitReviewSchema,
+  SubmitReviewDto,
+  ModerateReviewSchema,
+  ModerateReviewDto,
+  AdminUpdateReviewSchema,
+  AdminUpdateReviewDto,
+} from './reviews.service';
+
+interface AdminRequest extends Request {
+  user: { id: number; email: string };
+}
+
+function extractIp(req: Request): string | null {
+  const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
+    .split(',')[0]
+    .trim();
+  return (req as { ip?: string }).ip ?? (forwarded || null);
+}
 
 @Controller('admin/shop/reviews')
 export class ReviewsAdminController {
   constructor(private readonly reviews: ReviewsService) {}
 
   @Get()
-  list(@Query('status') status?: string, @Query('limit') limit?: string, @Query('offset') offset?: string) {
+  list(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     return this.reviews.adminList(
       status,
-      limit  ? parseInt(limit,  10) : undefined,
+      limit ? parseInt(limit, 10) : undefined,
       offset ? parseInt(offset, 10) : undefined,
     );
   }
@@ -21,9 +62,25 @@ export class ReviewsAdminController {
   @Patch(':id/moderate')
   moderate(
     @Param('id') id: string,
-    @Body('status') status: 'published' | 'rejected',
+    @Body(new ZodValidationPipe(ModerateReviewSchema)) dto: ModerateReviewDto,
+    @Req() req: AdminRequest,
   ) {
-    return this.reviews.moderate(id, status);
+    return this.reviews.moderate(id, dto, req.user.email);
+  }
+
+  @Patch(':id')
+  update(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(AdminUpdateReviewSchema))
+    dto: AdminUpdateReviewDto,
+  ) {
+    return this.reviews.adminUpdate(id, dto);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  remove(@Param('id') id: string) {
+    return this.reviews.adminDelete(id);
   }
 }
 
@@ -32,14 +89,47 @@ export class ReviewsAdminController {
 export class ReviewsPublicController {
   constructor(private readonly reviews: ReviewsService) {}
 
+  @Post('verify-order')
+  @HttpCode(200)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ reviews: { ttl: 15 * 60 * 1000, limit: 12 } })
+  verifyOrder(
+    @Body(new ZodValidationPipe(VerifyOrderSchema)) dto: VerifyOrderDto,
+  ) {
+    return this.reviews.verifyOrder(dto);
+  }
+
   @Post()
-  create(@Body(new ZodValidationPipe(CreateReviewSchema)) dto: CreateReviewDto) {
-    return this.reviews.create(dto);
+  @HttpCode(201)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ reviews: { ttl: 15 * 60 * 1000, limit: 12 } })
+  @UseInterceptors(
+    FilesInterceptor('media', 5, {
+      limits: { fileSize: MAX_VIDEO_BYTES, files: 5 },
+    }),
+  )
+  submit(
+    @Body(new ZodValidationPipe(SubmitReviewSchema)) dto: SubmitReviewDto,
+    @UploadedFiles() files: Express.Multer.File[],
+    @Req() req: Request,
+  ) {
+    return this.reviews.submit(dto, files ?? [], {
+      ip: extractIp(req),
+      userAgent: req.headers['user-agent'],
+    });
   }
 
   @Get('product/:productId')
-  listForProduct(@Param('productId') productId: string) {
-    return this.reviews.listForProduct(productId, 'published');
+  listForProduct(
+    @Param('productId') productId: string,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    return this.reviews.listForProduct(
+      productId,
+      limit ? parseInt(limit, 10) : undefined,
+      offset ? parseInt(offset, 10) : undefined,
+    );
   }
 
   @Get('product/:productId/stats')
