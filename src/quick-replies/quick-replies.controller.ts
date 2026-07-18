@@ -4,6 +4,7 @@ import {
 import { ZodValidationPipe } from '../common/pipes/zod-validation.pipe';
 import {
   CreateQuickReplyDto, CreateQuickReplySchema,
+  RenameCategoryDto, RenameCategorySchema,
   UpdateQuickReplyDto, UpdateQuickReplySchema,
 } from './dto/quick-reply.dto';
 import { QuickRepliesService } from './quick-replies.service';
@@ -17,6 +18,19 @@ export class QuickRepliesController {
   @Get('categories')
   categories() {
     return this.service.categories();
+  }
+
+  @Patch('categories/:category')
+  renameCategory(
+    @Param('category') category: string,
+    @Body(new ZodValidationPipe(RenameCategorySchema)) dto: RenameCategoryDto,
+  ) {
+    return this.service.renameCategory(category, dto.category);
+  }
+
+  @Delete('categories/:category')
+  deleteCategory(@Param('category') category: string) {
+    return this.service.deleteCategory(category);
   }
 
   @Get()

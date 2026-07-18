@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository } from 'typeorm';
 import { QuickReply } from './quick-reply.entity';
@@ -48,13 +48,41 @@ export class QuickRepliesService {
       .getMany();
   }
 
-  async categories(): Promise<string[]> {
-    const rows: { category: string }[] = await this.repo
+  async categories(): Promise<{ category: string; count: number }[]> {
+    const rows: { category: string; count: string }[] = await this.repo
       .createQueryBuilder('qr')
-      .select('DISTINCT qr.category', 'category')
+      .select('qr.category', 'category')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('qr.category')
       .orderBy('category', 'ASC')
       .getRawMany();
-    return rows.map(r => r.category);
+    return rows.map(r => ({ category: r.category, count: Number(r.count) }));
+  }
+
+  // Bulk-relabels every reply currently in `from` to `to` (merges if `to` already exists).
+  async renameCategory(from: string, to: string): Promise<{ affected: number }> {
+    if (from === to) return { affected: 0 };
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(QuickReply)
+      .set({ category: to })
+      .where('category = :from', { from })
+      .execute();
+    return { affected: result.affected ?? 0 };
+  }
+
+  // Reassigns every reply in `category` back to the default bucket. The default itself can't be removed.
+  async deleteCategory(category: string): Promise<{ affected: number }> {
+    if (category === 'general') {
+      throw new BadRequestException('Cannot delete the default category');
+    }
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(QuickReply)
+      .set({ category: 'general' })
+      .where('category = :category', { category })
+      .execute();
+    return { affected: result.affected ?? 0 };
   }
 
   async findOne(id: string): Promise<QuickReply> {

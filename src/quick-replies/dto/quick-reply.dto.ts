@@ -29,3 +29,8 @@ export const UpdateQuickReplySchema = z.object({
   carId:    z.string().uuid('carId must be a valid UUID').nullable().optional(),
 });
 export type UpdateQuickReplyDto = z.infer<typeof UpdateQuickReplySchema>;
+
+export const RenameCategorySchema = z.object({
+  category: categorySlug,
+});
+export type RenameCategoryDto = z.infer<typeof RenameCategorySchema>;
