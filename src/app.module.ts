@@ -32,6 +32,7 @@ import { CarsModule } from './cars/cars.module';
 import { RedisModule } from './redis/redis.module';
 import { AssetUrlModule } from './asset-url/asset-url.module';
 import { DlqModule } from './dlq/dlq.module';
+import { MetaCapiModule } from './marketing/meta-capi/meta-capi.module';
 import { RentPosition } from './rent-sessions/rent-position.entity';
 import { RentSession } from './rent-sessions/rent-session.entity';
 import { RentSessionsModule } from './rent-sessions/rent-sessions.module';
@@ -308,6 +309,7 @@ config();
     RedisModule,
     AssetUrlModule,
     DlqModule,
+    MetaCapiModule,
     SmsModule,
     AuthModule,
     AdminsModule,

@@ -530,6 +530,8 @@ export class OrdersService {
         unitPriceCents: i.unitPriceCents,
         totalCents: i.totalCents,
         options: i.optionsSnapshot,
+        productId: i.productId,
+        variantId: i.variantId,
       })),
       shipping: shipment
         ? {

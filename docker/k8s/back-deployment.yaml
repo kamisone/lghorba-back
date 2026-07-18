@@ -234,4 +234,14 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: TURNSTILE_SECRET_KEY
+            - name: META_CAPI_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: META_CAPI_ACCESS_TOKEN
+            - name: META_CAPI_API_VERSION
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: META_CAPI_API_VERSION
             

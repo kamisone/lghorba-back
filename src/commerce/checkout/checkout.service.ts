@@ -47,6 +47,9 @@ export const InitiateCheckoutSchema = z.object({
   couponCode:   z.string().max(100).nullish(),
   /** Customer's UI locale — determines email language (fr | en, default fr) */
   locale:       z.enum(['fr', 'en']).optional().default('fr'),
+  /** Meta Click ID / Browser ID cookies (_fbc / _fbp), read client-side — for Conversions API match quality only. */
+  fbc:          z.string().max(500).nullish(),
+  fbp:          z.string().max(500).nullish(),
 }).superRefine((d, ctx) => {
   const hasName    = d.firstName?.trim() && d.lastName?.trim();
   const hasCompany = d.companyName?.trim();
@@ -113,7 +116,10 @@ export class CheckoutService {
   // Creates a draft order with server-computed totals and inventory reservation.
   // Idempotent: returns existing draft order if same cart token already has one.
 
-  async initiate(dto: InitiateCheckoutDto): Promise<CheckoutSnapshot> {
+  async initiate(
+    dto: InitiateCheckoutDto,
+    requestMeta?: { ip: string | null; userAgent: string | null },
+  ): Promise<CheckoutSnapshot> {
     const cart = await this.cartRepo.findOne({
       where: { token: dto.cartToken, status: 'active' },
       relations: ['items'],
@@ -144,6 +150,10 @@ export class CheckoutService {
       existing.customerCompanyName = dto.companyName?.trim() || null;
       existing.customerPhone       = dto.phone ?? null;
       existing.customerLocale      = dto.locale ?? 'fr';
+      existing.clientIpAddress    = requestMeta?.ip ?? existing.clientIpAddress;
+      existing.clientUserAgent    = requestMeta?.userAgent ?? existing.clientUserAgent;
+      existing.metaClickId        = dto.fbc ?? existing.metaClickId;
+      existing.metaBrowserId      = dto.fbp ?? existing.metaBrowserId;
       existing.shippingAddressSnapshot = {
         name:    `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || '',
         line1:   dto.line1,
@@ -198,6 +208,10 @@ export class CheckoutService {
         customerCompanyName:  dto.companyName?.trim() || null,
         customerPhone:        dto.phone ?? null,
         customerLocale:       dto.locale ?? 'fr',
+        clientIpAddress:      requestMeta?.ip ?? null,
+        clientUserAgent:      requestMeta?.userAgent ?? null,
+        metaClickId:          dto.fbc ?? null,
+        metaBrowserId:        dto.fbp ?? null,
         shippingAddressSnapshot: {
           name:    `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || '',
           line1:   dto.line1,

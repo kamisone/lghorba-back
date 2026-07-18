@@ -102,6 +102,8 @@ jobs:
             --from-literal IMAP_PORT=${{ secrets.IMAP_PORT }} \
             --from-literal IMAP_USER=${{ secrets.IMAP_USER }} \
             --from-literal IMAP_PASSWORD=${{ secrets.IMAP_PASSWORD }} \
+            --from-literal META_CAPI_ACCESS_TOKEN=${{ secrets.META_CAPI_ACCESS_TOKEN }} \
+            --from-literal META_CAPI_API_VERSION=${{ secrets.META_CAPI_API_VERSION }} \
             --from-literal TURNSTILE_SECRET_KEY=${{ secrets.TURNSTILE_SECRET_KEY }}
             kubectl apply -f /srv/k8s/back
             minikube addons enable ingress

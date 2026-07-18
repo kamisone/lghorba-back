@@ -65,6 +65,14 @@ export class Order {
   @Column({ type: 'timestamptz', nullable: true }) reservationExpiresAt: Date | null;
   @Column({ type: 'text', nullable: true }) notes: string | null;
 
+  /* ── Meta Conversions API matching data — captured at checkout, never displayed ── */
+  @Column({ type: 'varchar', length: 64, nullable: true }) clientIpAddress: string | null;
+  @Column({ type: 'text', nullable: true }) clientUserAgent: string | null;
+  /** Meta Click ID (_fbc cookie) — present only if the visitor arrived via a Meta ad */
+  @Column({ type: 'varchar', length: 500, nullable: true }) metaClickId: string | null;
+  /** Meta Browser ID (_fbp cookie) — set by the pixel base code once loaded */
+  @Column({ type: 'varchar', length: 500, nullable: true }) metaBrowserId: string | null;
+
   @OneToMany('OrderItem', 'order', { cascade: ['insert'] })
   items: Relation<any>[];
 

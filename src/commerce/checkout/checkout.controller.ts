@@ -1,7 +1,8 @@
 import {
   BadRequestException, Body, Controller, Get, HttpCode,
-  Param, ParseUUIDPipe, Patch, Post, Put, Query,
+  Param, ParseUUIDPipe, Patch, Post, Put, Query, Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { Public } from '../../auth/public.decorator';
 import {
   CheckoutService,
@@ -55,9 +56,14 @@ export class CheckoutController {
   // Validates cart, computes server-side totals, creates draft order, reserves inventory.
   @Post()
   @HttpCode(201)
-  initiate(@Body() body: unknown) {
+  initiate(@Body() body: unknown, @Req() req: Request) {
     const dto = InitiateCheckoutSchema.parse(body);
-    return this.checkoutService.initiate(dto);
+    const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
+      .split(',')[0]
+      .trim();
+    const ip = req.ip ?? (forwarded || null);
+    const userAgent = req.headers['user-agent'] ?? null;
+    return this.checkoutService.initiate(dto, { ip, userAgent });
   }
 
   // GET /public/shop/checkout/:orderId
