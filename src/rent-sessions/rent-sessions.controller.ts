@@ -55,4 +55,10 @@ export class RentSessionsController {
   getPositions(@Param('id') id: string) {
     return this.service.getPositions(id);
   }
+
+  @Delete(':id/positions/:positionId')
+  @HttpCode(204)
+  removePosition(@Param('id') id: string, @Param('positionId') positionId: string) {
+    return this.service.removePosition(id, positionId);
+  }
 }

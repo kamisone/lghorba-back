@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -10,13 +9,12 @@ import { Repository } from 'typeorm';
 import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
-import { extractLatLng, extractMapsUrl, haversineKm } from '../common/utils/map.util';
+import { extractLatLng, extractMapsUrl } from '../common/utils/map.util';
 import { Booking } from '../bookings/booking.entity';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
 const LOCATION_INTERVAL_MS = 15 * 60 * 1000;
-const MAX_POSITION_JUMP_KM = 50;
 
 export function addLocationInterval(from: Date): Date {
   return new Date(from.getTime() + LOCATION_INTERVAL_MS);
@@ -24,8 +22,6 @@ export function addLocationInterval(from: Date): Date {
 
 @Injectable()
 export class RentSessionsService {
-  private readonly logger = new Logger(RentSessionsService.name);
-
   constructor(
     @InjectRepository(RentSession)
     private readonly sessionRepo: Repository<RentSession>,
@@ -141,92 +137,19 @@ export class RentSessionsService {
   async addPosition(
     id: string,
     dto: CreateRentPositionDto,
-  ): Promise<RentPosition | null> {
+  ): Promise<RentPosition> {
     await this.findOne(id);
-
-    // Fetch a small history window to detect positional consistency.
-    const recent = await this.positionRepo.find({
-      where: { sessionId: id },
-      order: { recordedAt: 'DESC' },
-      take: 5,
-    });
-
-    // Bootstrap phase ends dynamically — not after an arbitrary fixed count,
-    // but as soon as at least one pair of consecutive stored fixes are within
-    // the jump limit of each other. Until a stable cluster forms we accept
-    // every point unconditionally so a slow GPS cold-start or early scatter
-    // doesn't trigger false rejections.
-    //
-    // Once consensus exists, a new fix is accepted if it is within
-    // MAX_POSITION_JUMP_KM of ANY stored fix. That prevents a single rogue
-    // fix (already stored) from poisoning subsequent valid positions.
-    const hasConsensus = recent.slice(0, -1).some((r, i) =>
-      haversineKm(
-        Number(r.lat), Number(r.lng),
-        Number(recent[i + 1].lat), Number(recent[i + 1].lng),
-      ) <= MAX_POSITION_JUMP_KM,
-    );
-
-    if (hasConsensus) {
-      const closeToAny = recent.some(r =>
-        haversineKm(Number(r.lat), Number(r.lng), dto.lat, dto.lng) <= MAX_POSITION_JUMP_KM,
-      );
-      if (!closeToAny) {
-        const dists = recent.map(r =>
-          haversineKm(Number(r.lat), Number(r.lng), dto.lat, dto.lng).toFixed(1),
-        );
-        this.logger.warn(
-          `Position discarded for session ${id}: ` +
-          `${MAX_POSITION_JUMP_KM} km limit exceeded against all ${recent.length} recent fixes ` +
-          `(distances: ${dists.join(', ')} km, new ${dto.lat},${dto.lng})`,
-        );
-        return null;
-      }
-    }
-
-    const saved = await this.positionRepo.save(
+    return this.positionRepo.save(
       this.positionRepo.create({ ...dto, sessionId: id }),
     );
-    await this.removeSpikes(id);
-    return saved;
   }
 
-  private async removeSpikes(sessionId: string): Promise<void> {
-    const recent = await this.positionRepo.find({
-      where: { sessionId },
-      order: { recordedAt: 'DESC' },
-      take: 5,
-    });
-    if (recent.length < 3) return;
-
-    const positions = recent.reverse(); // chronological order
-    const toDelete: string[] = [];
-
-    for (let i = 1; i < positions.length - 1; i++) {
-      const prev = positions[i - 1];
-      const curr = positions[i];
-      const next = positions[i + 1];
-      const dPrevCurr = haversineKm(Number(prev.lat), Number(prev.lng), Number(curr.lat), Number(curr.lng));
-      const dCurrNext = haversineKm(Number(curr.lat), Number(curr.lng), Number(next.lat), Number(next.lng));
-      const dPrevNext = haversineKm(Number(prev.lat), Number(prev.lng), Number(next.lat), Number(next.lng));
-
-      if (
-        dPrevCurr > MAX_POSITION_JUMP_KM &&
-        dCurrNext > MAX_POSITION_JUMP_KM &&
-        dPrevNext <= MAX_POSITION_JUMP_KM
-      ) {
-        toDelete.push(curr.id);
-        this.logger.warn(
-          `Spike removed in session ${sessionId}: position ${curr.id} ` +
-          `(prev→curr ${dPrevCurr.toFixed(1)} km, curr→next ${dCurrNext.toFixed(1)} km, ` +
-          `prev→next ${dPrevNext.toFixed(1)} km)`,
-        );
-      }
+  async removePosition(sessionId: string, positionId: string): Promise<void> {
+    const position = await this.positionRepo.findOne({ where: { id: positionId } });
+    if (!position || position.sessionId !== sessionId) {
+      throw new NotFoundException(`Position ${positionId} not found for session ${sessionId}`);
     }
-
-    if (toDelete.length > 0) {
-      await this.positionRepo.delete(toDelete);
-    }
+    await this.positionRepo.delete(positionId);
   }
 
   async getPositions(id: string): Promise<RentPosition[]> {
