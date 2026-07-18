@@ -13,6 +13,7 @@ import { Product } from '../entities/product.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { ShopPromotion } from '../entities/shop-promotion.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
+import { ProductOptionValueImage } from '../entities/product-option-value-image.entity';
 import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { TranslationsService } from '../../translations/translations.service';
 import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
@@ -29,6 +30,7 @@ export class CartService {
     @InjectRepository(InventoryItem) private readonly inventoryRepo: Repository<InventoryItem>,
     @InjectRepository(ShopPromotion)        private readonly promoRepo:     Repository<ShopPromotion>,
     @InjectRepository(VariationOptionValue) private readonly ovRepo:        Repository<VariationOptionValue>,
+    @InjectRepository(ProductOptionValueImage) private readonly optionImageRepo: Repository<ProductOptionValueImage>,
     private readonly assetUrlService: AssetUrlService,
     private readonly translationsService: TranslationsService,
     @InjectQueue(CART_ABANDONMENT_QUEUE)
@@ -151,6 +153,21 @@ export class CartService {
         optionAdjustmentCents: sumOptionAdjustments((variant as any).options ?? []),
       });
 
+      // Image priority mirrors the PDP hero (ShopProductDetail.tsx): the variant's own
+      // featured media, then the picked option value's per-product image override
+      // (e.g. Color=Red's photo), then the product's generic featured image.
+      let imageKeySnapshot: string | null = (variant as any).featuredMediaKey ?? null;
+      if (!imageKeySnapshot && optionsSnapshot?.length) {
+        const optionValueIds = optionsSnapshot.map(o => o.optionValueId).filter(Boolean) as string[];
+        if (optionValueIds.length) {
+          const optionImage = await this.optionImageRepo.findOne({
+            where: { productId: product.id, optionValueId: In(optionValueIds) },
+          });
+          imageKeySnapshot = optionImage?.mediaKey ?? null;
+        }
+      }
+      imageKeySnapshot = imageKeySnapshot ?? product.featuredImageKey ?? null;
+
       await this.itemRepo.save(this.itemRepo.create({
         cartId:          cart.id,
         productId:       product.id,
@@ -159,7 +176,7 @@ export class CartService {
         unitPriceCents,
         titleSnapshot:   product.title,
         skuSnapshot:     variant.sku,
-        imageKeySnapshot:            (variant as any).featuredMediaKey ?? product.featuredImageKey ?? null,
+        imageKeySnapshot,
         optionsSnapshot,
         compareAtPriceCentsSnapshot: variant.compareAtPriceCents ?? null,
       }));
