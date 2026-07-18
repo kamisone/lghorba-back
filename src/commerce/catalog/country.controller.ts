@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { Public } from '../../auth/public.decorator';
 import { CountryService } from './country.service';
 
@@ -8,7 +18,9 @@ export class CountryPublicController {
   constructor(private readonly countries: CountryService) {}
 
   @Get()
-  list() { return this.countries.listActive(); }
+  list(@Query('lang') lang?: string) {
+    return this.countries.listActive(lang);
+  }
 }
 
 @Controller('admin/shop/countries')
@@ -16,7 +28,9 @@ export class CountryAdminController {
   constructor(private readonly countries: CountryService) {}
 
   @Get()
-  listAll() { return this.countries.listAll(); }
+  listAll() {
+    return this.countries.listAll();
+  }
 
   @Post()
   create(@Body() dto: any) {

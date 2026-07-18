@@ -14,9 +14,6 @@ export class Country {
 
   @Column({ type: 'varchar', length: 200 }) name: string;
 
-  /** Native / localized name (e.g. "France", "Maroc") */
-  @Column({ type: 'varchar', length: 200, nullable: true }) nativeName: string | null;
-
   /** +33, +212 … (without leading zeros) */
   @Column({ type: 'varchar', length: 10, nullable: true }) phonePrefix: string | null;
 
