@@ -131,6 +131,7 @@ import { ShopCustomerAddress } from './commerce/entities/shop-customer-address.e
 import { ShopCollection } from './commerce/entities/shop-collection.entity';
 import { ShopCollectionProduct } from './commerce/entities/shop-collection-product.entity';
 import { ShopWishlistItem } from './commerce/entities/shop-wishlist-item.entity';
+import { ShopBehaviorEvent } from './commerce/entities/shop-behavior-event.entity';
 import { ShopPriceRule } from './commerce/entities/shop-price-rule.entity';
 import { BlogProductReference } from './commerce/entities/blog-product-reference.entity';
 import { ShopVendor } from './commerce/entities/shop-vendor.entity';
@@ -249,6 +250,7 @@ config();
         ShopCollection,
         ShopCollectionProduct,
         ShopWishlistItem,
+        ShopBehaviorEvent,
         ShopPriceRule,
         BlogProductReference,
         ShopVendor,

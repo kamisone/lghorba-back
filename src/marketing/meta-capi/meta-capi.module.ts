@@ -5,6 +5,7 @@ import { Order } from '../../commerce/entities/order.entity';
 import { OrderItem } from '../../commerce/entities/order-item.entity';
 import { DlqModule } from '../../dlq/dlq.module';
 import { PlatformSettingsModule } from '../../platform-settings/platform-settings.module';
+import { BehaviorTrackingModule } from '../../commerce/behavior/behavior-tracking.module';
 import { META_CAPI_QUEUE } from './meta-capi.constants';
 import { MetaCapiOrderListener } from './meta-capi-order.listener';
 import { MetaCapiProcessor } from './meta-capi.processor';
@@ -17,6 +18,7 @@ import { MetaCapiTrackController } from './meta-capi-track.controller';
     BullModule.registerQueue({ name: META_CAPI_QUEUE }),
     DlqModule,
     PlatformSettingsModule,
+    BehaviorTrackingModule,
   ],
   controllers: [MetaCapiTrackController],
   providers: [MetaCapiOrderListener, MetaCapiProcessor, MetaCapiService],

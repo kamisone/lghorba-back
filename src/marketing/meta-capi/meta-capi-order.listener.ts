@@ -10,6 +10,7 @@ import {
   PaymentSucceededEvent,
 } from '../../commerce/events/commerce-events';
 import { MetaCapiService } from './meta-capi.service';
+import { BehaviorTrackingService } from '../../commerce/behavior/behavior-tracking.service';
 
 /**
  * Meta Conversions API — reacts to the same domain events ShopOrderEventsListener
@@ -26,6 +27,7 @@ export class MetaCapiOrderListener {
     @InjectRepository(OrderItem)
     private readonly itemRepo: Repository<OrderItem>,
     private readonly metaCapi: MetaCapiService,
+    private readonly behaviorTracking: BehaviorTrackingService,
   ) {}
 
   @OnEvent(COMMERCE_EVENTS.ORDER_CREATED)
@@ -55,6 +57,20 @@ export class MetaCapiOrderListener {
         fbc: order.metaClickId,
         fbp: order.metaBrowserId,
       });
+
+      await this.behaviorTracking.record('checkout_started', {
+        cartToken: order.cartToken,
+        shopCustomerId: order.customerId,
+      });
+      // Retroactively attribute this guest's pre-checkout browsing/search/cart
+      // activity (logged under cartToken only) to the customer record now that
+      // it's known.
+      if (order.cartToken && order.customerId) {
+        await this.behaviorTracking.backfillCustomerId(
+          order.cartToken,
+          order.customerId,
+        );
+      }
     } catch (err) {
       this.logger.error(
         `Failed to send Meta CAPI InitiateCheckout event for ${event.orderId}: ${(err as Error).message}`,

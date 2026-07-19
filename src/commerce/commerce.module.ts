@@ -9,6 +9,7 @@ import { DlqModule } from '../dlq/dlq.module';
 import { TranslationsModule } from '../translations/translations.module';
 import { AntiSpamModule } from '../common/anti-spam/anti-spam.module';
 import { MetaCapiModule } from '../marketing/meta-capi/meta-capi.module';
+import { BehaviorTrackingModule } from './behavior/behavior-tracking.module';
 
 // Entities
 import { Product } from './entities/product.entity';
@@ -40,6 +41,7 @@ import { PaymentType } from './entities/payment-type.entity';
 import { ShopCollection } from './entities/shop-collection.entity';
 import { ShopCollectionProduct } from './entities/shop-collection-product.entity';
 import { ShopWishlistItem } from './entities/shop-wishlist-item.entity';
+import { ShopBehaviorEvent } from './entities/shop-behavior-event.entity';
 import { ShopPriceRule } from './entities/shop-price-rule.entity';
 import { BlogProductReference } from './entities/blog-product-reference.entity';
 import { CommerceEventLog } from './events/commerce-event-log.entity';
@@ -61,6 +63,7 @@ import { ShopPaymentService } from './payment/shop-payment.service';
 import { ShippingService } from './shipping/shipping.service';
 import { ReviewsService } from './reviews/reviews.service';
 import { ShopAnalyticsService } from './analytics/shop-analytics.service';
+import { ShopBehaviorAnalyticsService } from './analytics/shop-behavior-analytics.service';
 import { WishlistService } from './wishlist/wishlist.service';
 import { PriceRuleService } from './pricing/price-rule.service';
 import { ShopEmailService } from './email/shop-email.service';
@@ -133,6 +136,7 @@ import {
 } from './reviews/reviews.controller';
 import { ShopAnalyticsController } from './analytics/shop-analytics.controller';
 import { WishlistController } from './wishlist/wishlist.controller';
+import { WishlistAdminController } from './wishlist/wishlist-admin.controller';
 import { PriceRuleAdminController } from './pricing/price-rule.controller';
 import {
   BlogProductReferenceAdminController,
@@ -187,6 +191,9 @@ const ENTITIES = [
   ShopCollectionProduct,
   // Wishlist
   ShopWishlistItem,
+  // Behavior tracking (also registered standalone by BehaviorTrackingModule,
+  // for cross-module repo access from this module's own analytics/admin code)
+  ShopBehaviorEvent,
   // Pricing rules
   ShopPriceRule,
   // Content
@@ -223,6 +230,7 @@ const ENTITIES = [
     TranslationsModule,
     AntiSpamModule,
     MetaCapiModule,
+    BehaviorTrackingModule,
   ],
   controllers: [
     ProductAdminController,
@@ -264,6 +272,7 @@ const ENTITIES = [
     CustomerGroupAdminController,
     CommerceEventLogAdminController,
     CommerceNotificationController,
+    WishlistAdminController,
   ],
   providers: [
     ProductService,
@@ -277,6 +286,7 @@ const ENTITIES = [
     ShippingService,
     ReviewsService,
     ShopAnalyticsService,
+    ShopBehaviorAnalyticsService,
     WishlistService,
     PriceRuleService,
     ShopEmailService,
