@@ -5,6 +5,7 @@ import { ShopBehaviorEvent } from '../entities/shop-behavior-event.entity';
 import { Order } from '../entities/order.entity';
 import { Product } from '../entities/product.entity';
 import { ShopWishlistItem } from '../entities/shop-wishlist-item.entity';
+import { Country } from '../entities/country.entity';
 
 // Same paid-status set already used throughout shop-analytics.service.ts.
 const PAID_STATUSES = ['paid', 'processing', 'shipped', 'delivered'];
@@ -39,6 +40,8 @@ export class ShopBehaviorAnalyticsService {
     private readonly productRepo: Repository<Product>,
     @InjectRepository(ShopWishlistItem)
     private readonly wishlistRepo: Repository<ShopWishlistItem>,
+    @InjectRepository(Country)
+    private readonly countryRepo: Repository<Country>,
   ) {}
 
   // ── Conversion funnel ───────────────────────────────────────────────────────
@@ -180,6 +183,103 @@ export class ShopBehaviorAnalyticsService {
     });
 
     return rows.sort((a, b) => b.views - a.views).slice(0, limit);
+  }
+
+  /**
+   * Views/adds-to-cart come from ShopBehaviorEvent.countryCode (resolved from
+   * the request IP via GeoIpService at write time — offline lookup, raw IP
+   * never stored). Purchases use the country already captured on the order's
+   * shipping address at checkout, which needs no IP/geoip at all.
+   */
+  async getCountryBreakdown(
+    days = 30,
+    limit = 20,
+  ): Promise<
+    Array<{
+      countryCode: string;
+      countryName: string;
+      views: number;
+      addsToCart: number;
+      purchases: number;
+    }>
+  > {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const [viewRows, addRows, purchaseRows] = await Promise.all([
+      this.behaviorRepo
+        .createQueryBuilder('be')
+        .select('be.countryCode', 'countryCode')
+        .addSelect('COUNT(be.id)', 'count')
+        .where(`be.eventType = 'product_view'`)
+        .andWhere('be.createdAt >= :since', { since })
+        .andWhere('be.countryCode IS NOT NULL')
+        .groupBy('be.countryCode')
+        .getRawMany<{ countryCode: string; count: string }>(),
+      this.behaviorRepo
+        .createQueryBuilder('be')
+        .select('be.countryCode', 'countryCode')
+        .addSelect('COUNT(be.id)', 'count')
+        .where(`be.eventType = 'add_to_cart'`)
+        .andWhere('be.createdAt >= :since', { since })
+        .andWhere('be.countryCode IS NOT NULL')
+        .groupBy('be.countryCode')
+        .getRawMany<{ countryCode: string; count: string }>(),
+      this.orderRepo
+        .createQueryBuilder('o')
+        // Manually quoted: TypeORM's alias-quoting pass doesn't recognize
+        // "o.shippingAddressSnapshot" as a bare column reference once it's
+        // immediately followed by the `->>` JSONB operator, so it's left
+        // unquoted and Postgres folds it to lowercase (breaking the mixed-
+        // case column name) unless quoted explicitly here.
+        .select(`"o"."shippingAddressSnapshot"->>'country'`, 'countryCode')
+        .addSelect('COUNT(o.id)', 'count')
+        .where('o.status IN (:...statuses)', { statuses: PAID_STATUSES })
+        .andWhere('o.createdAt >= :since', { since })
+        .andWhere(`"o"."shippingAddressSnapshot"->>'country' IS NOT NULL`)
+        .groupBy(`"o"."shippingAddressSnapshot"->>'country'`)
+        .getRawMany<{ countryCode: string; count: string }>(),
+    ]);
+
+    const viewMap = new Map(
+      viewRows.map((r) => [r.countryCode, parseInt(r.count, 10)]),
+    );
+    const addMap = new Map(
+      addRows.map((r) => [r.countryCode, parseInt(r.count, 10)]),
+    );
+    const purchaseMap = new Map(
+      purchaseRows.map((r) => [r.countryCode, parseInt(r.count, 10)]),
+    );
+
+    const countryCodes = new Set([
+      ...viewMap.keys(),
+      ...addMap.keys(),
+      ...purchaseMap.keys(),
+    ]);
+    if (countryCodes.size === 0) return [];
+
+    const countries = await this.countryRepo.find({
+      where: { isoCode: In([...countryCodes]) },
+      select: ['isoCode', 'name'],
+    });
+    const nameMap = new Map(countries.map((c) => [c.isoCode, c.name]));
+
+    const rows = [...countryCodes].map((countryCode) => ({
+      countryCode,
+      countryName: nameMap.get(countryCode) ?? countryCode,
+      views: viewMap.get(countryCode) ?? 0,
+      addsToCart: addMap.get(countryCode) ?? 0,
+      purchases: purchaseMap.get(countryCode) ?? 0,
+    }));
+
+    return rows
+      .sort(
+        (a, b) =>
+          b.views +
+          b.addsToCart +
+          b.purchases -
+          (a.views + a.addsToCart + a.purchases),
+      )
+      .slice(0, limit);
   }
 
   // ── Search insights ──────────────────────────────────────────────────────────

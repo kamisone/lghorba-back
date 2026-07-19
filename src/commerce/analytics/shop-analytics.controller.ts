@@ -76,6 +76,16 @@ export class ShopAnalyticsController {
     return this.behaviorAnalytics.getProductConversion(d, lim);
   }
 
+  @Get('country-breakdown')
+  countryBreakdown(
+    @Query('days') days?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const d = days ? parseInt(days, 10) : 30;
+    const lim = limit ? parseInt(limit, 10) : 20;
+    return this.behaviorAnalytics.getCountryBreakdown(d, lim);
+  }
+
   @Get('search-overview')
   searchOverview(@Query('days') days?: string) {
     const d = days ? parseInt(days, 10) : 30;

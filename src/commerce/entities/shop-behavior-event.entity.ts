@@ -22,6 +22,7 @@ export type BehaviorEventType =
 @Index(['productId'])
 @Index(['cartToken'])
 @Index(['shopCustomerId'])
+@Index(['countryCode'])
 export class ShopBehaviorEvent {
   @PrimaryGeneratedColumn('uuid') id: string;
 
@@ -45,6 +46,12 @@ export class ShopBehaviorEvent {
     | string
     | null;
   @Column({ type: 'int', nullable: true }) resultCount: number | null;
+
+  // ISO-3166-1 alpha-2 country code, resolved from the request IP at write
+  // time (see GeoIpService) — the IP itself is never stored, only this.
+  @Column({ type: 'varchar', length: 2, nullable: true }) countryCode:
+    | string
+    | null;
 
   @CreateDateColumn() createdAt: Date;
 }

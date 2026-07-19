@@ -29,6 +29,7 @@ import {
 } from '../pricing/variant-price';
 import { MetaCapiService } from '../../marketing/meta-capi/meta-capi.service';
 import { BehaviorTrackingService } from '../behavior/behavior-tracking.service';
+import { GeoIpService } from '../behavior/geo-ip.service';
 
 @Injectable()
 export class CartService {
@@ -56,6 +57,7 @@ export class CartService {
     // analytics side effect would be overkill.
     private readonly metaCapi: MetaCapiService,
     private readonly behaviorTracking: BehaviorTrackingService,
+    private readonly geoIp: GeoIpService,
   ) {}
 
   // ── Get or create cart by token ────────────────────────────────────────────
@@ -268,6 +270,7 @@ export class CartService {
       cartToken: token,
       productId: productId ?? null,
       quantity,
+      countryCode: this.geoIp.countryFromIp(requestMeta?.ip),
     });
 
     // Schedule abandonment email — delay 1h, jobId ensures only one pending per cart
