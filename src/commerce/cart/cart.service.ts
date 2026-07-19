@@ -59,6 +59,10 @@ export class CartService {
   ) {}
 
   // ── Get or create cart by token ────────────────────────────────────────────
+  // Read-only: never persists a row. A visitor merely loading the shop (every
+  // page view calls this) must not create DB rows — a real Cart row is only
+  // ever written the first time an item is actually added, in
+  // getOrCreatePersistedCart() below.
 
   async getOrCreate(
     token: string,
@@ -70,27 +74,27 @@ export class CartService {
       relations: ['items'],
     });
 
-    // If the found cart is no longer active (completed / abandoned / merged),
-    // create a fresh one with a new token so the frontend can reset its state.
-    let cart: Cart;
-    if (!existing || existing.status !== 'active') {
-      cart = await this.cartRepo.save(
-        this.cartRepo.create({
-          token: existing ? randomUUID() : token,
-          userId: userId ?? null,
-          status: 'active',
-        }),
-      );
-      (cart as any).items = [];
-    } else {
-      cart = existing;
-      if (userId && !cart.userId) {
-        cart.userId = userId;
-        await this.cartRepo.save(cart);
+    if (existing && existing.status === 'active') {
+      if (userId && !existing.userId) {
+        existing.userId = userId;
+        await this.cartRepo.save(existing);
       }
+      return this.enrichCart(existing, lang);
     }
 
-    return this.enrichCart(cart, lang);
+    // No active cart persisted for this token yet — either it never existed,
+    // or the existing one is no longer active (completed / abandoned /
+    // merged) and needs a fresh token so the frontend can reset its state.
+    // Return a virtual, unsaved empty cart rather than writing a row.
+    const virtualCart = {
+      id: null,
+      token: existing ? randomUUID() : token,
+      userId: userId ?? null,
+      status: 'active',
+      items: [],
+    } as unknown as Cart;
+
+    return this.enrichCart(virtualCart, lang);
   }
 
   // ── Add item ───────────────────────────────────────────────────────────────
@@ -127,7 +131,7 @@ export class CartService {
       });
     }
 
-    const cart = await this.ensureActiveCart(token);
+    const cart = await this.getOrCreatePersistedCart(token);
     const metaEventId = randomUUID();
 
     const existing = cart.items.find(
@@ -413,6 +417,32 @@ export class CartService {
     });
     if (!cart) throw new NotFoundException('Active cart not found');
     return cart as Cart & { items: CartItem[] };
+  }
+
+  // The one place a Cart row is ever persisted — the first real mutation
+  // (adding an item) for a given token, not a bare page-view GET.
+  private async getOrCreatePersistedCart(
+    token: string,
+  ): Promise<Cart & { items: CartItem[] }> {
+    const existing = await this.cartRepo.findOne({
+      where: { token },
+      relations: ['items'],
+    });
+
+    if (existing) {
+      // Same behavior as ensureActiveCart() for a non-active row at this
+      // token: the frontend must fetch a fresh token via GET first (its
+      // unique index means we can't silently reuse this token for a new row).
+      if (existing.status !== 'active') {
+        throw new NotFoundException('Active cart not found');
+      }
+      return existing as Cart & { items: CartItem[] };
+    }
+
+    const cart = await this.cartRepo.save(
+      this.cartRepo.create({ token, status: 'active' }),
+    );
+    return { ...cart, items: [] } as Cart & { items: CartItem[] };
   }
 
   private async enrichCart(cart: Cart, lang?: string): Promise<any> {
