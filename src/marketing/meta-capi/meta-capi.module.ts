@@ -8,6 +8,8 @@ import { PlatformSettingsModule } from '../../platform-settings/platform-setting
 import { META_CAPI_QUEUE } from './meta-capi.constants';
 import { MetaCapiOrderListener } from './meta-capi-order.listener';
 import { MetaCapiProcessor } from './meta-capi.processor';
+import { MetaCapiService } from './meta-capi.service';
+import { MetaCapiTrackController } from './meta-capi-track.controller';
 
 @Module({
   imports: [
@@ -16,6 +18,8 @@ import { MetaCapiProcessor } from './meta-capi.processor';
     DlqModule,
     PlatformSettingsModule,
   ],
-  providers: [MetaCapiOrderListener, MetaCapiProcessor],
+  controllers: [MetaCapiTrackController],
+  providers: [MetaCapiOrderListener, MetaCapiProcessor, MetaCapiService],
+  exports: [MetaCapiService],
 })
 export class MetaCapiModule {}

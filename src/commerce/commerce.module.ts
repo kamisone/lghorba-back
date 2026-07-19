@@ -8,6 +8,7 @@ import { PaymentsModule } from '../payments/payments.module';
 import { DlqModule } from '../dlq/dlq.module';
 import { TranslationsModule } from '../translations/translations.module';
 import { AntiSpamModule } from '../common/anti-spam/anti-spam.module';
+import { MetaCapiModule } from '../marketing/meta-capi/meta-capi.module';
 
 // Entities
 import { Product } from './entities/product.entity';
@@ -221,6 +222,7 @@ const ENTITIES = [
     DlqModule,
     TranslationsModule,
     AntiSpamModule,
+    MetaCapiModule,
   ],
   controllers: [
     ProductAdminController,

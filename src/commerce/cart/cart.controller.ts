@@ -1,6 +1,7 @@
 import {
-  Body, Controller, Delete, Get, Param, Post, Put, Query,
+  Body, Controller, Delete, Get, Param, Post, Put, Query, Req,
 } from '@nestjs/common';
+import { Request } from 'express';
 import { Public } from '../../auth/public.decorator';
 import { CartService } from './cart.service';
 
@@ -23,9 +24,15 @@ export class CartController {
     @Param('token') token: string,
     @Body('variantId') variantId: string,
     @Body('quantity')  quantity: number,
-    @Body('selectedOptionValueIds') selectedOptionValueIds?: string[],
+    @Body('selectedOptionValueIds') selectedOptionValueIds: string[] | undefined,
+    @Req() req: Request,
   ) {
-    return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds);
+    const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
+      .split(',')[0]
+      .trim();
+    const ip = req.ip ?? (forwarded || null);
+    const userAgent = (req.headers['user-agent'] as string) ?? null;
+    return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds, { ip, userAgent });
   }
 
   @Put(':token/items/:itemId')

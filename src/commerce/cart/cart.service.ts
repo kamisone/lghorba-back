@@ -19,6 +19,7 @@ import { TranslationsService } from '../../translations/translations.service';
 import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
 import { CART_ABANDONMENT_QUEUE } from './cart-abandonment.constants';
 import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
+import { MetaCapiService } from '../../marketing/meta-capi/meta-capi.service';
 
 @Injectable()
 export class CartService {
@@ -35,6 +36,10 @@ export class CartService {
     private readonly translationsService: TranslationsService,
     @InjectQueue(CART_ABANDONMENT_QUEUE)
     private readonly abandonmentQueue: Queue,
+    // Direct call, not event-driven: unlike checkout/payment there's no domain
+    // event for "item added to cart" to react to, and adding one just for this
+    // analytics side effect would be overkill.
+    private readonly metaCapi: MetaCapiService,
   ) {}
 
   // ── Get or create cart by token ────────────────────────────────────────────
@@ -73,6 +78,7 @@ export class CartService {
     variantId: string,
     quantity: number,
     selectedOptionValueIds?: string[],
+    requestMeta?: { ip: string | null; userAgent: string | null },
   ): Promise<any> {
     if (quantity < 1) throw new BadRequestException('Quantity must be at least 1');
 
@@ -89,8 +95,10 @@ export class CartService {
     }
 
     const cart = await this.ensureActiveCart(token);
+    const metaEventId = randomUUID();
 
     const existing = cart.items.find((i: CartItem) => i.variantId === variantId);
+    let trackUnitPriceCents: number;
     if (existing) {
       const newQty = existing.quantity + quantity;
       if (inventory.available < newQty) {
@@ -98,6 +106,7 @@ export class CartService {
       }
       existing.quantity = newQty;
       await this.itemRepo.save(existing);
+      trackUnitPriceCents = existing.unitPriceCents;
     } else {
       const product = (variant as any).product as Product;
 
@@ -180,7 +189,26 @@ export class CartService {
         optionsSnapshot,
         compareAtPriceCentsSnapshot: variant.compareAtPriceCents ?? null,
       }));
+      trackUnitPriceCents = unitPriceCents;
     }
+
+    // Meta Pixel: value/currency/ids only — never customer PII. Value reflects
+    // what was just added (unit price × quantity added), not the cart's total
+    // line value, matching Meta's "AddToCart" convention.
+    await this.metaCapi.sendEvent({
+      eventName: 'AddToCart',
+      eventId: metaEventId,
+      eventSourceUrl: `${process.env.APP_URL ?? ''}/shop`,
+      customData: {
+        content_type: 'product',
+        content_ids: [variantId],
+        value: (trackUnitPriceCents * quantity) / 100,
+        currency: 'EUR',
+        num_items: quantity,
+      },
+      clientIpAddress: requestMeta?.ip ?? null,
+      clientUserAgent: requestMeta?.userAgent ?? null,
+    });
 
     // Schedule abandonment email — delay 1h, jobId ensures only one pending per cart
     await this.abandonmentQueue.add(
@@ -189,7 +217,10 @@ export class CartService {
       { delay: 60 * 60 * 1000, jobId: `cart-abandon.${token}`, removeOnComplete: true },
     );
 
-    return this.getOrCreate(token);
+    const cartData = await this.getOrCreate(token);
+    // Shared with the CAPI call above so the frontend's browser-side fbq()
+    // AddToCart call can use the same eventID for Meta's dedup.
+    return { ...cartData, metaAddToCartEventId: metaEventId };
   }
 
   // ── Update item quantity ───────────────────────────────────────────────────
