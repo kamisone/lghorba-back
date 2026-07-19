@@ -23,8 +23,8 @@ export class FleetAnalyticsController {
   @Get('downtime')
   downtime(
     @Query('carId') carId?: string,
-    @Query('from')  from?: string,
-    @Query('to')    to?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     return this.service.getDowntime(carId, from, to);
   }
@@ -32,5 +32,22 @@ export class FleetAnalyticsController {
   @Get('cost-summary')
   costSummary(@Query('carId') carId: string) {
     return this.service.getCostSummary(carId);
+  }
+
+  @Get('idle-days')
+  idleDays(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('parkingId') parkingId?: string,
+  ) {
+    return this.service.getIdleDays(from, to, parkingId);
+  }
+
+  @Get('idle-days/detail')
+  idleDayDetail(
+    @Query('date') date: string,
+    @Query('parkingId') parkingId?: string,
+  ) {
+    return this.service.getIdleDayDetail(date, parkingId);
   }
 }

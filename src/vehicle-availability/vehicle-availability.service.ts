@@ -1,8 +1,15 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { VehicleAvailability } from './vehicle-availability.entity';
-import { CreateVehicleAvailabilityDto, UpdateVehicleAvailabilityDto } from './dto/vehicle-availability.dto';
+import {
+  CreateVehicleAvailabilityDto,
+  UpdateVehicleAvailabilityDto,
+} from './dto/vehicle-availability.dto';
 
 @Injectable()
 export class VehicleAvailabilityService {
@@ -22,18 +29,23 @@ export class VehicleAvailabilityService {
       .orderBy('va.startDate', 'ASC');
 
     if (fromDate) qb.andWhere('va.endDate >= :fromDate', { fromDate });
-    if (toDate)   qb.andWhere('va.startDate <= :toDate', { toDate });
+    if (toDate) qb.andWhere('va.startDate <= :toDate', { toDate });
 
     return qb.getMany();
   }
 
   /** Returns true if any availability block overlaps the given date range. */
-  async hasOverlap(carId: string, startDate: string, endDate: string, excludeId?: string): Promise<boolean> {
+  async hasOverlap(
+    carId: string,
+    startDate: string,
+    endDate: string,
+    excludeId?: string,
+  ): Promise<boolean> {
     const qb = this.repo
       .createQueryBuilder('va')
-      .where('va.carId = :carId',           { carId })
-      .andWhere('va.startDate <= :endDate',  { endDate })
-      .andWhere('va.endDate   >= :startDate',{ startDate });
+      .where('va.carId = :carId', { carId })
+      .andWhere('va.startDate <= :endDate', { endDate })
+      .andWhere('va.endDate   >= :startDate', { startDate });
 
     if (excludeId) qb.andWhere('va.id != :excludeId', { excludeId });
     return (await qb.getCount()) > 0;
@@ -48,7 +60,7 @@ export class VehicleAvailabilityService {
       .andWhere('va.endDate   >= :date', { date })
       .distinct(true)
       .getRawMany<{ carId: string }>();
-    return new Set(rows.map(r => r.carId));
+    return new Set(rows.map((r) => r.carId));
   }
 
   /** All blocks (any car) ending on or after the given date (YYYY-MM-DD). Single query. */
@@ -59,15 +71,34 @@ export class VehicleAvailabilityService {
       .getMany();
   }
 
-  /** Check if a datetime range overlaps any availability block (for booking/search). */
-  async isBlocked(carId: string, startDateTime: string, endDateTime: string): Promise<VehicleAvailability | null> {
-    const startDate = startDateTime.slice(0, 10);
-    const endDate   = endDateTime.slice(0, 10);
+  /** All blocks for the given cars overlapping [from, to] (YYYY-MM-DD, inclusive). Single query. */
+  findOverlappingForCars(
+    carIds: string[],
+    from: string,
+    to: string,
+  ): Promise<VehicleAvailability[]> {
+    if (carIds.length === 0) return Promise.resolve([]);
     return this.repo
       .createQueryBuilder('va')
-      .where('va.carId = :carId',            { carId })
-      .andWhere('va.startDate <= :endDate',  { endDate })
-      .andWhere('va.endDate   >= :startDate',{ startDate })
+      .where('va.carId IN (:...carIds)', { carIds })
+      .andWhere('va.startDate <= :to', { to })
+      .andWhere('va.endDate   >= :from', { from })
+      .getMany();
+  }
+
+  /** Check if a datetime range overlaps any availability block (for booking/search). */
+  async isBlocked(
+    carId: string,
+    startDateTime: string,
+    endDateTime: string,
+  ): Promise<VehicleAvailability | null> {
+    const startDate = startDateTime.slice(0, 10);
+    const endDate = endDateTime.slice(0, 10);
+    return this.repo
+      .createQueryBuilder('va')
+      .where('va.carId = :carId', { carId })
+      .andWhere('va.startDate <= :endDate', { endDate })
+      .andWhere('va.endDate   >= :startDate', { startDate })
       .getOne();
   }
 
@@ -78,23 +109,27 @@ export class VehicleAvailabilityService {
   ): Promise<VehicleAvailability> {
     const block = this.repo.create({
       carId,
-      startDate:        dto.startDate,
-      endDate:          dto.endDate,
-      reason:           dto.reason ?? null,
-      notes:            dto.notes  ?? null,
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      reason: dto.reason ?? null,
+      notes: dto.notes ?? null,
       createdByAdminId: adminId ?? null,
     });
     return this.repo.save(block);
   }
 
-  async update(id: string, dto: UpdateVehicleAvailabilityDto): Promise<VehicleAvailability> {
+  async update(
+    id: string,
+    dto: UpdateVehicleAvailabilityDto,
+  ): Promise<VehicleAvailability> {
     const block = await this.repo.findOne({ where: { id } });
-    if (!block) throw new NotFoundException(`Availability block ${id} not found`);
+    if (!block)
+      throw new NotFoundException(`Availability block ${id} not found`);
 
     if (dto.startDate !== undefined) block.startDate = dto.startDate;
-    if (dto.endDate   !== undefined) block.endDate   = dto.endDate;
-    if (dto.reason    !== undefined) block.reason    = dto.reason ?? null;
-    if (dto.notes     !== undefined) block.notes     = dto.notes  ?? null;
+    if (dto.endDate !== undefined) block.endDate = dto.endDate;
+    if (dto.reason !== undefined) block.reason = dto.reason ?? null;
+    if (dto.notes !== undefined) block.notes = dto.notes ?? null;
 
     if (block.startDate > block.endDate) {
       throw new BadRequestException('endDate must be ≥ startDate');
@@ -104,7 +139,8 @@ export class VehicleAvailabilityService {
 
   async remove(id: string): Promise<void> {
     const block = await this.repo.findOne({ where: { id } });
-    if (!block) throw new NotFoundException(`Availability block ${id} not found`);
+    if (!block)
+      throw new NotFoundException(`Availability block ${id} not found`);
     await this.repo.delete(id);
   }
 }
