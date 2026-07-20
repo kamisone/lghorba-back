@@ -24,6 +24,7 @@ import {
   resolveVariantPrice,
   sumOptionAdjustments,
 } from '../pricing/variant-price';
+import { containsTestProduct } from '../shared/test-product';
 import { CustomerService } from '../customer/customer.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import {
@@ -128,6 +129,10 @@ export class OrdersService {
     // Re-verify every cart item price against current product/variant data
     await this.verifyCartItemPrices(items);
 
+    const isTestOrder = await containsTestProduct(this.productRepo, [
+      ...new Set(items.map((i) => i.productId)),
+    ]);
+
     return this.dataSource.transaction(async (em) => {
       // Generate order number via sequence
       const seq = await em.query(
@@ -145,6 +150,7 @@ export class OrdersService {
       const order = em.create(Order, {
         orderNumber,
         status: 'awaiting_payment',
+        isTestOrder,
         userId: dto.userId ?? null,
         customerEmail: dto.customerEmail,
         customerName: dto.customerName ?? null,

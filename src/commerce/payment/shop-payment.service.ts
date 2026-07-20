@@ -8,6 +8,7 @@ import { STRIPE_CLIENT } from '../../payments/stripe.provider';
 import { Order } from '../entities/order.entity';
 import { PaymentTransaction } from '../entities/payment-transaction.entity';
 import { OrdersService } from '../orders/orders.service';
+import { TestCheckoutGuard } from '../shared/test-checkout-guard.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { COMMERCE_EVENTS } from '../events/commerce-events';
 
@@ -19,9 +20,10 @@ export class ShopPaymentService {
     @Inject(STRIPE_CLIENT)
     private readonly stripe: Stripe.Stripe,
     @InjectRepository(Order)               private readonly orderRepo: Repository<Order>,
-    private readonly ordersService:  OrdersService,
-    private readonly eventBus:       CommerceEventBus,
-    private readonly dataSource:     DataSource,
+    private readonly ordersService:     OrdersService,
+    private readonly testCheckoutGuard: TestCheckoutGuard,
+    private readonly eventBus:          CommerceEventBus,
+    private readonly dataSource:        DataSource,
   ) {}
 
   // ── Create payment intent for a shop order ──────────────────────────────────
@@ -29,6 +31,12 @@ export class ShopPaymentService {
   async createPaymentIntent(orderId: string): Promise<{ clientSecret: string; paymentIntentId: string }> {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
+
+    // The storefront is already stopped at readyForPayment, but this route is
+    // also reachable directly via POST /public/shop/payment/intent, which skips
+    // it. Re-check here so no path can mint an intent for a test product.
+    await this.testCheckoutGuard.assertCheckoutAllowed(order);
+
     if (order.status !== 'awaiting_payment') {
       throw new BadRequestException(`Order status "${order.status}" does not require payment`);
     }

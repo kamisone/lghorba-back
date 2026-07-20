@@ -96,6 +96,93 @@ export class ShopBehaviorAnalyticsService {
     };
   }
 
+  // ── Test-product demand validation ──────────────────────────────────────────
+
+  /**
+   * Per-test-product demand report.
+   *
+   * `reachedCheckout` is the decision metric: customers who filled in their
+   * address, selected shipping and clicked through to payment — the furthest a
+   * test product can be taken, and the point at which checkout is refused.
+   * These are people who would have bought the product had it been real.
+   *
+   * Counted by distinct cart rather than raw events, because a customer who
+   * retries after the error is one interested buyer, not several.
+   *
+   * Every test product is listed even with zero activity, so a product that
+   * simply is not selling is visible rather than silently absent.
+   */
+  async getTestProductDemand(days = 30): Promise<
+    Array<{
+      productId: string;
+      title: string;
+      slug: string;
+      status: string;
+      views: number;
+      addsToCart: number;
+      reachedCheckout: number;
+      viewToCartRatePct: number;
+      cartToCheckoutRatePct: number;
+      viewToCheckoutRatePct: number;
+    }>
+  > {
+    const testProducts = await this.productRepo.find({
+      where: { isTestProduct: true },
+      select: ['id', 'title', 'slug', 'status'],
+    });
+    if (!testProducts.length) return [];
+
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const ids = testProducts.map((p) => p.id);
+
+    const rows = await this.behaviorRepo
+      .createQueryBuilder('be')
+      .select('be.productId', 'productId')
+      .addSelect('be.eventType', 'eventType')
+      .addSelect('COUNT(be.id)', 'count')
+      .addSelect('COUNT(DISTINCT be.cartToken)', 'distinctCarts')
+      .where('be.productId IN (:...ids)', { ids })
+      .andWhere('be.eventType IN (:...types)', {
+        types: ['product_view', 'add_to_cart', 'test_checkout_blocked'],
+      })
+      .andWhere('be.createdAt >= :since', { since })
+      .groupBy('be.productId')
+      .addGroupBy('be.eventType')
+      .getRawMany<{
+        productId: string;
+        eventType: string;
+        count: string;
+        distinctCarts: string;
+      }>();
+
+    const counts = new Map<string, number>();
+    const distinct = new Map<string, number>();
+    for (const r of rows) {
+      counts.set(`${r.productId}:${r.eventType}`, parseInt(r.count, 10));
+      distinct.set(`${r.productId}:${r.eventType}`, parseInt(r.distinctCarts, 10));
+    }
+
+    return testProducts
+      .map((p) => {
+        const views = counts.get(`${p.id}:product_view`) ?? 0;
+        const addsToCart = counts.get(`${p.id}:add_to_cart`) ?? 0;
+        const reachedCheckout = distinct.get(`${p.id}:test_checkout_blocked`) ?? 0;
+        return {
+          productId: p.id,
+          title: p.title,
+          slug: p.slug,
+          status: p.status as string,
+          views,
+          addsToCart,
+          reachedCheckout,
+          viewToCartRatePct: pct(addsToCart, views),
+          cartToCheckoutRatePct: pct(reachedCheckout, addsToCart),
+          viewToCheckoutRatePct: pct(reachedCheckout, views),
+        };
+      })
+      .sort((a, b) => b.reachedCheckout - a.reachedCheckout || b.views - a.views);
+  }
+
   async getProductConversion(
     days = 30,
     limit = 20,

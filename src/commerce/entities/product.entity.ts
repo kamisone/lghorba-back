@@ -34,6 +34,7 @@ export type ProductStatus =
 @Entity('shop_products')
 @Index(['status'])
 @Index(['featured'])
+@Index(['isTestProduct'])
 export class Product {
   @PrimaryGeneratedColumn('uuid') id: string;
 
@@ -121,6 +122,13 @@ export class Product {
   @Column({ type: 'int', nullable: true }) basePriceCents: number | null;
 
   @Column({ type: 'boolean', default: false }) featured: boolean;
+
+  /**
+   * Demand-validation product. Behaves normally through the shipping step, then
+   * checkout is refused before any PaymentIntent is created — used to measure
+   * real purchase intent before committing to inventory.
+   */
+  @Column({ type: 'boolean', default: false }) isTestProduct: boolean;
   @Column({ type: 'varchar', length: 50, default: 'draft' })
   status: ProductStatus;
 

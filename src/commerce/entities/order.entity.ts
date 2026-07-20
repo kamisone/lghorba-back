@@ -12,11 +12,19 @@ export type OrderStatus =
 @Entity('shop_orders')
 @Index(['status'])
 @Index(['customerEmail'])
+@Index(['isTestOrder'])
 export class Order {
   @PrimaryGeneratedColumn('uuid') id: string;
 
   @Column({ type: 'varchar', length: 50, unique: true }) orderNumber: string;
   @Column({ type: 'varchar', length: 20, default: 'pending' }) status: OrderStatus;
+
+  /**
+   * Contains at least one test product, so checkout must be refused before
+   * payment. Denormalised at order creation as an audit record; the payment gate
+   * re-reads live product state rather than trusting this flag.
+   */
+  @Column({ type: 'boolean', default: false }) isTestOrder: boolean;
 
   @Column({ type: 'uuid', nullable: true }) userId: string | null;
   @Column({ type: 'uuid', nullable: true }) customerId: string | null;

@@ -66,6 +66,13 @@ export class ShopAnalyticsController {
     return this.behaviorAnalytics.getConversionFunnel(d);
   }
 
+  // Demand validation for test products: views → cart → reached checkout.
+  @Get('test-products')
+  testProducts(@Query('days') days?: string) {
+    const d = days ? parseInt(days, 10) : 30;
+    return this.behaviorAnalytics.getTestProductDemand(d);
+  }
+
   @Get('conversion-by-product')
   conversionByProduct(
     @Query('days') days?: string,

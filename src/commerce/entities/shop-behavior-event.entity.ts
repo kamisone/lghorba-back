@@ -12,7 +12,14 @@ export type BehaviorEventType =
   | 'add_to_cart'
   | 'update_cart_item'
   | 'remove_from_cart'
-  | 'checkout_started';
+  | 'checkout_started'
+  /**
+   * Customer completed the shipping step and tried to continue to payment on an
+   * order containing a test product, and was refused. This is the furthest a
+   * test product can be taken, and the demand signal the feature exists to
+   * collect — recorded server-side at the block, never accepted from the client.
+   */
+  | 'test_checkout_blocked';
 
 // "purchase" is deliberately not an event type here — the purchase funnel step
 // and customer timeline read directly from shop_orders/shop_order_items (the

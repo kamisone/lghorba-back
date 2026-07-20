@@ -23,6 +23,8 @@ import { CustomerService } from '../customer/customer.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { PricingEngineService, LineItemInput, PricingResult } from '../pricing/pricing-engine.service';
 import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
+import { containsTestProduct } from '../shared/test-product';
+import { TestCheckoutGuard } from '../shared/test-checkout-guard.service';
 import { COMMERCE_EVENTS } from '../events/commerce-events';
 import {
   CHECKOUT_RESERVATION_QUEUE,
@@ -110,6 +112,7 @@ export class CheckoutService {
     private readonly customerService:  CustomerService,
     private readonly eventBus:         CommerceEventBus,
     private readonly pricingEngine:    PricingEngineService,
+    private readonly testCheckoutGuard: TestCheckoutGuard,
   ) {}
 
   // ── Initiate checkout ──────────────────────────────────────────────────────
@@ -168,6 +171,9 @@ export class CheckoutService {
       existing.totalCents            = pricing.afterCategorySubtotalCents - pricing.couponDiscountCents + existing.shippingCents;
       existing.couponCode            = pricing.couponCode;
       existing.pricingSnapshot       = pricing as unknown as Record<string, unknown>;
+      // Re-evaluate: a product may have been flagged as a test after this order
+      // was created, and this branch is how a mid-checkout refresh resumes.
+      existing.isTestOrder           = await containsTestProduct(this.productRepo, productIds);
       await this.orderRepo.save(existing);
 
       const { zone, methods } = await this.shippingService.getMethodsForCountry(dto.country, existing.subtotalCents);
@@ -182,6 +188,7 @@ export class CheckoutService {
     // Load product category IDs for pricing engine
     const productIds = [...new Set(items.map(i => i.productId))];
     const categoryMap = await this.loadProductCategoryIds(productIds);
+    const isTestOrder = await containsTestProduct(this.productRepo, productIds);
 
     // Build line inputs with freshly verified prices
     const lineInputs: LineItemInput[] = items.map(item => ({
@@ -202,6 +209,7 @@ export class CheckoutService {
       const order = await em.save(Order, em.create(Order, {
         orderNumber,
         status:               'draft',
+        isTestOrder,
         cartToken:            dto.cartToken,
         customerEmail:        dto.email,
         customerName:         `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || null,
@@ -320,6 +328,11 @@ export class CheckoutService {
   async readyForPayment(orderId: string): Promise<{ orderId: string; orderNumber: string; totalCents: number }> {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
+
+    // Test products are refused here — before the status transition, before
+    // coupon usage is incremented, and before any Stripe call. The customer sees
+    // a generic failure on the shipping step and the payment form never loads.
+    await this.testCheckoutGuard.assertCheckoutAllowed(order);
 
     // Idempotent resume: a page refresh re-runs the checkout flow against the
     // same draft/awaiting_payment order (see initiate()'s idempotency check).

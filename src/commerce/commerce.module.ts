@@ -60,6 +60,7 @@ import { OrdersService } from './orders/orders.service';
 import { CustomerService } from './customer/customer.service';
 import { CollectionService } from './merchandising/collection.service';
 import { ShopPaymentService } from './payment/shop-payment.service';
+import { TestCheckoutGuard } from './shared/test-checkout-guard.service';
 import { ShippingService } from './shipping/shipping.service';
 import { ReviewsService } from './reviews/reviews.service';
 import { ShopAnalyticsService } from './analytics/shop-analytics.service';
@@ -282,6 +283,7 @@ const ENTITIES = [
     CustomerService,
     CollectionService,
     ShopPaymentService,
+    TestCheckoutGuard,
     CountryService,
     ShippingService,
     ReviewsService,
