@@ -25,14 +25,18 @@ export class RentSessionsController {
   }
 
   @Get()
-  findAll(@Query('carId') carId: string, @Query('unlinked') unlinked?: string) {
+  findAll(
+    @Query('carId') carId: string,
+    @Query('unlinked') unlinked?: string,
+    @Query('includeRejected') includeRejected?: string,
+  ) {
     if (unlinked === 'true') return this.service.findUnlinked();
-    return this.service.findAllForCar(carId);
+    return this.service.findAllForCar(carId, includeRejected === 'true');
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  findOne(@Param('id') id: string, @Query('includeRejected') includeRejected?: string) {
+    return this.service.findOne(id, includeRejected === 'true');
   }
 
   @Patch(':id')
@@ -46,14 +50,15 @@ export class RentSessionsController {
     return this.service.remove(id);
   }
 
+  // Authenticated admin entry — trusted, so the plausibility filter is bypassed.
   @Post(':id/positions')
   addPosition(@Param('id') id: string, @Body(new ZodValidationPipe(CreateRentPositionSchema)) dto: CreateRentPositionDto) {
-    return this.service.addPosition(id, dto);
+    return this.service.addPosition(id, dto, { skipFilter: true });
   }
 
   @Get(':id/positions')
-  getPositions(@Param('id') id: string) {
-    return this.service.getPositions(id);
+  getPositions(@Param('id') id: string, @Query('includeRejected') includeRejected?: string) {
+    return this.service.getPositions(id, includeRejected === 'true');
   }
 
   @Delete(':id/positions/:positionId')

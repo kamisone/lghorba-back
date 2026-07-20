@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -11,6 +12,8 @@ import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
 import { extractLatLng, extractMapsUrl } from '../common/utils/map.util';
 import { Booking } from '../bookings/booking.entity';
+import { filterPosition, FilterResult, PositionFilterConfig } from './position-filter';
+import { loadPositionFilterConfig } from './position-filter.config';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
@@ -22,6 +25,9 @@ export function addLocationInterval(from: Date): Date {
 
 @Injectable()
 export class RentSessionsService {
+  private readonly logger = new Logger(RentSessionsService.name);
+  private readonly filterConfig: PositionFilterConfig = loadPositionFilterConfig();
+
   constructor(
     @InjectRepository(RentSession)
     private readonly sessionRepo: Repository<RentSession>,
@@ -47,12 +53,18 @@ export class RentSessionsService {
     );
   }
 
-  findAllForCar(carId: string): Promise<RentSession[]> {
-    return this.sessionRepo.find({
-      where: { carId },
-      relations: { positions: true, booking: { user: true } },
-      order: { startedAt: 'DESC', positions: { recordedAt: 'ASC' } },
-    });
+  findAllForCar(carId: string, includeRejected = false): Promise<RentSession[]> {
+    // The rejected condition must live in the JOIN ON clause, not in WHERE:
+    // in WHERE it would drop sessions that have no accepted positions at all.
+    return this.sessionRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.positions', 'p', includeRejected ? undefined : 'p.rejected = false')
+      .leftJoinAndSelect('s.booking', 'booking')
+      .leftJoinAndSelect('booking.user', 'user')
+      .where('s.carId = :carId', { carId })
+      .orderBy('s.startedAt', 'DESC')
+      .addOrderBy('p.recordedAt', 'ASC')
+      .getMany();
   }
 
   async findUnlinked(): Promise<{ id: string; startedAt: Date; endedAt: Date | null; status: RentSessionStatus; car: { id: string; name: string; immatriculation: string } | null }[]> {
@@ -71,12 +83,15 @@ export class RentSessionsService {
     }));
   }
 
-  async findOne(id: string): Promise<RentSession> {
-    const session = await this.sessionRepo.findOne({
-      where: { id },
-      relations: { positions: true },
-      order: { positions: { recordedAt: 'ASC' } },
-    });
+  async findOne(id: string, includeRejected = false): Promise<RentSession> {
+    // See findAllForCar: the condition belongs in the JOIN, not the WHERE, or a
+    // session whose only position was rejected would 404.
+    const session = await this.sessionRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.positions', 'p', includeRejected ? undefined : 'p.rejected = false')
+      .where('s.id = :id', { id })
+      .orderBy('p.recordedAt', 'ASC')
+      .getOne();
     if (!session) throw new NotFoundException(`RentSession ${id} not found`);
     return session;
   }
@@ -134,14 +149,81 @@ export class RentSessionsService {
     await this.sessionRepo.delete(id);
   }
 
+  /**
+   * Fetches the two references the plausibility filter compares against: the
+   * last accepted position (the anchor) and the last rejected one (used to
+   * corroborate a genuine relocation). Both hit the composite index.
+   */
+  private async runFilter(sessionId: string, dto: CreateRentPositionDto): Promise<FilterResult> {
+    const [anchor, lastRejected] = await Promise.all([
+      this.positionRepo.findOne({
+        where: { sessionId, rejected: false },
+        order: { recordedAt: 'DESC' },
+      }),
+      this.positionRepo.findOne({
+        where: { sessionId, rejected: true },
+        order: { recordedAt: 'DESC' },
+      }),
+    ]);
+
+    return filterPosition(
+      { lat: dto.lat, lng: dto.lng, recordedAt: dto.recordedAt, rawMessage: dto.rawMessage },
+      { anchor, lastRejected, now: new Date(), config: this.filterConfig },
+    );
+  }
+
+  /**
+   * @param opts.skipFilter bypass plausibility filtering. Set for authenticated
+   * admin entry: a manual correction would otherwise fail the speed check
+   * exactly when it is most needed — when fixing a bad anchor.
+   */
   async addPosition(
     id: string,
     dto: CreateRentPositionDto,
-  ): Promise<RentPosition> {
-    await this.findOne(id);
-    return this.positionRepo.save(
-      this.positionRepo.create({ ...dto, sessionId: id }),
+    opts: { skipFilter?: boolean } = {},
+  ): Promise<RentPosition | null> {
+    const exists = await this.sessionRepo.exist({ where: { id } });
+    if (!exists) throw new NotFoundException(`RentSession ${id} not found`);
+
+    if (opts.skipFilter) {
+      return this.positionRepo.save(
+        this.positionRepo.create({ ...dto, sessionId: id, rejected: false }),
+      );
+    }
+
+    const result = await this.runFilter(id, dto);
+
+    // Retries carry no audit value and would otherwise accumulate.
+    if (result.reason === 'duplicate') return null;
+
+    if (!result.accepted) {
+      this.logger.warn(
+        `Rejected position for session ${id}: ${result.reason}` +
+          (result.impliedSpeedKmh !== undefined
+            ? ` (impliedSpeedKmh=${result.impliedSpeedKmh.toFixed(1)})`
+            : ''),
+      );
+    }
+
+    const saved = await this.positionRepo.save(
+      this.positionRepo.create({
+        ...dto,
+        sessionId: id,
+        rejected: !result.accepted,
+        rejectReason: result.reason ?? null,
+        impliedSpeedKmh: result.impliedSpeedKmh ?? null,
+      }),
     );
+
+    // A second reading corroborated an earlier rejection: the car really did move.
+    if (result.unrejectPositionId) {
+      await this.positionRepo.update(result.unrejectPositionId, {
+        rejected: false,
+        rejectReason: null,
+      });
+    }
+
+    return saved;
   }
 
   async removePosition(sessionId: string, positionId: string): Promise<void> {
@@ -152,10 +234,11 @@ export class RentSessionsService {
     await this.positionRepo.delete(positionId);
   }
 
-  async getPositions(id: string): Promise<RentPosition[]> {
-    await this.findOne(id);
+  async getPositions(id: string, includeRejected = false): Promise<RentPosition[]> {
+    const exists = await this.sessionRepo.exist({ where: { id } });
+    if (!exists) throw new NotFoundException(`RentSession ${id} not found`);
     return this.positionRepo.find({
-      where: { sessionId: id },
+      where: includeRejected ? { sessionId: id } : { sessionId: id, rejected: false },
       order: { recordedAt: 'ASC' },
     });
   }
