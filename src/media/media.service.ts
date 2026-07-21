@@ -30,6 +30,9 @@ export interface TrackUsageDto {
 }
 
 const MEDIA_PREFIX       = 'media/';
+/** Media object paths are content-addressed, so they can be cached indefinitely.
+ *  Matches HLS_CACHE_CONTROL in video-transcode.processor.ts. */
+const MEDIA_CACHE_CONTROL = 'public, max-age=31536000, immutable';
 const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif', 'image/svg+xml'];
 const ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/webm'];
 const ALLOWED_MIME_TYPES = [...ALLOWED_IMAGE_MIME_TYPES, ...ALLOWED_VIDEO_MIME_TYPES];
@@ -112,7 +115,17 @@ export class MediaService {
     const datePart   = new Date().toISOString().slice(0, 7);
     const storageKey = `${MEDIA_PREFIX}${datePart}/${checksum.slice(0, 8)}-${Date.now()}.${ext}`;
 
-    await this.gcs.upload(file.buffer, storageKey, file.mimetype, 'publicRead');
+    // storageKey embeds the content checksum and an upload timestamp, so an
+    // object is immutable once written — different bytes get a different path.
+    // Without this GCS applies its 1 h default, which expires browser caches and
+    // Next's image cache hourly for content that can never change.
+    await this.gcs.upload(
+      file.buffer,
+      storageKey,
+      file.mimetype,
+      'publicRead',
+      MEDIA_CACHE_CONTROL,
+    );
 
     const { width, height, durationSeconds } = kind === 'video'
       ? await extractVideoMetadata(file.buffer, file.mimetype)
