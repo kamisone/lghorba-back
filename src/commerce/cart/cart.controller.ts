@@ -5,6 +5,14 @@ import { Request } from 'express';
 import { Public } from '../../auth/public.decorator';
 import { CartService } from './cart.service';
 
+/** First hop of `x-forwarded-for` behind the proxy, else the socket address. */
+function clientIp(req: Request): string | null {
+  const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
+    .split(',')[0]
+    .trim();
+  return req.ip ?? (forwarded || null);
+}
+
 @Public()
 @Controller('public/shop/cart')
 export class CartController {
@@ -27,29 +35,31 @@ export class CartController {
     @Body('selectedOptionValueIds') selectedOptionValueIds: string[] | undefined,
     @Req() req: Request,
   ) {
-    const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
-      .split(',')[0]
-      .trim();
-    const ip = req.ip ?? (forwarded || null);
     const userAgent = (req.headers['user-agent'] as string) ?? null;
-    return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds, { ip, userAgent });
+    return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds, {
+      ip: clientIp(req),
+      userAgent,
+    });
   }
 
+  // The IP is passed for behaviour-event geolocation only; it is never stored.
   @Put(':token/items/:itemId')
   updateItem(
     @Param('token')  token: string,
     @Param('itemId') itemId: string,
     @Body('quantity') quantity: number,
+    @Req() req: Request,
   ) {
-    return this.carts.updateItem(token, itemId, quantity);
+    return this.carts.updateItem(token, itemId, quantity, clientIp(req));
   }
 
   @Delete(':token/items/:itemId')
   removeItem(
     @Param('token')  token: string,
     @Param('itemId') itemId: string,
+    @Req() req: Request,
   ) {
-    return this.carts.removeItem(token, itemId);
+    return this.carts.removeItem(token, itemId, clientIp(req));
   }
 
   @Post(':token/validate-coupon')

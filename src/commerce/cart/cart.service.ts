@@ -296,8 +296,9 @@ export class CartService {
     token: string,
     itemId: string,
     quantity: number,
+    clientIp?: string | null,
   ): Promise<any> {
-    if (quantity < 1) return this.removeItem(token, itemId);
+    if (quantity < 1) return this.removeItem(token, itemId, clientIp);
 
     const cart = await this.ensureActiveCart(token);
     const item = cart.items.find((i: CartItem) => i.id === itemId);
@@ -319,13 +320,14 @@ export class CartService {
       cartToken: token,
       productId: item.productId,
       quantity,
+      countryCode: this.geoIp.countryFromIp(clientIp),
     });
     return this.getOrCreate(token);
   }
 
   // ── Remove item ────────────────────────────────────────────────────────────
 
-  async removeItem(token: string, itemId: string): Promise<any> {
+  async removeItem(token: string, itemId: string, clientIp?: string | null): Promise<any> {
     const cart = await this.ensureActiveCart(token);
     const item = cart.items.find((i: CartItem) => i.id === itemId);
     if (!item) throw new NotFoundException('Cart item not found');
@@ -334,6 +336,7 @@ export class CartService {
       cartToken: token,
       productId: item.productId,
       quantity: item.quantity,
+      countryCode: this.geoIp.countryFromIp(clientIp),
     });
     return this.getOrCreate(token);
   }

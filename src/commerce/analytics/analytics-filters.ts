@@ -77,7 +77,7 @@ const TEST_PRODUCT_SORTS: TestProductSort[] = [
   'viewToCheckoutRatePct',
 ];
 
-export interface TestProductFilter {
+export interface TestProductFilter extends CountryFilter {
   productId?: string;
   productStatus?: string;
   categoryId?: string;

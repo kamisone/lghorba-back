@@ -5,6 +5,7 @@ import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { Product } from '../entities/product.entity';
 import { BehaviorTrackingService } from '../behavior/behavior-tracking.service';
+import { GeoIpService } from '../behavior/geo-ip.service';
 import { testCheckoutBlockedException } from './test-product';
 
 /**
@@ -28,6 +29,7 @@ export class TestCheckoutGuard {
     @InjectRepository(Order) private readonly orderRepo: Repository<Order>,
     @InjectRepository(OrderItem) private readonly orderItemRepo: Repository<OrderItem>,
     private readonly behaviorTracking: BehaviorTrackingService,
+    private readonly geoIp: GeoIpService,
   ) {}
 
   /**
@@ -73,11 +75,16 @@ export class TestCheckoutGuard {
    */
   private async recordDemandSignal(order: Order, productIds: string[]): Promise<void> {
     try {
+      // No request is in scope here (the guard is called from service code), but
+      // checkout already captured the client IP on the order, so the demand
+      // signal can be geolocated without plumbing the request down.
+      const countryCode = this.geoIp.countryFromIp(order.clientIpAddress);
       for (const productId of productIds) {
         await this.behaviorTracking.record('test_checkout_blocked', {
           cartToken: order.cartToken,
           shopCustomerId: order.customerId,
           productId,
+          countryCode,
         });
       }
     } catch (err) {

@@ -68,6 +68,17 @@ export class ShopBehaviorAnalyticsService {
     return null;
   }
 
+  /** ISO code → display name, for the codes actually present in a result set. */
+  private async countryNameMap(codes: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(codes.filter(Boolean))];
+    if (!unique.length) return new Map();
+    const rows = await this.countryRepo.find({
+      where: { isoCode: In(unique) },
+      select: ['isoCode', 'name'],
+    });
+    return new Map(rows.map((c) => [c.isoCode, c.name]));
+  }
+
   async getConversionFunnel(
     window: DateWindow,
     filter: ConversionFilter = {},
@@ -190,8 +201,13 @@ export class ShopBehaviorAnalyticsService {
       viewToCartRatePct: number;
       cartToCheckoutRatePct: number;
       viewToCheckoutRatePct: number;
+      /** Where the demand came from, busiest first. Geolocated from the event IP. */
+      countries: Array<{ countryCode: string; countryName: string; events: number }>;
     }>
   > {
+    const codes = await this.countryCodesFor(filter);
+    if (codes && codes.length === 0) return [];
+
     // Product-level filters (status / category / vendor / brand / price / search)
     // are applied here so a filtered product simply drops out of the report.
     const productsQb = this.productRepo
@@ -232,7 +248,7 @@ export class ShopBehaviorAnalyticsService {
     const { since, until } = window;
     const ids = testProducts.map((p) => p.id);
 
-    const rows = await this.behaviorRepo
+    const countsQb = this.behaviorRepo
       .createQueryBuilder('be')
       .select('be.productId', 'productId')
       .addSelect('be.eventType', 'eventType')
@@ -245,13 +261,63 @@ export class ShopBehaviorAnalyticsService {
       .andWhere('be.createdAt >= :since', { since })
       .andWhere('be.createdAt < :until', { until })
       .groupBy('be.productId')
-      .addGroupBy('be.eventType')
-      .getRawMany<{
+      .addGroupBy('be.eventType');
+
+    // Same population, grouped by country instead of event type. Events predating
+    // IP geolocation have a NULL countryCode and are simply left out.
+    const countriesQb = this.behaviorRepo
+      .createQueryBuilder('be')
+      .select('be.productId', 'productId')
+      .addSelect('be.countryCode', 'countryCode')
+      .addSelect('COUNT(be.id)', 'count')
+      .where('be.productId IN (:...ids)', { ids })
+      .andWhere('be.eventType IN (:...types)', {
+        types: ['product_view', 'add_to_cart', 'test_checkout_blocked'],
+      })
+      .andWhere('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until })
+      .andWhere('be.countryCode IS NOT NULL')
+      .groupBy('be.productId')
+      .addGroupBy('be.countryCode');
+
+    if (codes) {
+      countsQb.andWhere('be.countryCode IN (:...codes)', { codes });
+      countriesQb.andWhere('be.countryCode IN (:...codes)', { codes });
+    }
+
+    const [rows, countryRows] = await Promise.all([
+      countsQb.getRawMany<{
         productId: string;
         eventType: string;
         count: string;
         distinctCarts: string;
-      }>();
+      }>(),
+      countriesQb.getRawMany<{
+        productId: string;
+        countryCode: string;
+        count: string;
+      }>(),
+    ]);
+
+    const countryNames = await this.countryNameMap(
+      countryRows.map((r) => r.countryCode),
+    );
+    const countriesByProduct = new Map<
+      string,
+      Array<{ countryCode: string; countryName: string; events: number }>
+    >();
+    for (const r of countryRows) {
+      const list = countriesByProduct.get(r.productId) ?? [];
+      list.push({
+        countryCode: r.countryCode,
+        countryName: countryNames.get(r.countryCode) ?? r.countryCode,
+        events: parseInt(r.count, 10),
+      });
+      countriesByProduct.set(r.productId, list);
+    }
+    for (const list of countriesByProduct.values()) {
+      list.sort((a, b) => b.events - a.events);
+    }
 
     const counts = new Map<string, number>();
     const distinct = new Map<string, number>();
@@ -275,6 +341,7 @@ export class ShopBehaviorAnalyticsService {
         viewToCartRatePct: pct(addsToCart, views),
         cartToCheckoutRatePct: pct(reachedCheckout, addsToCart),
         viewToCheckoutRatePct: pct(reachedCheckout, views),
+        countries: countriesByProduct.get(p.id) ?? [],
       };
     });
 

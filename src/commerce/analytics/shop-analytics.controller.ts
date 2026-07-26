@@ -101,10 +101,14 @@ export class ShopAnalyticsController {
     @Query('minViews') minViews?: string,
     @Query('activeOnly') activeOnly?: string,
     @Query('reachedCheckoutOnly') reachedCheckoutOnly?: string,
+    @Query('countryCode') countryCode?: string,
+    @Query('continent') continent?: string,
   ) {
     return this.behaviorAnalytics.getTestProductDemand(
       resolveWindow({ days, startDate, endDate }),
       {
+        countryCode,
+        continent,
         productId,
         productStatus,
         categoryId,
