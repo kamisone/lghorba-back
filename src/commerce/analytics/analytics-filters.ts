@@ -63,16 +63,20 @@ export interface ConversionFilter extends CountryFilter {
 export type TestProductSort =
   | 'views'
   | 'addsToCart'
+  | 'reachedShipping'
   | 'reachedCheckout'
   | 'viewToCartRatePct'
+  | 'cartToShippingRatePct'
   | 'cartToCheckoutRatePct'
   | 'viewToCheckoutRatePct';
 
 const TEST_PRODUCT_SORTS: TestProductSort[] = [
   'views',
   'addsToCart',
+  'reachedShipping',
   'reachedCheckout',
   'viewToCartRatePct',
+  'cartToShippingRatePct',
   'cartToCheckoutRatePct',
   'viewToCheckoutRatePct',
 ];

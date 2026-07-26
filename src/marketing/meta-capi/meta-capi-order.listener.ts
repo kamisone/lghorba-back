@@ -11,6 +11,7 @@ import {
 } from '../../commerce/events/commerce-events';
 import { MetaCapiService } from './meta-capi.service';
 import { BehaviorTrackingService } from '../../commerce/behavior/behavior-tracking.service';
+import { GeoIpService } from '../../commerce/behavior/geo-ip.service';
 
 /**
  * Meta Conversions API — reacts to the same domain events ShopOrderEventsListener
@@ -28,6 +29,7 @@ export class MetaCapiOrderListener {
     private readonly itemRepo: Repository<OrderItem>,
     private readonly metaCapi: MetaCapiService,
     private readonly behaviorTracking: BehaviorTrackingService,
+    private readonly geoIp: GeoIpService,
   ) {}
 
   @OnEvent(COMMERCE_EVENTS.ORDER_CREATED)
@@ -58,10 +60,32 @@ export class MetaCapiOrderListener {
         fbp: order.metaBrowserId,
       });
 
-      await this.behaviorTracking.record('checkout_started', {
+      // ORDER_CREATED fires when the customer submits the address form, which is
+      // exactly the moment they land on the shipping step — one step before they
+      // click through to payment. Recorded once per distinct product in the
+      // order so the step can be attributed per product: the product-scoped
+      // funnel and the test-product demand report both filter on `productId`,
+      // and a single cart-level row with a NULL productId is invisible to them.
+      // Both reports count DISTINCT cartToken, so the extra rows per order do
+      // not inflate the step.
+      const startedProductIds = [
+        ...new Set(items.map((i) => i.productId).filter((id): id is string => !!id)),
+      ];
+      const startedBase = {
         cartToken: order.cartToken,
         shopCustomerId: order.customerId,
-      });
+        countryCode: this.geoIp.countryFromIp(order.clientIpAddress),
+      };
+      if (startedProductIds.length) {
+        for (const productId of startedProductIds) {
+          await this.behaviorTracking.record('checkout_started', {
+            ...startedBase,
+            productId,
+          });
+        }
+      } else {
+        await this.behaviorTracking.record('checkout_started', startedBase);
+      }
       // Retroactively attribute this guest's pre-checkout browsing/search/cart
       // activity (logged under cartToken only) to the customer record now that
       // it's known.

@@ -102,6 +102,10 @@ export class ShopBehaviorAnalyticsService {
       .createQueryBuilder('be')
       .select('be.eventType', 'eventType')
       .addSelect('COUNT(be.id)', 'count')
+      // `checkout_started` is written once per distinct product in the order, so
+      // it must be counted per cart — one customer reaching the shipping step is
+      // one step, however many products they had.
+      .addSelect('COUNT(DISTINCT be.cartToken)', 'distinctCarts')
       .where('be.eventType IN (:...types)', {
         types: ['product_view', 'add_to_cart', 'checkout_started'],
       })
@@ -114,14 +118,17 @@ export class ShopBehaviorAnalyticsService {
 
     const counts = await countsQb
       .groupBy('be.eventType')
-      .getRawMany<{ eventType: string; count: string }>();
+      .getRawMany<{ eventType: string; count: string; distinctCarts: string }>();
 
     const countByType = new Map(
       counts.map((r) => [r.eventType, parseInt(r.count, 10)]),
     );
+    const cartsByType = new Map(
+      counts.map((r) => [r.eventType, parseInt(r.distinctCarts, 10)]),
+    );
     const views = countByType.get('product_view') ?? 0;
     const addsToCart = countByType.get('add_to_cart') ?? 0;
-    const checkoutsStarted = countByType.get('checkout_started') ?? 0;
+    const checkoutsStarted = cartsByType.get('checkout_started') ?? 0;
 
     const purchasesQb = this.orderRepo
       .createQueryBuilder('o')
@@ -164,13 +171,21 @@ export class ShopBehaviorAnalyticsService {
   /**
    * Per-test-product demand report.
    *
-   * `reachedCheckout` is the decision metric: customers who filled in their
-   * address, selected shipping and clicked through to payment — the furthest a
-   * test product can be taken, and the point at which checkout is refused.
-   * These are people who would have bought the product had it been real.
+   * Two checkout-side steps, in the order the customer meets them:
    *
-   * Counted by distinct cart rather than raw events, because a customer who
-   * retries after the error is one interested buyer, not several.
+   * - `reachedShipping` — submitted the address form and landed on the shipping
+   *   step. Intent, but they can still walk away at the shipping choice.
+   * - `reachedCheckout` — the decision metric: they then selected shipping and
+   *   clicked through to payment, the furthest a test product can be taken and
+   *   the point at which checkout is refused. These are people who would have
+   *   bought the product had it been real.
+   *
+   * The gap between the two is customers lost on the shipping step itself —
+   * usually the shipping price or delay, not the product.
+   *
+   * Both are counted by distinct cart rather than raw events: a customer who
+   * retries after the error is one interested buyer, not several, and
+   * `checkout_started` is written once per product in the order.
    *
    * Every test product is listed even with zero activity, so a product that
    * simply is not selling is visible rather than silently absent.
@@ -186,8 +201,10 @@ export class ShopBehaviorAnalyticsService {
       status: string;
       views: number;
       addsToCart: number;
+      reachedShipping: number;
       reachedCheckout: number;
       viewToCartRatePct: number;
+      cartToShippingRatePct: number;
       cartToCheckoutRatePct: number;
       viewToCheckoutRatePct: number;
     }>
@@ -243,7 +260,12 @@ export class ShopBehaviorAnalyticsService {
       .addSelect('COUNT(DISTINCT be.cartToken)', 'distinctCarts')
       .where('be.productId IN (:...ids)', { ids })
       .andWhere('be.eventType IN (:...types)', {
-        types: ['product_view', 'add_to_cart', 'test_checkout_blocked'],
+        types: [
+          'product_view',
+          'add_to_cart',
+          'checkout_started',
+          'test_checkout_blocked',
+        ],
       })
       .andWhere('be.createdAt >= :since', { since })
       .andWhere('be.createdAt < :until', { until })
@@ -272,6 +294,7 @@ export class ShopBehaviorAnalyticsService {
     let result = testProducts.map((p) => {
       const views = counts.get(`${p.id}:product_view`) ?? 0;
       const addsToCart = counts.get(`${p.id}:add_to_cart`) ?? 0;
+      const reachedShipping = distinct.get(`${p.id}:checkout_started`) ?? 0;
       const reachedCheckout = distinct.get(`${p.id}:test_checkout_blocked`) ?? 0;
       return {
         productId: p.id,
@@ -280,8 +303,10 @@ export class ShopBehaviorAnalyticsService {
         status: p.status as string,
         views,
         addsToCart,
+        reachedShipping,
         reachedCheckout,
         viewToCartRatePct: pct(addsToCart, views),
+        cartToShippingRatePct: pct(reachedShipping, addsToCart),
         cartToCheckoutRatePct: pct(reachedCheckout, addsToCart),
         viewToCheckoutRatePct: pct(reachedCheckout, views),
       };
@@ -289,7 +314,11 @@ export class ShopBehaviorAnalyticsService {
 
     if (filter.activeOnly) {
       result = result.filter(
-        (r) => r.views > 0 || r.addsToCart > 0 || r.reachedCheckout > 0,
+        (r) =>
+          r.views > 0 ||
+          r.addsToCart > 0 ||
+          r.reachedShipping > 0 ||
+          r.reachedCheckout > 0,
       );
     }
     if (filter.reachedCheckoutOnly) {
