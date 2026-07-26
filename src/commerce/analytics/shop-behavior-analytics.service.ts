@@ -6,6 +6,11 @@ import { Order } from '../entities/order.entity';
 import { Product } from '../entities/product.entity';
 import { ShopWishlistItem } from '../entities/shop-wishlist-item.entity';
 import { Country } from '../entities/country.entity';
+import {
+  ConversionFilter,
+  DateWindow,
+  TestProductFilter,
+} from './analytics-filters';
 
 // Same paid-status set already used throughout shop-analytics.service.ts.
 const PAID_STATUSES = ['paid', 'processing', 'shipped', 'delivered'];
@@ -46,7 +51,27 @@ export class ShopBehaviorAnalyticsService {
 
   // ── Conversion funnel ───────────────────────────────────────────────────────
 
-  async getConversionFunnel(days = 30): Promise<{
+  /**
+   * Resolve a country filter to a concrete list of ISO codes, or null when no
+   * country scope is applied. A `continent` expands to every country in it.
+   * An empty array means "scoped, but nothing matches".
+   */
+  private async countryCodesFor(f: ConversionFilter): Promise<string[] | null> {
+    if (f.countryCode) return [f.countryCode];
+    if (f.continent) {
+      const rows = await this.countryRepo.find({
+        where: { continentCode: f.continent },
+        select: ['isoCode'],
+      });
+      return rows.map((r) => r.isoCode);
+    }
+    return null;
+  }
+
+  async getConversionFunnel(
+    window: DateWindow,
+    filter: ConversionFilter = {},
+  ): Promise<{
     days: number;
     views: number;
     addsToCart: number;
@@ -57,9 +82,23 @@ export class ShopBehaviorAnalyticsService {
     checkoutToPurchaseRatePct: number;
     overallConversionRatePct: number;
   }> {
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { since, until, days } = window;
+    const zero = {
+      days,
+      views: 0,
+      addsToCart: 0,
+      checkoutsStarted: 0,
+      purchases: 0,
+      viewToCartRatePct: 0,
+      cartToCheckoutRatePct: 0,
+      checkoutToPurchaseRatePct: 0,
+      overallConversionRatePct: 0,
+    };
 
-    const counts = await this.behaviorRepo
+    const codes = await this.countryCodesFor(filter);
+    if (codes && codes.length === 0) return zero;
+
+    const countsQb = this.behaviorRepo
       .createQueryBuilder('be')
       .select('be.eventType', 'eventType')
       .addSelect('COUNT(be.id)', 'count')
@@ -67,6 +106,13 @@ export class ShopBehaviorAnalyticsService {
         types: ['product_view', 'add_to_cart', 'checkout_started'],
       })
       .andWhere('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until });
+    if (codes) countsQb.andWhere('be.countryCode IN (:...codes)', { codes });
+    if (filter.productId) {
+      countsQb.andWhere('be.productId = :pid', { pid: filter.productId });
+    }
+
+    const counts = await countsQb
       .groupBy('be.eventType')
       .getRawMany<{ eventType: string; count: string }>();
 
@@ -77,11 +123,28 @@ export class ShopBehaviorAnalyticsService {
     const addsToCart = countByType.get('add_to_cart') ?? 0;
     const checkoutsStarted = countByType.get('checkout_started') ?? 0;
 
-    const purchases = await this.orderRepo
+    const purchasesQb = this.orderRepo
       .createQueryBuilder('o')
       .where('o.status IN (:...statuses)', { statuses: PAID_STATUSES })
       .andWhere('o.createdAt >= :since', { since })
-      .getCount();
+      .andWhere('o.createdAt < :until', { until });
+    if (codes) {
+      purchasesQb.andWhere(
+        `"o"."shippingAddressSnapshot"->>'country' IN (:...codes)`,
+        { codes },
+      );
+    }
+    let purchases: number;
+    if (filter.productId) {
+      const raw = await purchasesQb
+        .innerJoin('shop_order_items', 'i', 'i.orderId = o.id')
+        .andWhere('i.productId = :pid', { pid: filter.productId })
+        .select('COUNT(DISTINCT o.id)', 'count')
+        .getRawOne<{ count: string }>();
+      purchases = parseInt(raw?.count ?? '0', 10);
+    } else {
+      purchases = await purchasesQb.getCount();
+    }
 
     return {
       days,
@@ -112,7 +175,10 @@ export class ShopBehaviorAnalyticsService {
    * Every test product is listed even with zero activity, so a product that
    * simply is not selling is visible rather than silently absent.
    */
-  async getTestProductDemand(days = 30): Promise<
+  async getTestProductDemand(
+    window: DateWindow,
+    filter: TestProductFilter = {},
+  ): Promise<
     Array<{
       productId: string;
       title: string;
@@ -126,13 +192,44 @@ export class ShopBehaviorAnalyticsService {
       viewToCheckoutRatePct: number;
     }>
   > {
-    const testProducts = await this.productRepo.find({
-      where: { isTestProduct: true },
-      select: ['id', 'title', 'slug', 'status'],
-    });
+    // Product-level filters (status / category / vendor / brand / price / search)
+    // are applied here so a filtered product simply drops out of the report.
+    const productsQb = this.productRepo
+      .createQueryBuilder('p')
+      .select(['p.id', 'p.title', 'p.slug', 'p.status'])
+      .where('p.isTestProduct = true');
+    if (filter.productId) {
+      productsQb.andWhere('p.id = :pid', { pid: filter.productId });
+    }
+    if (filter.productStatus) {
+      productsQb.andWhere('p.status = :st', { st: filter.productStatus });
+    }
+    if (filter.vendorId) {
+      productsQb.andWhere('p.vendorId = :vid', { vid: filter.vendorId });
+    }
+    if (filter.brand) {
+      productsQb.andWhere('p.brand = :brand', { brand: filter.brand });
+    }
+    if (filter.minPriceCents !== undefined) {
+      productsQb.andWhere('p.basePriceCents >= :minP', { minP: filter.minPriceCents });
+    }
+    if (filter.maxPriceCents !== undefined) {
+      productsQb.andWhere('p.basePriceCents <= :maxP', { maxP: filter.maxPriceCents });
+    }
+    if (filter.search) {
+      productsQb.andWhere('p.title ILIKE :q', { q: `%${filter.search}%` });
+    }
+    if (filter.categoryId) {
+      productsQb.andWhere(
+        'EXISTS (SELECT 1 FROM shop_product_category_map pcm ' +
+          'WHERE pcm."productId" = p.id AND pcm."categoryId" = :catId)',
+        { catId: filter.categoryId },
+      );
+    }
+    const testProducts = await productsQb.getMany();
     if (!testProducts.length) return [];
 
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { since, until } = window;
     const ids = testProducts.map((p) => p.id);
 
     const rows = await this.behaviorRepo
@@ -146,6 +243,7 @@ export class ShopBehaviorAnalyticsService {
         types: ['product_view', 'add_to_cart', 'test_checkout_blocked'],
       })
       .andWhere('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until })
       .groupBy('be.productId')
       .addGroupBy('be.eventType')
       .getRawMany<{
@@ -162,30 +260,53 @@ export class ShopBehaviorAnalyticsService {
       distinct.set(`${r.productId}:${r.eventType}`, parseInt(r.distinctCarts, 10));
     }
 
-    return testProducts
-      .map((p) => {
-        const views = counts.get(`${p.id}:product_view`) ?? 0;
-        const addsToCart = counts.get(`${p.id}:add_to_cart`) ?? 0;
-        const reachedCheckout = distinct.get(`${p.id}:test_checkout_blocked`) ?? 0;
-        return {
-          productId: p.id,
-          title: p.title,
-          slug: p.slug,
-          status: p.status as string,
-          views,
-          addsToCart,
-          reachedCheckout,
-          viewToCartRatePct: pct(addsToCart, views),
-          cartToCheckoutRatePct: pct(reachedCheckout, addsToCart),
-          viewToCheckoutRatePct: pct(reachedCheckout, views),
-        };
-      })
-      .sort((a, b) => b.reachedCheckout - a.reachedCheckout || b.views - a.views);
+    let result = testProducts.map((p) => {
+      const views = counts.get(`${p.id}:product_view`) ?? 0;
+      const addsToCart = counts.get(`${p.id}:add_to_cart`) ?? 0;
+      const reachedCheckout = distinct.get(`${p.id}:test_checkout_blocked`) ?? 0;
+      return {
+        productId: p.id,
+        title: p.title,
+        slug: p.slug,
+        status: p.status as string,
+        views,
+        addsToCart,
+        reachedCheckout,
+        viewToCartRatePct: pct(addsToCart, views),
+        cartToCheckoutRatePct: pct(reachedCheckout, addsToCart),
+        viewToCheckoutRatePct: pct(reachedCheckout, views),
+      };
+    });
+
+    if (filter.activeOnly) {
+      result = result.filter(
+        (r) => r.views > 0 || r.addsToCart > 0 || r.reachedCheckout > 0,
+      );
+    }
+    if (filter.reachedCheckoutOnly) {
+      result = result.filter((r) => r.reachedCheckout > 0);
+    }
+    if (filter.minViews !== undefined) {
+      result = result.filter((r) => r.views >= filter.minViews!);
+    }
+
+    const sortKey = filter.sort;
+    const dir = filter.order === 'asc' ? 1 : -1;
+    if (sortKey) {
+      result.sort((a, b) => (a[sortKey] - b[sortKey]) * dir);
+    } else {
+      result.sort(
+        (a, b) => b.reachedCheckout - a.reachedCheckout || b.views - a.views,
+      );
+    }
+
+    return filter.limit !== undefined ? result.slice(0, filter.limit) : result;
   }
 
   async getProductConversion(
-    days = 30,
+    window: DateWindow,
     limit = 20,
+    filter: ConversionFilter = {},
   ): Promise<
     Array<{
       productId: string;
@@ -197,37 +318,62 @@ export class ShopBehaviorAnalyticsService {
       conversionRatePct: number;
     }>
   > {
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { since, until } = window;
+
+    const codes = await this.countryCodesFor(filter);
+    if (codes && codes.length === 0) return [];
+
+    const viewsQb = this.behaviorRepo
+      .createQueryBuilder('be')
+      .select('be.productId', 'productId')
+      .addSelect('COUNT(be.id)', 'count')
+      .where(`be.eventType = 'product_view'`)
+      .andWhere('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until })
+      .andWhere('be.productId IS NOT NULL')
+      .groupBy('be.productId');
+    const addsQb = this.behaviorRepo
+      .createQueryBuilder('be')
+      .select('be.productId', 'productId')
+      .addSelect('COUNT(be.id)', 'count')
+      .where(`be.eventType = 'add_to_cart'`)
+      .andWhere('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until })
+      .andWhere('be.productId IS NOT NULL')
+      .groupBy('be.productId');
+    if (codes) {
+      viewsQb.andWhere('be.countryCode IN (:...codes)', { codes });
+      addsQb.andWhere('be.countryCode IN (:...codes)', { codes });
+    }
+    if (filter.productId) {
+      viewsQb.andWhere('be.productId = :pid', { pid: filter.productId });
+      addsQb.andWhere('be.productId = :pid', { pid: filter.productId });
+    }
+
+    const purchasesQb = this.orderRepo
+      .createQueryBuilder('o')
+      .innerJoin('shop_order_items', 'i', 'i.orderId = o.id')
+      .select('i.productId', 'productId')
+      .addSelect('SUM(i.quantity)', 'count')
+      .where('o.status IN (:...statuses)', { statuses: PAID_STATUSES })
+      .andWhere('o.createdAt >= :since', { since })
+      .andWhere('o.createdAt < :until', { until })
+      .andWhere('i.productId IS NOT NULL')
+      .groupBy('i.productId');
+    if (codes) {
+      purchasesQb.andWhere(
+        `"o"."shippingAddressSnapshot"->>'country' IN (:...codes)`,
+        { codes },
+      );
+    }
+    if (filter.productId) {
+      purchasesQb.andWhere('i.productId = :pid', { pid: filter.productId });
+    }
 
     const [viewRows, addRows, purchaseRows] = await Promise.all([
-      this.behaviorRepo
-        .createQueryBuilder('be')
-        .select('be.productId', 'productId')
-        .addSelect('COUNT(be.id)', 'count')
-        .where(`be.eventType = 'product_view'`)
-        .andWhere('be.createdAt >= :since', { since })
-        .andWhere('be.productId IS NOT NULL')
-        .groupBy('be.productId')
-        .getRawMany<{ productId: string; count: string }>(),
-      this.behaviorRepo
-        .createQueryBuilder('be')
-        .select('be.productId', 'productId')
-        .addSelect('COUNT(be.id)', 'count')
-        .where(`be.eventType = 'add_to_cart'`)
-        .andWhere('be.createdAt >= :since', { since })
-        .andWhere('be.productId IS NOT NULL')
-        .groupBy('be.productId')
-        .getRawMany<{ productId: string; count: string }>(),
-      this.orderRepo
-        .createQueryBuilder('o')
-        .innerJoin('shop_order_items', 'i', 'i.orderId = o.id')
-        .select('i.productId', 'productId')
-        .addSelect('SUM(i.quantity)', 'count')
-        .where('o.status IN (:...statuses)', { statuses: PAID_STATUSES })
-        .andWhere('o.createdAt >= :since', { since })
-        .andWhere('i.productId IS NOT NULL')
-        .groupBy('i.productId')
-        .getRawMany<{ productId: string; count: string }>(),
+      viewsQb.getRawMany<{ productId: string; count: string }>(),
+      addsQb.getRawMany<{ productId: string; count: string }>(),
+      purchasesQb.getRawMany<{ productId: string; count: string }>(),
     ]);
 
     const viewMap = new Map(
@@ -279,8 +425,9 @@ export class ShopBehaviorAnalyticsService {
    * shipping address at checkout, which needs no IP/geoip at all.
    */
   async getCountryBreakdown(
-    days = 30,
+    window: DateWindow,
     limit = 20,
+    filter: ConversionFilter = {},
   ): Promise<
     Array<{
       countryCode: string;
@@ -290,41 +437,56 @@ export class ShopBehaviorAnalyticsService {
       purchases: number;
     }>
   > {
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { since, until } = window;
+    const pid = filter.productId;
+
+    const viewsQb = this.behaviorRepo
+      .createQueryBuilder('be')
+      .select('be.countryCode', 'countryCode')
+      .addSelect('COUNT(be.id)', 'count')
+      .where(`be.eventType = 'product_view'`)
+      .andWhere('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until })
+      .andWhere('be.countryCode IS NOT NULL')
+      .groupBy('be.countryCode');
+    const addsQb = this.behaviorRepo
+      .createQueryBuilder('be')
+      .select('be.countryCode', 'countryCode')
+      .addSelect('COUNT(be.id)', 'count')
+      .where(`be.eventType = 'add_to_cart'`)
+      .andWhere('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until })
+      .andWhere('be.countryCode IS NOT NULL')
+      .groupBy('be.countryCode');
+    if (pid) {
+      viewsQb.andWhere('be.productId = :pid', { pid });
+      addsQb.andWhere('be.productId = :pid', { pid });
+    }
+
+    const purchasesQb = this.orderRepo
+      .createQueryBuilder('o')
+      // Manually quoted: TypeORM's alias-quoting pass doesn't recognize
+      // "o.shippingAddressSnapshot" as a bare column reference once it's
+      // immediately followed by the `->>` JSONB operator, so it's left
+      // unquoted and Postgres folds it to lowercase (breaking the mixed-
+      // case column name) unless quoted explicitly here.
+      .select(`"o"."shippingAddressSnapshot"->>'country'`, 'countryCode')
+      .addSelect(pid ? 'COUNT(DISTINCT o.id)' : 'COUNT(o.id)', 'count')
+      .where('o.status IN (:...statuses)', { statuses: PAID_STATUSES })
+      .andWhere('o.createdAt >= :since', { since })
+      .andWhere('o.createdAt < :until', { until })
+      .andWhere(`"o"."shippingAddressSnapshot"->>'country' IS NOT NULL`)
+      .groupBy(`"o"."shippingAddressSnapshot"->>'country'`);
+    if (pid) {
+      purchasesQb
+        .innerJoin('shop_order_items', 'i', 'i.orderId = o.id')
+        .andWhere('i.productId = :pid', { pid });
+    }
 
     const [viewRows, addRows, purchaseRows] = await Promise.all([
-      this.behaviorRepo
-        .createQueryBuilder('be')
-        .select('be.countryCode', 'countryCode')
-        .addSelect('COUNT(be.id)', 'count')
-        .where(`be.eventType = 'product_view'`)
-        .andWhere('be.createdAt >= :since', { since })
-        .andWhere('be.countryCode IS NOT NULL')
-        .groupBy('be.countryCode')
-        .getRawMany<{ countryCode: string; count: string }>(),
-      this.behaviorRepo
-        .createQueryBuilder('be')
-        .select('be.countryCode', 'countryCode')
-        .addSelect('COUNT(be.id)', 'count')
-        .where(`be.eventType = 'add_to_cart'`)
-        .andWhere('be.createdAt >= :since', { since })
-        .andWhere('be.countryCode IS NOT NULL')
-        .groupBy('be.countryCode')
-        .getRawMany<{ countryCode: string; count: string }>(),
-      this.orderRepo
-        .createQueryBuilder('o')
-        // Manually quoted: TypeORM's alias-quoting pass doesn't recognize
-        // "o.shippingAddressSnapshot" as a bare column reference once it's
-        // immediately followed by the `->>` JSONB operator, so it's left
-        // unquoted and Postgres folds it to lowercase (breaking the mixed-
-        // case column name) unless quoted explicitly here.
-        .select(`"o"."shippingAddressSnapshot"->>'country'`, 'countryCode')
-        .addSelect('COUNT(o.id)', 'count')
-        .where('o.status IN (:...statuses)', { statuses: PAID_STATUSES })
-        .andWhere('o.createdAt >= :since', { since })
-        .andWhere(`"o"."shippingAddressSnapshot"->>'country' IS NOT NULL`)
-        .groupBy(`"o"."shippingAddressSnapshot"->>'country'`)
-        .getRawMany<{ countryCode: string; count: string }>(),
+      viewsQb.getRawMany<{ countryCode: string; count: string }>(),
+      addsQb.getRawMany<{ countryCode: string; count: string }>(),
+      purchasesQb.getRawMany<{ countryCode: string; count: string }>(),
     ]);
 
     const viewMap = new Map(
@@ -367,6 +529,158 @@ export class ShopBehaviorAnalyticsService {
           (a.views + a.addsToCart + a.purchases),
       )
       .slice(0, limit);
+  }
+
+  // ── Drill-down details (for the click-through modals) ───────────────────────
+
+  /**
+   * Raw behavior events matching a scope, newest first, each with its exact
+   * timestamp, product title and country name. Powers the funnel-step and
+   * per-product detail modals.
+   */
+  async getEventDetails(opts: {
+    window: DateWindow;
+    eventTypes?: string[];
+    filter?: ConversionFilter;
+    limit?: number;
+  }): Promise<
+    Array<{
+      id: string;
+      eventType: string;
+      createdAt: Date;
+      productId: string | null;
+      productTitle: string | null;
+      countryCode: string | null;
+      countryName: string | null;
+      cartToken: string | null;
+      quantity: number | null;
+      searchQuery: string | null;
+    }>
+  > {
+    const { window, eventTypes, filter = {}, limit = 100 } = opts;
+    const { since, until } = window;
+
+    const codes = await this.countryCodesFor(filter);
+    if (codes && codes.length === 0) return [];
+
+    const qb = this.behaviorRepo
+      .createQueryBuilder('be')
+      .where('be.createdAt >= :since', { since })
+      .andWhere('be.createdAt < :until', { until })
+      .orderBy('be.createdAt', 'DESC')
+      .limit(limit);
+    if (eventTypes && eventTypes.length) {
+      qb.andWhere('be.eventType IN (:...ets)', { ets: eventTypes });
+    }
+    if (filter.productId) qb.andWhere('be.productId = :pid', { pid: filter.productId });
+    if (codes) qb.andWhere('be.countryCode IN (:...codes)', { codes });
+
+    const events = await qb.getMany();
+    if (!events.length) return [];
+
+    const productIds = [
+      ...new Set(events.map((e) => e.productId).filter((id): id is string => !!id)),
+    ];
+    const eventCountryCodes = [
+      ...new Set(events.map((e) => e.countryCode).filter((c): c is string => !!c)),
+    ];
+    const [products, countries] = await Promise.all([
+      productIds.length
+        ? this.productRepo.find({ where: { id: In(productIds) }, select: ['id', 'title'] })
+        : Promise.resolve([]),
+      eventCountryCodes.length
+        ? this.countryRepo.find({ where: { isoCode: In(eventCountryCodes) }, select: ['isoCode', 'name'] })
+        : Promise.resolve([]),
+    ]);
+    const titleMap = new Map(products.map((p) => [p.id, p.title]));
+    const nameMap = new Map(countries.map((c) => [c.isoCode, c.name]));
+
+    return events.map((e) => ({
+      id: e.id,
+      eventType: e.eventType as string,
+      createdAt: e.createdAt,
+      productId: e.productId,
+      productTitle: e.productId ? titleMap.get(e.productId) ?? null : null,
+      countryCode: e.countryCode,
+      countryName: e.countryCode ? nameMap.get(e.countryCode) ?? e.countryCode : null,
+      cartToken: e.cartToken,
+      quantity: e.quantity,
+      searchQuery: e.searchQuery,
+    }));
+  }
+
+  /**
+   * Paid orders matching a scope, newest first — powers the "Purchased" funnel
+   * step modal (and per-product purchase drill-down).
+   */
+  async getPurchaseDetails(opts: {
+    window: DateWindow;
+    filter?: ConversionFilter;
+    limit?: number;
+  }): Promise<
+    Array<{
+      id: string;
+      orderNumber: string;
+      createdAt: Date;
+      status: string;
+      totalCents: number;
+      countryCode: string | null;
+      countryName: string | null;
+    }>
+  > {
+    const { window, filter = {}, limit = 100 } = opts;
+    const { since, until } = window;
+
+    const codes = await this.countryCodesFor(filter);
+    if (codes && codes.length === 0) return [];
+
+    const qb = this.orderRepo
+      .createQueryBuilder('o')
+      .where('o.status IN (:...statuses)', { statuses: PAID_STATUSES })
+      .andWhere('o.createdAt >= :since', { since })
+      .andWhere('o.createdAt < :until', { until })
+      .orderBy('o.createdAt', 'DESC')
+      .take(limit);
+    if (codes) {
+      qb.andWhere(`"o"."shippingAddressSnapshot"->>'country' IN (:...codes)`, { codes });
+    }
+    if (filter.productId) {
+      qb.innerJoin('shop_order_items', 'i', 'i.orderId = o.id').andWhere(
+        'i.productId = :pid',
+        { pid: filter.productId },
+      );
+    }
+
+    const orders = await qb.getMany();
+    if (!orders.length) return [];
+
+    const orderCountryCodes = [
+      ...new Set(
+        orders
+          .map((o) => o.shippingAddressSnapshot?.country)
+          .filter((c): c is string => !!c),
+      ),
+    ];
+    const countries = orderCountryCodes.length
+      ? await this.countryRepo.find({
+          where: { isoCode: In(orderCountryCodes) },
+          select: ['isoCode', 'name'],
+        })
+      : [];
+    const nameMap = new Map(countries.map((c) => [c.isoCode, c.name]));
+
+    return orders.map((o) => {
+      const cc = o.shippingAddressSnapshot?.country ?? null;
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        createdAt: o.createdAt,
+        status: o.status as string,
+        totalCents: o.totalCents,
+        countryCode: cc,
+        countryName: cc ? nameMap.get(cc) ?? cc : null,
+      };
+    });
   }
 
   // ── Search insights ──────────────────────────────────────────────────────────

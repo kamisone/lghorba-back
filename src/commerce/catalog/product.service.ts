@@ -305,6 +305,7 @@ export interface ProductListFilter {
   tagId?:      string;
   search?:     string;
   featured?:   boolean;
+  isTestProduct?: boolean;
   vendorId?:   string;
   limit?:      number;
   offset?:     number;
@@ -478,7 +479,7 @@ export class ProductService {
   // ── Admin list ──────────────────────────────────────────────────────────────
 
   async adminList(filter: ProductListFilter = {}): Promise<{ items: any[]; total: number }> {
-    const { status, search, featured, vendorId, limit = 20, offset = 0 } = filter;
+    const { status, search, featured, isTestProduct, vendorId, limit = 20, offset = 0 } = filter;
     const qb = this.productRepo.createQueryBuilder('p')
       .leftJoinAndSelect('p.categories', 'cat')
       .leftJoinAndSelect('p.tags', 'tag')
@@ -489,6 +490,7 @@ export class ProductService {
 
     if (status)   qb.andWhere('p.status = :status',     { status });
     if (featured !== undefined) qb.andWhere('p.featured = :featured', { featured });
+    if (isTestProduct !== undefined) qb.andWhere('p."isTestProduct" = :itp', { itp: isTestProduct });
     if (vendorId) qb.andWhere('p."vendorId" = :vendorId', { vendorId });
     if (search)   qb.andWhere('(p.title ILIKE :q OR p.sku ILIKE :q)', { q: `%${search}%` });
 

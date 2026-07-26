@@ -2,6 +2,12 @@ import { Controller, Get, Post, Query } from '@nestjs/common';
 import { ShopAnalyticsAggregatorService } from './shop-analytics-aggregator.service';
 import { ShopAnalyticsService } from './shop-analytics.service';
 import { ShopBehaviorAnalyticsService } from './shop-behavior-analytics.service';
+import {
+  boolParam,
+  intParam,
+  resolveWindow,
+  testProductSort,
+} from './analytics-filters';
 
 @Controller('admin/shop/analytics')
 export class ShopAnalyticsController {
@@ -61,36 +67,131 @@ export class ShopAnalyticsController {
   }
 
   @Get('conversion-funnel')
-  conversionFunnel(@Query('days') days?: string) {
-    const d = days ? parseInt(days, 10) : 30;
-    return this.behaviorAnalytics.getConversionFunnel(d);
+  conversionFunnel(
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('countryCode') countryCode?: string,
+    @Query('continent') continent?: string,
+    @Query('productId') productId?: string,
+  ) {
+    return this.behaviorAnalytics.getConversionFunnel(
+      resolveWindow({ days, startDate, endDate }),
+      { countryCode, continent, productId },
+    );
   }
 
   // Demand validation for test products: views → cart → reached checkout.
   @Get('test-products')
-  testProducts(@Query('days') days?: string) {
-    const d = days ? parseInt(days, 10) : 30;
-    return this.behaviorAnalytics.getTestProductDemand(d);
+  testProducts(
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('productId') productId?: string,
+    @Query('productStatus') productStatus?: string,
+    @Query('categoryId') categoryId?: string,
+    @Query('vendorId') vendorId?: string,
+    @Query('brand') brand?: string,
+    @Query('minPriceCents') minPriceCents?: string,
+    @Query('maxPriceCents') maxPriceCents?: string,
+    @Query('search') search?: string,
+    @Query('sort') sort?: string,
+    @Query('order') order?: string,
+    @Query('limit') limit?: string,
+    @Query('minViews') minViews?: string,
+    @Query('activeOnly') activeOnly?: string,
+    @Query('reachedCheckoutOnly') reachedCheckoutOnly?: string,
+  ) {
+    return this.behaviorAnalytics.getTestProductDemand(
+      resolveWindow({ days, startDate, endDate }),
+      {
+        productId,
+        productStatus,
+        categoryId,
+        vendorId,
+        brand,
+        minPriceCents: intParam(minPriceCents),
+        maxPriceCents: intParam(maxPriceCents),
+        search,
+        sort: testProductSort(sort),
+        order: order === 'asc' ? 'asc' : 'desc',
+        limit: intParam(limit),
+        minViews: intParam(minViews),
+        activeOnly: boolParam(activeOnly),
+        reachedCheckoutOnly: boolParam(reachedCheckoutOnly),
+      },
+    );
   }
 
   @Get('conversion-by-product')
   conversionByProduct(
     @Query('days') days?: string,
     @Query('limit') limit?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('countryCode') countryCode?: string,
+    @Query('continent') continent?: string,
+    @Query('productId') productId?: string,
   ) {
-    const d = days ? parseInt(days, 10) : 30;
     const lim = limit ? parseInt(limit, 10) : 20;
-    return this.behaviorAnalytics.getProductConversion(d, lim);
+    return this.behaviorAnalytics.getProductConversion(
+      resolveWindow({ days, startDate, endDate }),
+      lim,
+      { countryCode, continent, productId },
+    );
   }
 
   @Get('country-breakdown')
   countryBreakdown(
     @Query('days') days?: string,
     @Query('limit') limit?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('productId') productId?: string,
   ) {
-    const d = days ? parseInt(days, 10) : 30;
     const lim = limit ? parseInt(limit, 10) : 20;
-    return this.behaviorAnalytics.getCountryBreakdown(d, lim);
+    return this.behaviorAnalytics.getCountryBreakdown(
+      resolveWindow({ days, startDate, endDate }),
+      lim,
+      { productId },
+    );
+  }
+
+  // Drill-down detail lists for the click-through modals.
+  @Get('event-details')
+  eventDetails(
+    @Query('eventType') eventType?: string,
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('countryCode') countryCode?: string,
+    @Query('continent') continent?: string,
+    @Query('productId') productId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.behaviorAnalytics.getEventDetails({
+      window: resolveWindow({ days, startDate, endDate }),
+      eventTypes: eventType ? eventType.split(',') : undefined,
+      filter: { countryCode, continent, productId },
+      limit: intParam(limit),
+    });
+  }
+
+  @Get('purchase-details')
+  purchaseDetails(
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('countryCode') countryCode?: string,
+    @Query('continent') continent?: string,
+    @Query('productId') productId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.behaviorAnalytics.getPurchaseDetails({
+      window: resolveWindow({ days, startDate, endDate }),
+      filter: { countryCode, continent, productId },
+      limit: intParam(limit),
+    });
   }
 
   @Get('search-overview')
