@@ -120,6 +120,8 @@ export const CreateProductSchema = z.object({
   featured:           z.boolean().optional(),
   /** Demand-validation product: browsable and addable to cart, checkout refused. */
   isTestProduct:      z.boolean().optional(),
+  /** Any cart containing this product ships free, whatever the order total. */
+  freeShipping:       z.boolean().optional(),
   primaryCategoryId:  z.string().uuid().nullish(),
   categoryIds:        z.array(z.string().uuid()).optional(),
   tagIds:             z.array(z.string().uuid()).optional(),
@@ -828,6 +830,7 @@ export class ProductService {
         canonicalUrl:      dto.canonicalUrl ?? null,
         featured:          dto.featured ?? false,
         isTestProduct:     dto.isTestProduct ?? false,
+        freeShipping:      dto.freeShipping ?? false,
         status:            'draft',
         primaryCategoryId: dto.primaryCategoryId ?? null,
         basePriceCents:    dto.basePriceCents,
@@ -899,6 +902,7 @@ export class ProductService {
       canonicalUrl:      dto.canonicalUrl       !== undefined ? dto.canonicalUrl ?? null : product.canonicalUrl,
       featured:          dto.featured           !== undefined ? dto.featured : product.featured,
       isTestProduct:     dto.isTestProduct      !== undefined ? dto.isTestProduct : product.isTestProduct,
+      freeShipping:      dto.freeShipping       !== undefined ? dto.freeShipping : product.freeShipping,
       status:            dto.status             ?? product.status,
       primaryCategoryId: dto.primaryCategoryId  !== undefined ? dto.primaryCategoryId ?? null : product.primaryCategoryId,
       basePriceCents:    dto.basePriceCents      !== undefined ? dto.basePriceCents ?? null : product.basePriceCents,

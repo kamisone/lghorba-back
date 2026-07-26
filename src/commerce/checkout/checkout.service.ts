@@ -83,9 +83,15 @@ export interface CheckoutSnapshot {
     id:               string;
     name:             string;
     priceCents:       number;
+    /** What the method would have cost — lets the UI strike it through. */
+    originalPriceCents?: number;
+    isFree?:          boolean;
     estimatedDaysMin: number;
     estimatedDaysMax: number;
   }>;
+  /** Order ships free, and why — so the storefront can name the reason. */
+  freeShipping:         boolean;
+  freeShippingReason:   'product' | 'promotion' | 'coupon' | null;
   zoneInfo:             ZoneInfo | null;
   reservationExpiresAt: string | null;
   trackingToken:        string | null;
@@ -139,12 +145,14 @@ export class CheckoutService {
       const items = cart.items as CartItem[];
       const productIds = [...new Set(items.map(i => i.productId))];
       const categoryMap = await this.loadProductCategoryIds(productIds);
+      const freeShipIds = await this.loadFreeShippingProductIds(productIds);
       const lineInputs: LineItemInput[] = items.map(item => ({
         variantId:      item.variantId,
         productId:      item.productId,
         categoryIds:    categoryMap.get(item.productId) ?? [],
         quantity:       item.quantity,
         unitPriceCents: item.unitPriceCents,
+        freeShipping:   freeShipIds.has(item.productId),
       }));
       const pricing = await this.pricingEngine.compute(lineInputs, dto.couponCode ?? null);
 
@@ -176,7 +184,10 @@ export class CheckoutService {
       existing.isTestOrder           = await containsTestProduct(this.productRepo, productIds);
       await this.orderRepo.save(existing);
 
-      const { zone, methods } = await this.shippingService.getMethodsForCountry(dto.country, existing.subtotalCents);
+      const { zone, methods } = await this.shippingService.getMethodsForCountry(
+        dto.country, existing.subtotalCents, undefined,
+        { forceFree: pricing.freeShipping },
+      );
       return this.toSnapshot(existing, methods, zone);
     }
 
@@ -188,6 +199,7 @@ export class CheckoutService {
     // Load product category IDs for pricing engine
     const productIds = [...new Set(items.map(i => i.productId))];
     const categoryMap = await this.loadProductCategoryIds(productIds);
+    const freeShipIds = await this.loadFreeShippingProductIds(productIds);
     const isTestOrder = await containsTestProduct(this.productRepo, productIds);
 
     // Build line inputs with freshly verified prices
@@ -197,6 +209,7 @@ export class CheckoutService {
       categoryIds:    categoryMap.get(item.productId) ?? [],
       quantity:       item.quantity,
       unitPriceCents: item.unitPriceCents,
+      freeShipping:   freeShipIds.has(item.productId),
     }));
 
     const pricing = await this.pricingEngine.compute(lineInputs, dto.couponCode ?? null);
@@ -283,7 +296,10 @@ export class CheckoutService {
       { entityId: snapshot.id, source: 'CheckoutService.initiate' },
     );
 
-    const { zone: shippingZone, methods: shippingMethods } = await this.shippingService.getMethodsForCountry(dto.country, snapshot.subtotalCents);
+    const { zone: shippingZone, methods: shippingMethods } = await this.shippingService.getMethodsForCountry(
+      dto.country, snapshot.subtotalCents, undefined,
+      { forceFree: pricing.freeShipping },
+    );
     return this.toSnapshot(snapshot, shippingMethods, shippingZone);
   }
 
@@ -298,14 +314,20 @@ export class CheckoutService {
       // as a no-op rather than erroring, so the checkout flow can resume.
       if (order.status === 'awaiting_payment') {
         const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
-        const { zone, methods } = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
+        const { zone, methods } = await this.shippingService.getMethodsForCountry(
+      country, order.subtotalCents, undefined,
+      { forceFree: this.orderShipsFree(order) },
+    );
         return this.toSnapshot(order, methods, zone);
       }
       throw new BadRequestException('Order is no longer modifiable');
     }
 
     const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
-    const { zone, methods } = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
+    const { zone, methods } = await this.shippingService.getMethodsForCountry(
+      country, order.subtotalCents, undefined,
+      { forceFree: this.orderShipsFree(order) },
+    );
     const method = methods.find(m => m.id === dto.shippingMethodId);
     if (!method) throw new BadRequestException('Shipping method not available for this order');
 
@@ -390,7 +412,10 @@ export class CheckoutService {
     if (!order) throw new NotFoundException('Order not found');
     const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
     if (order.status === 'draft') {
-      const { zone, methods } = await this.shippingService.getMethodsForCountry(country, order.subtotalCents);
+      const { zone, methods } = await this.shippingService.getMethodsForCountry(
+      country, order.subtotalCents, undefined,
+      { forceFree: this.orderShipsFree(order) },
+    );
       return this.toSnapshot(order, methods, zone);
     }
     return this.toSnapshot(order, [], null);
@@ -413,6 +438,7 @@ export class CheckoutService {
     const items = cart.items as CartItem[];
     const productIds = [...new Set(items.map(i => i.productId))];
     const categoryMap = await this.loadProductCategoryIds(productIds);
+    const freeShipIds = await this.loadFreeShippingProductIds(productIds);
 
     const lineInputs: LineItemInput[] = items.map(item => ({
       variantId:      item.variantId,
@@ -420,6 +446,7 @@ export class CheckoutService {
       categoryIds:    categoryMap.get(item.productId) ?? [],
       quantity:       item.quantity,
       unitPriceCents: item.unitPriceCents,
+      freeShipping:   freeShipIds.has(item.productId),
     }));
 
     const pricing = await this.pricingEngine.compute(lineInputs, couponCode);
@@ -514,7 +541,30 @@ export class CheckoutService {
     return map;
   }
 
+  /**
+   * Whether the order already qualifies for free shipping, from whichever source
+   * the pricing engine resolved. Quotes are forced to 0 with this so the methods
+   * the customer picks from never advertise a price that will not be charged.
+   */
+  private orderShipsFree(order: Order): boolean {
+    return (
+      (order.pricingSnapshot as (PricingResult & Record<string, unknown>) | null)
+        ?.freeShipping === true
+    );
+  }
+
+  /** Product ids flagged `freeShipping`, so the pricing engine can zero shipping. */
+  private async loadFreeShippingProductIds(productIds: string[]): Promise<Set<string>> {
+    if (!productIds.length) return new Set();
+    const rows = await this.dataSource.query<{ id: string }[]>(
+      `SELECT p."id" FROM shop_products p WHERE p."id" = ANY($1) AND p."freeShipping" = true`,
+      [productIds],
+    );
+    return new Set(rows.map((r) => r.id));
+  }
+
   private toSnapshot(order: Order, shippingMethods: ShippingMethod[], zone: ZoneInfo | null): CheckoutSnapshot {
+    const pricing = order.pricingSnapshot as (PricingResult & Record<string, unknown>) | null;
     return {
       orderId:               order.id,
       orderNumber:           order.orderNumber,
@@ -530,9 +580,14 @@ export class CheckoutService {
         id:               m.id,
         name:             m.name,
         priceCents:       m.priceCents,
+        originalPriceCents: (m as ShippingMethod & { originalPriceCents?: number })
+          .originalPriceCents ?? m.priceCents,
+        isFree:           (m as ShippingMethod & { isFree?: boolean }).isFree ?? m.priceCents === 0,
         estimatedDaysMin: m.estimatedDaysMin,
         estimatedDaysMax: m.estimatedDaysMax,
       })),
+      freeShipping:         pricing?.freeShipping ?? false,
+      freeShippingReason:   pricing?.freeShippingReason ?? null,
       zoneInfo:             zone,
       reservationExpiresAt: order.reservationExpiresAt?.toISOString() ?? null,
       trackingToken:        order.trackingToken ?? null,

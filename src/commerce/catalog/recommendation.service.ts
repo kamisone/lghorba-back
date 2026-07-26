@@ -15,6 +15,7 @@ export interface ProductSummary {
   featuredImageUrl: string | null;
   averageRating: number | null;
   reviewCount: number;
+  freeShipping: boolean;
 }
 
 @Injectable()
@@ -143,8 +144,9 @@ export class RecommendationService {
       priceCents: string | null;
       avgRating: string | null;
       reviewCount: string | null;
+      freeShipping: boolean | null;
     }> = await this.dataSource.query(
-      `SELECT p.id, p.slug, p.title, p."featuredImageKey",
+      `SELECT p.id, p.slug, p.title, p."featuredImageKey", p."freeShipping",
               COALESCE(v."priceCents", p."basePriceCents") AS "priceCents",
               rev."avgRating", rev."reviewCount"
        FROM shop_products p
@@ -179,6 +181,7 @@ export class RecommendationService {
           ? Math.round(parseFloat(r.avgRating) * 10) / 10
           : null,
       reviewCount: r.reviewCount != null ? parseInt(r.reviewCount, 10) : 0,
+      freeShipping: r.freeShipping === true,
     }));
 
     return mapped.sort(

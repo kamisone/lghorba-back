@@ -463,6 +463,7 @@ export class CartService {
       ? await this.productRepo.find({ where: { id: In(productIds) } })
       : [];
     const slugMap = new Map(products.map((p) => [p.id, p.slug]));
+    const freeShipMap = new Map(products.map((p) => [p.id, p.freeShipping]));
 
     let enrichedItems = items.map((item) => ({
       ...item,
@@ -471,6 +472,7 @@ export class CartService {
         : null,
       lineTotalCents: item.quantity * item.unitPriceCents,
       productSlug: slugMap.get(item.productId) ?? null,
+      freeShipping: freeShipMap.get(item.productId) ?? false,
     }));
 
     // Translate optionsSnapshot attribute names and display values for non-FR locales
@@ -540,6 +542,13 @@ export class CartService {
       items: enrichedItems,
       subtotalCents,
       itemCount: enrichedItems.reduce((sum, i) => sum + i.quantity, 0),
+      // All-or-nothing: shipping is charged once per order, so the basket only
+      // ships free when every item carries free shipping. Mirrors
+      // PricingEngineService — the two must agree or the cart promises something
+      // checkout will not honour.
+      freeShipping:
+        enrichedItems.length > 0 &&
+        enrichedItems.every((i) => i.freeShipping === true),
     };
   }
 }

@@ -50,7 +50,18 @@ export class ShippingService {
     private readonly translationsService: TranslationsService,
   ) {}
 
-  async getMethodsForCountry(countryCode: string, cartTotalCents: number, lang?: string): Promise<ShippingQuoteResult> {
+  /**
+   * @param opts.forceFree the order already qualifies for free shipping for a
+   * reason this service cannot see (a free-shipping product in the basket, or a
+   * promotion/coupon resolved by the pricing engine). Methods are quoted at 0 so
+   * the customer is never shown a price that will not be charged.
+   */
+  async getMethodsForCountry(
+    countryCode: string,
+    cartTotalCents: number,
+    lang?: string,
+    opts: { forceFree?: boolean } = {},
+  ): Promise<ShippingQuoteResult> {
     const zone = await this.resolveZoneForCountry(countryCode);
     if (!zone) return { zone: null, methods: [] };
 
@@ -59,7 +70,7 @@ export class ShippingService {
       order: { sortOrder: 'ASC' },
     });
 
-    const priced = this.applyZonePricing(methods, zone, cartTotalCents);
+    const priced = this.applyZonePricing(methods, zone, cartTotalCents, opts.forceFree);
     const translated = await this.translationsService.maybeApply(priced, ET_SHOP_SHIPPING_METHOD, lang);
 
     return {
@@ -92,16 +103,26 @@ export class ShippingService {
     return worldwide ?? null;
   }
 
-  private applyZonePricing(methods: ShippingMethod[], zone: ShippingZone, cartTotalCents: number): any[] {
+  private applyZonePricing(
+    methods: ShippingMethod[],
+    zone: ShippingZone,
+    cartTotalCents: number,
+    forceFree = false,
+  ): any[] {
     const zoneFree = zone.freeShippingThresholdCents !== null
       && cartTotalCents >= zone.freeShippingThresholdCents;
 
     return methods.map(m => {
       const methodFree = m.freeAboveCents !== null && cartTotalCents >= m.freeAboveCents;
+      const isFree = forceFree || zoneFree || methodFree;
 
       return {
         ...m,
-        priceCents: (zoneFree || methodFree) ? 0 : m.priceCents + zone.surchargeCents,
+        priceCents: isFree ? 0 : m.priceCents + zone.surchargeCents,
+        // Kept alongside the zeroed price so the storefront can strike through
+        // what the method would otherwise have cost.
+        originalPriceCents: m.priceCents + zone.surchargeCents,
+        isFree,
       };
     });
   }

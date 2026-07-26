@@ -129,9 +129,20 @@ export class OrdersService {
     // Re-verify every cart item price against current product/variant data
     await this.verifyCartItemPrices(items);
 
-    const isTestOrder = await containsTestProduct(this.productRepo, [
-      ...new Set(items.map((i) => i.productId)),
-    ]);
+    const orderProductIds = [...new Set(items.map((i) => i.productId))];
+    const isTestOrder = await containsTestProduct(this.productRepo, orderProductIds);
+
+    // This is the second, independent order-creation path (the checkout service
+    // is the other). It takes `shippingCents` from the caller, so free shipping
+    // has to be resolved here too. All-or-nothing, matching PricingEngineService:
+    // free only when every distinct product in the order carries the flag.
+    const freeShippingCount = orderProductIds.length
+      ? await this.productRepo.count({
+          where: { id: In(orderProductIds), freeShipping: true },
+        })
+      : 0;
+    const shipsFree =
+      orderProductIds.length > 0 && freeShippingCount === orderProductIds.length;
 
     return this.dataSource.transaction(async (em) => {
       // Generate order number via sequence
@@ -144,7 +155,7 @@ export class OrdersService {
         (sum, i) => sum + i.unitPriceCents * i.quantity,
         0,
       );
-      const shippingCents = dto.shippingCents ?? 0;
+      const shippingCents = shipsFree ? 0 : dto.shippingCents ?? 0;
       const totalCents = Math.max(0, subtotalCents + shippingCents);
 
       const order = em.create(Order, {

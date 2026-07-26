@@ -35,6 +35,7 @@ export type ProductStatus =
 @Index(['status'])
 @Index(['featured'])
 @Index(['isTestProduct'])
+@Index(['freeShipping'])
 export class Product {
   @PrimaryGeneratedColumn('uuid') id: string;
 
@@ -129,6 +130,16 @@ export class Product {
    * real purchase intent before committing to inventory.
    */
   @Column({ type: 'boolean', default: false }) isTestProduct: boolean;
+
+  /**
+   * Ships free regardless of the order total. Any cart containing at least one
+   * such product pays no shipping — shipping is priced per order, not per line,
+   * so it cannot be applied to part of a basket.
+   *
+   * Independent of the zone/method thresholds and of `free_shipping` promotions;
+   * whichever grants it first wins (see PricingEngineService).
+   */
+  @Column({ type: 'boolean', default: false }) freeShipping: boolean;
   @Column({ type: 'varchar', length: 50, default: 'draft' })
   status: ProductStatus;
 

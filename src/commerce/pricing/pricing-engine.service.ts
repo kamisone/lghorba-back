@@ -14,6 +14,8 @@ export interface LineItemInput {
   categoryIds:    string[];
   quantity:       number;
   unitPriceCents: number;
+  /** Product is flagged `freeShipping`: its presence alone makes the order ship free. */
+  freeShipping?:  boolean;
 }
 
 export interface PricedLine {
@@ -38,6 +40,12 @@ export interface PricingResult {
   appliedCouponPromotionId:   string | null;
   appliedCouponName:          string | null;
   freeShipping:               boolean;
+  /**
+   * Why shipping is free, so the storefront can explain it rather than just
+   * showing a zero. `product` wins the label when several sources apply, because
+   * it is the one tied to something the customer can see in their basket.
+   */
+  freeShippingReason:         'product' | 'promotion' | 'coupon' | null;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -107,6 +115,14 @@ export class PricingEngineService {
     let rawSubtotal = 0;
     let totalCategoryDiscount = 0;
     let autoFreeShipping = false;
+
+    // Shipping is charged once per order, not per line, so it is all-or-nothing:
+    // the order ships free only when EVERY item carries free shipping. A single
+    // product with paid delivery in the basket means normal shipping applies —
+    // otherwise adding a 1 € free-shipping item would waive delivery on the
+    // whole order.
+    const productFreeShipping =
+      lines.length > 0 && lines.every((l) => l.freeShipping === true);
 
     const pricedLines: PricedLine[] = lines.map(line => {
       rawSubtotal += line.unitPriceCents * line.quantity;
@@ -224,7 +240,14 @@ export class PricingEngineService {
       couponCode:                 validCouponCode,
       appliedCouponPromotionId:   appliedCouponPromoId,
       appliedCouponName,
-      freeShipping:               autoFreeShipping || couponFreeShipping,
+      freeShipping:               productFreeShipping || autoFreeShipping || couponFreeShipping,
+      freeShippingReason:         productFreeShipping
+        ? 'product'
+        : autoFreeShipping
+          ? 'promotion'
+          : couponFreeShipping
+            ? 'coupon'
+            : null,
     };
   }
 
