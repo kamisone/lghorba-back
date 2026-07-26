@@ -16,14 +16,24 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { rawBody: true, bufferLogs: true });
 
-  // The API runs behind one reverse proxy, so the socket peer is the proxy, not
-  // the visitor. Without this, `req.ip` is the proxy's private address for every
-  // request: geo-IP lookups resolve to null (no country on behaviour events) and
-  // IP rate limiting buckets the whole world into a single counter. Trusting
-  // exactly one hop makes Express read the last entry of `x-forwarded-for`, which
-  // the proxy controls — raise the count only if another proxy is added, since a
-  // too-high value lets clients spoof the header.
-  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  // Requests reach the pod through nginx (back/docker/nginx/default.conf, which
+  // sets `X-Forwarded-For $proxy_add_x_forwarded_for`) and then the k8s/minikube
+  // ingress, which appends again. Without this, `req.ip` is an internal address
+  // for every request: geo-IP resolves to null (no country on behaviour events)
+  // and IP rate limiting buckets the whole internet into one counter.
+  //
+  // Trusting private ranges rather than a fixed hop count is deliberate. A
+  // numeric count has to match the topology exactly — `1` lands on nginx's own
+  // 192.168.x address once the ingress adds a second hop, which is precisely the
+  // silent failure this had. Every internal hop here is RFC1918/loopback, so
+  // trusting those ranges makes Express walk left past all of them and stop at
+  // the first public address: the real client, whatever the cluster does next.
+  // A client-forged public prefix still loses, because the trusted hops append
+  // the true address to its right.
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
 
   app.useLogger(app.get(Logger));
   app.enableCors({

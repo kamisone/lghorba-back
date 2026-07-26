@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, Logger, Post, Req } from '@nestjs/common';
 import { Request } from 'express';
 import { z } from 'zod';
 import { Public } from '../../auth/public.decorator';
@@ -23,6 +23,8 @@ type TrackBehaviorDto = z.infer<typeof TrackBehaviorSchema>;
 @Public()
 @Controller('public/shop/behavior')
 export class BehaviorTrackingController {
+  private readonly logger = new Logger(BehaviorTrackingController.name);
+
   constructor(
     private readonly behaviorTracking: BehaviorTrackingService,
     private readonly geoIp: GeoIpService,
@@ -34,17 +36,28 @@ export class BehaviorTrackingController {
     @Body(new ZodValidationPipe(TrackBehaviorSchema)) dto: TrackBehaviorDto,
     @Req() req: Request,
   ): Promise<void> {
-    const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
-      .split(',')[0]
-      .trim();
-    const ip = req.ip ?? (forwarded || null);
+    // `req.ip` is authoritative once `trust proxy` is configured (see main.ts):
+    // Express walks x-forwarded-for past the trusted internal hops for us. Do not
+    // reintroduce a manual `x-forwarded-for` parse here — the old code read the
+    // header and then discarded it, because `req.ip ?? …` never falls through.
+    const ip = req.ip ?? null;
+    const countryCode = this.geoIp.countryFromIp(ip);
+
+    if (!countryCode) {
+      // The only way to tell "visitor we cannot geolocate" apart from "proxy
+      // misconfigured, so every event is a private address" is to see the chain.
+      this.logger.warn(
+        `No country for behaviour event: req.ip=${ip} ` +
+          `x-forwarded-for="${(req.headers['x-forwarded-for'] as string) ?? ''}"`,
+      );
+    }
 
     await this.behaviorTracking.record(dto.eventType, {
       cartToken: dto.cartToken,
       productId: dto.productId,
       searchQuery: dto.searchQuery,
       resultCount: dto.resultCount,
-      countryCode: this.geoIp.countryFromIp(ip),
+      countryCode,
     });
   }
 }
