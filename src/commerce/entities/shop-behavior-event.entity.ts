@@ -56,6 +56,14 @@ export class ShopBehaviorEvent {
 
   // ISO-3166-1 alpha-2 country code, resolved from the request IP at write
   // time (see GeoIpService) — the IP itself is never stored, only this.
+  /**
+   * Salted SHA-256 of the visitor's IP — never the IP itself. Lets reports count
+   * one visitor once per product no matter how often they refresh. NULL on rows
+   * written before this existed, and on requests where no client IP was
+   * resolvable; queries fall back to `cartToken` then the row id.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true }) visitorHash: string | null;
+
   @Column({ type: 'varchar', length: 2, nullable: true }) countryCode:
     | string
     | null;

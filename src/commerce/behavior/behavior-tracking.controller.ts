@@ -85,6 +85,7 @@ export class BehaviorTrackingController {
       searchQuery: dto.searchQuery,
       resultCount: dto.resultCount,
       countryCode,
+      visitorHash: this.geoIp.visitorHashFromIp(ip),
     });
   }
 }

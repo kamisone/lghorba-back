@@ -79,12 +79,14 @@ export class TestCheckoutGuard {
       // checkout already captured the client IP on the order, so the demand
       // signal can be geolocated without plumbing the request down.
       const countryCode = this.geoIp.countryFromIp(order.clientIpAddress);
+      const visitorHash = this.geoIp.visitorHashFromIp(order.clientIpAddress);
       for (const productId of productIds) {
         await this.behaviorTracking.record('test_checkout_blocked', {
           cartToken: order.cartToken,
           shopCustomerId: order.customerId,
           productId,
           countryCode,
+          visitorHash,
         });
       }
     } catch (err) {

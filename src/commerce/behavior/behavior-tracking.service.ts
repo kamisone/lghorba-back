@@ -14,6 +14,7 @@ interface RecordInput {
   searchQuery?: string | null;
   resultCount?: number | null;
   countryCode?: string | null;
+  visitorHash?: string | null;
 }
 
 @Injectable()
@@ -38,6 +39,7 @@ export class BehaviorTrackingService {
           searchQuery: data.searchQuery ?? null,
           resultCount: data.resultCount ?? null,
           countryCode: data.countryCode ?? null,
+          visitorHash: data.visitorHash ?? null,
         }),
       );
     } catch (err) {

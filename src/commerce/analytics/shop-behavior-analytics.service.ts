@@ -15,6 +15,15 @@ import {
 // Same paid-status set already used throughout shop-analytics.service.ts.
 const PAID_STATUSES = ['paid', 'processing', 'shipped', 'delivered'];
 
+/**
+ * Counts unique visitors. `visitorHash` is a salted digest of the client IP
+ * (see GeoIpService), so the same person viewing the same product repeatedly
+ * counts once. Grouped queries already scope by product, so distinct hashes
+ * within a group means distinct IPs for that product.
+ */
+const VISITOR_KEY_COUNT =
+  'COUNT(DISTINCT COALESCE(be."visitorHash", be."cartToken", be.id::text))';
+
 function pct(numerator: number, denominator: number): number {
   return denominator > 0
     ? Math.round((numerator / denominator) * 1000) / 10
@@ -105,7 +114,11 @@ export class ShopBehaviorAnalyticsService {
       // `checkout_started` is written once per distinct product in the order, so
       // it must be counted per cart — one customer reaching the shipping step is
       // one step, however many products they had.
-      .addSelect('COUNT(DISTINCT be.cartToken)', 'distinctCarts')
+      // One visitor per product, however many times they refresh: the IP digest
+      // is the identity, `cartToken` covers rows written before that column
+      // existed, and the row id keeps an unidentifiable event counting as one
+      // rather than being dropped (COUNT(DISTINCT) ignores NULLs).
+      .addSelect(VISITOR_KEY_COUNT, 'distinctCarts')
       .where('be.eventType IN (:...types)', {
         types: ['product_view', 'add_to_cart', 'checkout_started'],
       })
@@ -126,8 +139,11 @@ export class ShopBehaviorAnalyticsService {
     const cartsByType = new Map(
       counts.map((r) => [r.eventType, parseInt(r.distinctCarts, 10)]),
     );
-    const views = countByType.get('product_view') ?? 0;
-    const addsToCart = countByType.get('add_to_cart') ?? 0;
+    // Unique visitors, not raw hits — a refresh must not inflate the funnel, and
+    // every later step is already counted per cart, so the rates only make sense
+    // if the earlier ones are too.
+    const views = cartsByType.get('product_view') ?? 0;
+    const addsToCart = cartsByType.get('add_to_cart') ?? 0;
     const checkoutsStarted = cartsByType.get('checkout_started') ?? 0;
 
     const purchasesQb = this.orderRepo
@@ -257,7 +273,11 @@ export class ShopBehaviorAnalyticsService {
       .select('be.productId', 'productId')
       .addSelect('be.eventType', 'eventType')
       .addSelect('COUNT(be.id)', 'count')
-      .addSelect('COUNT(DISTINCT be.cartToken)', 'distinctCarts')
+      // One visitor per product, however many times they refresh: the IP digest
+      // is the identity, `cartToken` covers rows written before that column
+      // existed, and the row id keeps an unidentifiable event counting as one
+      // rather than being dropped (COUNT(DISTINCT) ignores NULLs).
+      .addSelect(VISITOR_KEY_COUNT, 'distinctCarts')
       .where('be.productId IN (:...ids)', { ids })
       .andWhere('be.eventType IN (:...types)', {
         types: [
@@ -292,8 +312,10 @@ export class ShopBehaviorAnalyticsService {
     }
 
     let result = testProducts.map((p) => {
-      const views = counts.get(`${p.id}:product_view`) ?? 0;
-      const addsToCart = counts.get(`${p.id}:add_to_cart`) ?? 0;
+      // Unique visitors, matching reachedShipping/reachedCheckout below, so a
+      // refresh does not inflate demand and the rates stay comparable.
+      const views = distinct.get(`${p.id}:product_view`) ?? 0;
+      const addsToCart = distinct.get(`${p.id}:add_to_cart`) ?? 0;
       const reachedShipping = distinct.get(`${p.id}:checkout_started`) ?? 0;
       const reachedCheckout = distinct.get(`${p.id}:test_checkout_blocked`) ?? 0;
       return {
@@ -601,11 +623,25 @@ export class ShopBehaviorAnalyticsService {
     const codes = await this.countryCodesFor(filter);
     if (codes && codes.length === 0) return [];
 
+    // One row per (visitor, event, product) — the same identity the summary
+    // columns count. Listing every raw hit made the modal disagree with the
+    // table it was opened from: a visitor refreshing ten times showed ten lines
+    // under a "Views: 1" column. DISTINCT ON keeps the most recent occurrence.
     const qb = this.behaviorRepo
       .createQueryBuilder('be')
+      .distinctOn([
+        'COALESCE(be."visitorHash", be."cartToken", be.id::text)',
+        'be."eventType"',
+        'be."productId"',
+      ])
       .where('be.createdAt >= :since', { since })
       .andWhere('be.createdAt < :until', { until })
-      .orderBy('be.createdAt', 'DESC')
+      // DISTINCT ON requires the leading ORDER BY to match its expressions;
+      // createdAt DESC then picks the latest of each group.
+      .orderBy('COALESCE(be."visitorHash", be."cartToken", be.id::text)')
+      .addOrderBy('be."eventType"')
+      .addOrderBy('be."productId"')
+      .addOrderBy('be.createdAt', 'DESC')
       .limit(limit);
     if (eventTypes && eventTypes.length) {
       qb.andWhere('be.eventType IN (:...ets)', { ets: eventTypes });
@@ -614,6 +650,8 @@ export class ShopBehaviorAnalyticsService {
     if (codes) qb.andWhere('be.countryCode IN (:...codes)', { codes });
 
     const events = await qb.getMany();
+    // Re-sort for display: the query had to order by the dedupe key first.
+    events.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     if (!events.length) return [];
 
     const productIds = [
