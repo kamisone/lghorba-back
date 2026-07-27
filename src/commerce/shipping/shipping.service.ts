@@ -77,7 +77,13 @@ export class ShippingService {
     countryCode: string,
     cartTotalCents: number,
     lang?: string,
-    opts: { forceFree?: boolean; upgradeMethodIds?: string[] } = {},
+    opts: {
+      forceFree?: boolean;
+      upgradeMethodIds?: string[];
+      /** Admin-configured delivery window for the free option, in days. */
+      freeDaysMin?: number | null;
+      freeDaysMax?: number | null;
+    } = {},
   ): Promise<ShippingQuoteResult> {
     const zone = await this.resolveZoneForCountry(countryCode);
     if (!zone) return { zone: null, methods: [] };
@@ -88,7 +94,10 @@ export class ShippingService {
     });
 
     const priced = opts.forceFree
-      ? this.buildFreeShippingOptions(methods, zone, opts.upgradeMethodIds ?? [])
+      ? this.buildFreeShippingOptions(methods, zone, opts.upgradeMethodIds ?? [], {
+          daysMin: opts.freeDaysMin ?? null,
+          daysMax: opts.freeDaysMax ?? null,
+        })
       : this.applyZonePricing(methods, zone, cartTotalCents);
     const translated = await this.translationsService.maybeApply(priced, ET_SHOP_SHIPPING_METHOD, lang);
 
@@ -162,19 +171,29 @@ export class ShippingService {
     methods: ShippingMethod[],
     zone: ShippingZone,
     upgradeMethodIds: string[],
+    freeDays: { daysMin: number | null; daysMax: number | null } = {
+      daysMin: null,
+      daysMax: null,
+    },
   ): any[] {
     const upgrades = upgradeMethodIds.length
       ? methods.filter(m => upgradeMethodIds.includes(m.id) && m.availableForFreeShipping)
       : [];
 
-    // Delivery window for free shipping: the zone's ordinary (non-upgrade)
-    // method if there is one, else the slowest method available — free delivery
-    // is never faster than what you can pay for.
+    // Delivery window for free shipping: whatever the admin set on the product,
+    // else borrowed from the zone's ordinary (non-upgrade) method, else the
+    // slowest method available — free delivery is never faster than what you can
+    // pay for.
     const upgradeIds = new Set(upgrades.map(m => m.id));
     const reference =
       methods.find(m => !upgradeIds.has(m.id)) ??
       [...methods].sort((a, b) => b.estimatedDaysMax - a.estimatedDaysMax)[0] ??
       null;
+    // Only an explicit max counts as configured; a min alone would advertise an
+    // open-ended window.
+    const configured = freeDays.daysMax != null;
+    const daysMin = configured ? freeDays.daysMin ?? 0 : reference?.estimatedDaysMin ?? 0;
+    const daysMax = configured ? freeDays.daysMax! : reference?.estimatedDaysMax ?? 0;
 
     const options: any[] = [
       {
@@ -186,8 +205,8 @@ export class ShippingService {
         priceCents: 0,
         originalPriceCents: 0,
         freeAboveCents: null,
-        estimatedDaysMin: reference?.estimatedDaysMin ?? 0,
-        estimatedDaysMax: reference?.estimatedDaysMax ?? 0,
+        estimatedDaysMin: daysMin,
+        estimatedDaysMax: daysMax,
         isActive: true,
         sortOrder: -1,
         availableForFreeShipping: false,

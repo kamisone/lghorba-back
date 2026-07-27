@@ -66,6 +66,13 @@ export const UpdateShippingSchema = z.object({
 });
 export type UpdateShippingDto = z.infer<typeof UpdateShippingSchema>;
 
+/** Free-shipping configuration read from a product for the pricing engine. */
+interface FreeShippingProductInfo {
+  methodIds: string[];
+  daysMin: number | null;
+  daysMax: number | null;
+}
+
 // ── Response ──────────────────────────────────────────────────────────────────
 
 export interface CheckoutSnapshot {
@@ -157,7 +164,9 @@ export class CheckoutService {
         quantity:       item.quantity,
         unitPriceCents: item.unitPriceCents,
         freeShipping:   freeShipMap.has(item.productId),
-        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId) ?? [],
+        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId)?.methodIds ?? [],
+        freeShippingDaysMin: freeShipMap.get(item.productId)?.daysMin ?? null,
+        freeShippingDaysMax: freeShipMap.get(item.productId)?.daysMax ?? null,
       }));
       const pricing = await this.pricingEngine.compute(lineInputs, dto.couponCode ?? null);
 
@@ -191,7 +200,9 @@ export class CheckoutService {
 
       const { zone, methods } = await this.shippingService.getMethodsForCountry(
         dto.country, existing.subtotalCents, undefined,
-        { forceFree: pricing.freeShipping, upgradeMethodIds: pricing.freeShippingUpgradeMethodIds },
+        { forceFree: pricing.freeShipping, upgradeMethodIds: pricing.freeShippingUpgradeMethodIds,
+        freeDaysMin: pricing.freeShippingDaysMin,
+        freeDaysMax: pricing.freeShippingDaysMax },
       );
       return this.toSnapshot(existing, methods, zone);
     }
@@ -215,7 +226,9 @@ export class CheckoutService {
       quantity:       item.quantity,
       unitPriceCents: item.unitPriceCents,
       freeShipping:   freeShipMap.has(item.productId),
-        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId) ?? [],
+        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId)?.methodIds ?? [],
+        freeShippingDaysMin: freeShipMap.get(item.productId)?.daysMin ?? null,
+        freeShippingDaysMax: freeShipMap.get(item.productId)?.daysMax ?? null,
     }));
 
     const pricing = await this.pricingEngine.compute(lineInputs, dto.couponCode ?? null);
@@ -304,7 +317,9 @@ export class CheckoutService {
 
     const { zone: shippingZone, methods: shippingMethods } = await this.shippingService.getMethodsForCountry(
       dto.country, snapshot.subtotalCents, undefined,
-      { forceFree: pricing.freeShipping, upgradeMethodIds: pricing.freeShippingUpgradeMethodIds },
+      { forceFree: pricing.freeShipping, upgradeMethodIds: pricing.freeShippingUpgradeMethodIds,
+        freeDaysMin: pricing.freeShippingDaysMin,
+        freeDaysMax: pricing.freeShippingDaysMax },
     );
     return this.toSnapshot(snapshot, shippingMethods, shippingZone);
   }
@@ -327,7 +342,9 @@ export class CheckoutService {
     const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
     const { zone, methods } = await this.shippingService.getMethodsForCountry(
       country, order.subtotalCents, undefined,
-      { forceFree: this.orderShipsFree(order), upgradeMethodIds: this.orderUpgradeMethodIds(order) },
+      { forceFree: this.orderShipsFree(order), upgradeMethodIds: this.orderUpgradeMethodIds(order),
+      freeDaysMin: this.orderPricing(order)?.freeShippingDaysMin ?? null,
+      freeDaysMax: this.orderPricing(order)?.freeShippingDaysMax ?? null },
     );
     const method = methods.find(m => m.id === dto.shippingMethodId);
     if (!method) throw new BadRequestException('Shipping method not available for this order');
@@ -424,7 +441,9 @@ export class CheckoutService {
     if (order.status === 'draft') {
       const { zone, methods } = await this.shippingService.getMethodsForCountry(
       country, order.subtotalCents, undefined,
-      { forceFree: this.orderShipsFree(order), upgradeMethodIds: this.orderUpgradeMethodIds(order) },
+      { forceFree: this.orderShipsFree(order), upgradeMethodIds: this.orderUpgradeMethodIds(order),
+      freeDaysMin: this.orderPricing(order)?.freeShippingDaysMin ?? null,
+      freeDaysMax: this.orderPricing(order)?.freeShippingDaysMax ?? null },
     );
       return this.toSnapshot(order, methods, zone);
     }
@@ -457,7 +476,9 @@ export class CheckoutService {
       quantity:       item.quantity,
       unitPriceCents: item.unitPriceCents,
       freeShipping:   freeShipMap.has(item.productId),
-        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId) ?? [],
+        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId)?.methodIds ?? [],
+        freeShippingDaysMin: freeShipMap.get(item.productId)?.daysMin ?? null,
+        freeShippingDaysMax: freeShipMap.get(item.productId)?.daysMax ?? null,
     }));
 
     const pricing = await this.pricingEngine.compute(lineInputs, couponCode);
@@ -571,12 +592,19 @@ export class CheckoutService {
    */
   private async loadFreeShippingProducts(
     productIds: string[],
-  ): Promise<Map<string, string[]>> {
+  ): Promise<Map<string, FreeShippingProductInfo>> {
     if (!productIds.length) return new Map();
     const rows = await this.dataSource.query<
-      { id: string; methodIds: string[] | null }[]
+      {
+        id: string;
+        methodIds: string[] | null;
+        daysMin: number | null;
+        daysMax: number | null;
+      }[]
     >(
       `SELECT p."id",
+              p."freeShippingDaysMin" AS "daysMin",
+              p."freeShippingDaysMax" AS "daysMax",
               COALESCE(
                 ARRAY_AGG(m."shippingMethodId") FILTER (WHERE m."shippingMethodId" IS NOT NULL),
                 '{}'
@@ -587,7 +615,21 @@ export class CheckoutService {
        GROUP BY p."id"`,
       [productIds],
     );
-    return new Map(rows.map((r) => [r.id, r.methodIds ?? []]));
+    return new Map(
+      rows.map((r) => [
+        r.id,
+        {
+          methodIds: r.methodIds ?? [],
+          daysMin: r.daysMin,
+          daysMax: r.daysMax,
+        },
+      ]),
+    );
+  }
+
+  /** The pricing snapshot stored on the order, if any. */
+  private orderPricing(order: Order): (PricingResult & Record<string, unknown>) | null {
+    return (order.pricingSnapshot as (PricingResult & Record<string, unknown>) | null) ?? null;
   }
 
   /** The upgrades recorded on the order's pricing snapshot. */

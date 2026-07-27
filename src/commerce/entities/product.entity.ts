@@ -151,6 +151,15 @@ export class Product {
    * shipping zone resolved from their address — methods outside that zone are
    * never quoted.
    */
+  /**
+   * Delivery window advertised for the free option, in days. The free option is
+   * synthetic rather than one of the zone's methods, so without this it can only
+   * borrow an estimate from whichever method happens to exist there. NULL falls
+   * back to that borrowed estimate.
+   */
+  @Column({ type: 'int', nullable: true }) freeShippingDaysMin: number | null;
+  @Column({ type: 'int', nullable: true }) freeShippingDaysMax: number | null;
+
   @ManyToMany(() => ShippingMethod)
   @JoinTable({
     name: 'shop_product_free_shipping_methods',

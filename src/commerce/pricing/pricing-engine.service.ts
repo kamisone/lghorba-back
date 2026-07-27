@@ -18,6 +18,9 @@ export interface LineItemInput {
   freeShipping?:  boolean;
   /** Paid upgrades this product offers alongside free shipping, if any. */
   freeShippingUpgradeMethodIds?: string[];
+  /** Delivery window this product advertises for free shipping, in days. */
+  freeShippingDaysMin?: number | null;
+  freeShippingDaysMax?: number | null;
 }
 
 export interface PricedLine {
@@ -55,6 +58,12 @@ export interface PricingResult {
    * then narrowed to their shipping zone by ShippingService.
    */
   freeShippingUpgradeMethodIds: string[];
+  /**
+   * Delivery window to advertise for the free option, in days, or null to let
+   * the shipping service fall back to a zone method's estimate.
+   */
+  freeShippingDaysMin: number | null;
+  freeShippingDaysMax: number | null;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -143,6 +152,20 @@ export class PricingEngineService {
           return i === 0 ? [...ids] : acc.filter((id) => ids.includes(id));
         }, [])
       : [];
+
+    // One delivery promise covers the whole order, and the order is only
+    // complete when its slowest item arrives — so take the largest window, not
+    // the first or the average. Products that set no window are ignored rather
+    // than treated as zero, which would promise same-day delivery.
+    const freeShippingDayValues = productFreeShipping
+      ? lines.filter((l) => l.freeShippingDaysMax != null)
+      : [];
+    const freeShippingDaysMin = freeShippingDayValues.length
+      ? Math.max(...freeShippingDayValues.map((l) => l.freeShippingDaysMin ?? 0))
+      : null;
+    const freeShippingDaysMax = freeShippingDayValues.length
+      ? Math.max(...freeShippingDayValues.map((l) => l.freeShippingDaysMax ?? 0))
+      : null;
 
     const pricedLines: PricedLine[] = lines.map(line => {
       rawSubtotal += line.unitPriceCents * line.quantity;
@@ -269,6 +292,8 @@ export class PricingEngineService {
             ? 'coupon'
             : null,
       freeShippingUpgradeMethodIds,
+      freeShippingDaysMin,
+      freeShippingDaysMax,
     };
   }
 

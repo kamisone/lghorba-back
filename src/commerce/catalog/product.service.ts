@@ -125,6 +125,9 @@ export const CreateProductSchema = z.object({
   freeShipping:       z.boolean().optional(),
   /** Optional paid faster options offered alongside free shipping. */
   freeShippingUpgradeMethodIds: z.array(z.string().uuid()).optional(),
+  /** Delivery window advertised for the free option, in days. */
+  freeShippingDaysMin: z.number().int().min(0).max(365).nullish(),
+  freeShippingDaysMax: z.number().int().min(0).max(365).nullish(),
   primaryCategoryId:  z.string().uuid().nullish(),
   categoryIds:        z.array(z.string().uuid()).optional(),
   tagIds:             z.array(z.string().uuid()).optional(),
@@ -835,6 +838,8 @@ export class ProductService {
         featured:          dto.featured ?? false,
         isTestProduct:     dto.isTestProduct ?? false,
         freeShipping:      dto.freeShipping ?? false,
+        freeShippingDaysMin: dto.freeShippingDaysMin ?? null,
+        freeShippingDaysMax: dto.freeShippingDaysMax ?? null,
         status:            'draft',
         primaryCategoryId: dto.primaryCategoryId ?? null,
         basePriceCents:    dto.basePriceCents,
@@ -907,6 +912,8 @@ export class ProductService {
       featured:          dto.featured           !== undefined ? dto.featured : product.featured,
       isTestProduct:     dto.isTestProduct      !== undefined ? dto.isTestProduct : product.isTestProduct,
       freeShipping:      dto.freeShipping       !== undefined ? dto.freeShipping : product.freeShipping,
+      freeShippingDaysMin: dto.freeShippingDaysMin !== undefined ? dto.freeShippingDaysMin ?? null : product.freeShippingDaysMin,
+      freeShippingDaysMax: dto.freeShippingDaysMax !== undefined ? dto.freeShippingDaysMax ?? null : product.freeShippingDaysMax,
       status:            dto.status             ?? product.status,
       primaryCategoryId: dto.primaryCategoryId  !== undefined ? dto.primaryCategoryId ?? null : product.primaryCategoryId,
       basePriceCents:    dto.basePriceCents      !== undefined ? dto.basePriceCents ?? null : product.basePriceCents,
