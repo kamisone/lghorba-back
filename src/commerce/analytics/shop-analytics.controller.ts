@@ -172,12 +172,14 @@ export class ShopAnalyticsController {
     @Query('continent') continent?: string,
     @Query('productId') productId?: string,
     @Query('limit') limit?: string,
+    @Query('productScope') productScope?: string,
   ) {
     return this.behaviorAnalytics.getEventDetails({
       window: resolveWindow({ days, startDate, endDate }),
       eventTypes: eventType ? eventType.split(',') : undefined,
       filter: { countryCode, continent, productId },
       limit: intParam(limit),
+      productScope: productScope === 'real' ? 'real' : 'all',
     });
   }
 

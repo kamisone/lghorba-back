@@ -16,6 +16,19 @@ import {
 const PAID_STATUSES = ['paid', 'processing', 'shipped', 'delivered'];
 
 /**
+ * Keeps demand-validation products out of the ordinary conversion reports.
+ *
+ * Test products cannot be bought — checkout is refused — so their views and
+ * cart adds would depress every conversion rate against purchases that can
+ * never happen. They have their own report (`getTestProductDemand`).
+ *
+ * NOT EXISTS rather than a join, so cart-level events with a NULL productId are
+ * kept: they belong to the funnel regardless of which product they came from.
+ */
+const EXCLUDE_TEST_PRODUCTS =
+  'NOT EXISTS (SELECT 1 FROM shop_products tp WHERE tp.id = be."productId" AND tp."isTestProduct" = true)';
+
+/**
  * Counts unique visitors. `visitorHash` is a salted digest of the client IP
  * (see GeoIpService), so the same person viewing the same product repeatedly
  * counts once. Grouped queries already scope by product, so distinct hashes
@@ -124,6 +137,7 @@ export class ShopBehaviorAnalyticsService {
       })
       .andWhere('be.createdAt >= :since', { since })
       .andWhere('be.createdAt < :until', { until });
+    countsQb.andWhere(EXCLUDE_TEST_PRODUCTS);
     if (codes) countsQb.andWhere('be.countryCode IN (:...codes)', { codes });
     if (filter.productId) {
       countsQb.andWhere('be.productId = :pid', { pid: filter.productId });
@@ -401,6 +415,8 @@ export class ShopBehaviorAnalyticsService {
       .andWhere('be.createdAt < :until', { until })
       .andWhere('be.productId IS NOT NULL')
       .groupBy('be.productId');
+    viewsQb.andWhere(EXCLUDE_TEST_PRODUCTS);
+    addsQb.andWhere(EXCLUDE_TEST_PRODUCTS);
     if (codes) {
       viewsQb.andWhere('be.countryCode IN (:...codes)', { codes });
       addsQb.andWhere('be.countryCode IN (:...codes)', { codes });
@@ -453,26 +469,33 @@ export class ShopBehaviorAnalyticsService {
     ]);
     if (productIds.size === 0) return [];
 
+    // The purchases side reads from orders, not `be`, so EXCLUDE_TEST_PRODUCTS
+    // cannot reach it — drop test products here as well. Rows whose product is
+    // filtered out simply fall away when the map lookup misses.
     const products = await this.productRepo.find({
-      where: { id: In([...productIds]) },
+      where: { id: In([...productIds]), isTestProduct: false },
       select: ['id', 'title', 'slug'],
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
-    const rows = [...productIds].map((productId) => {
+    const rows = [...productIds].flatMap((productId) => {
+      const product = productMap.get(productId);
+      // Absent means the product is a test product (filtered above) or was
+      // deleted. Drop the row rather than listing it as "Unknown product" —
+      // this report is about products a customer can actually buy.
+      if (!product) return [];
       const views = viewMap.get(productId) ?? 0;
       const addsToCart = addMap.get(productId) ?? 0;
       const purchases = purchaseMap.get(productId) ?? 0;
-      const product = productMap.get(productId);
-      return {
+      return [{
         productId,
-        title: product?.title ?? 'Unknown product',
-        slug: product?.slug ?? '',
+        title: product.title,
+        slug: product.slug,
         views,
         addsToCart,
         purchases,
         conversionRatePct: pct(purchases, views),
-      };
+      }];
     });
 
     return rows.sort((a, b) => b.views - a.views).slice(0, limit);
@@ -522,6 +545,9 @@ export class ShopBehaviorAnalyticsService {
       viewsQb.andWhere('be.productId = :pid', { pid });
       addsQb.andWhere('be.productId = :pid', { pid });
     }
+
+    viewsQb.andWhere(EXCLUDE_TEST_PRODUCTS);
+    addsQb.andWhere(EXCLUDE_TEST_PRODUCTS);
 
     const purchasesQb = this.orderRepo
       .createQueryBuilder('o')
@@ -603,6 +629,12 @@ export class ShopBehaviorAnalyticsService {
     eventTypes?: string[];
     filter?: ConversionFilter;
     limit?: number;
+    /**
+     * Which catalogue the rows may come from. The conversion report passes
+     * 'real' so its funnel drill-downs match the counts above them; the
+     * test-product report is already scoped by an explicit productId.
+     */
+    productScope?: 'real' | 'all';
   }): Promise<
     Array<{
       id: string;
@@ -617,7 +649,7 @@ export class ShopBehaviorAnalyticsService {
       searchQuery: string | null;
     }>
   > {
-    const { window, eventTypes, filter = {}, limit = 100 } = opts;
+    const { window, eventTypes, filter = {}, limit = 100, productScope = 'all' } = opts;
     const { since, until } = window;
 
     const codes = await this.countryCodesFor(filter);
@@ -648,6 +680,7 @@ export class ShopBehaviorAnalyticsService {
     }
     if (filter.productId) qb.andWhere('be.productId = :pid', { pid: filter.productId });
     if (codes) qb.andWhere('be.countryCode IN (:...codes)', { codes });
+    if (productScope === 'real') qb.andWhere(EXCLUDE_TEST_PRODUCTS);
 
     const events = await qb.getMany();
     // Re-sort for display: the query had to order by the dedupe key first.
