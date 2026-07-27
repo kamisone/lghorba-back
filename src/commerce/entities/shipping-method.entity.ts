@@ -24,4 +24,11 @@ export class ShippingMethod {
 
   @Column({ type: 'boolean', default: true }) isActive: boolean;
   @Column({ type: 'int', default: 0 })        sortOrder: number;
+
+  /**
+   * Selectable as the paid upgrade on a free-shipping product — for customers
+   * who would rather pay to receive it sooner. Only marks the method eligible;
+   * `Product.freeShippingUpgradeMethodId` is what actually offers it.
+   */
+  @Column({ type: 'boolean', default: false }) availableForFreeShipping: boolean;
 }

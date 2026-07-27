@@ -17,6 +17,7 @@ import { ProductVariantAttribute } from '../entities/product-variant-attribute.e
 import { ProductOptionValueImage } from '../entities/product-option-value-image.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { ProductCategory } from '../entities/product-category.entity';
+import { ShippingMethod } from '../entities/shipping-method.entity';
 import { ProductTag } from '../entities/product-tag.entity';
 import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { MediaService } from '../../media/media.service';
@@ -122,6 +123,8 @@ export const CreateProductSchema = z.object({
   isTestProduct:      z.boolean().optional(),
   /** Any cart containing this product ships free, whatever the order total. */
   freeShipping:       z.boolean().optional(),
+  /** Optional paid faster options offered alongside free shipping. */
+  freeShippingUpgradeMethodIds: z.array(z.string().uuid()).optional(),
   primaryCategoryId:  z.string().uuid().nullish(),
   categoryIds:        z.array(z.string().uuid()).optional(),
   tagIds:             z.array(z.string().uuid()).optional(),
@@ -326,6 +329,7 @@ export class ProductService {
     @InjectRepository(ProductOptionValueImage)  private readonly optionImageRepo:  Repository<ProductOptionValueImage>,
     @InjectRepository(InventoryItem)            private readonly inventoryRepo:    Repository<InventoryItem>,
     @InjectRepository(ProductCategory)          private readonly categoryRepo:     Repository<ProductCategory>,
+    @InjectRepository(ShippingMethod)           private readonly shippingMethodRepo: Repository<ShippingMethod>,
     @InjectRepository(ProductTag)               private readonly tagRepo:          Repository<ProductTag>,
     private readonly assetUrlService:  AssetUrlService,
     private readonly dataSource:       DataSource,
@@ -624,7 +628,7 @@ export class ProductService {
   async findById(id: string): Promise<any> {
     const product = await this.productRepo.findOne({
       where: { id },
-      relations: ['categories', 'tags', 'variants', 'variants.options', 'primaryCategory'],
+      relations: ['categories', 'tags', 'variants', 'variants.options', 'primaryCategory', 'freeShippingUpgradeMethods'],
       withDeleted: true,
     });
     if (!product) throw new NotFoundException('Product not found');
@@ -639,7 +643,7 @@ export class ProductService {
   async findBySlug(slug: string, lang?: string): Promise<any> {
     const product = await this.productRepo.findOne({
       where: { slug, status: 'active' },
-      relations: ['categories', 'tags', 'variants', 'variants.options', 'primaryCategory'],
+      relations: ['categories', 'tags', 'variants', 'variants.options', 'primaryCategory', 'freeShippingUpgradeMethods'],
     });
     if (!product) throw new NotFoundException('Product not found');
     const resolved: any = await this.resolveProductUrls(product);
@@ -867,7 +871,7 @@ export class ProductService {
   // ── Update ──────────────────────────────────────────────────────────────────
 
   async update(id: string, dto: UpdateProductDto): Promise<Product> {
-    const product = await this.productRepo.findOne({ where: { id }, relations: ['categories', 'tags'], withDeleted: true });
+    const product = await this.productRepo.findOne({ where: { id }, relations: ['categories', 'tags', 'freeShippingUpgradeMethods'], withDeleted: true });
     if (!product) throw new NotFoundException('Product not found');
 
     if (dto.slug && dto.slug !== product.slug) {
@@ -911,6 +915,18 @@ export class ProductService {
     if (dto.categoryIds !== undefined) {
       product.categories = dto.categoryIds.length
         ? await this.categoryRepo.find({ where: { id: In(dto.categoryIds) } })
+        : [];
+    }
+    if (dto.freeShippingUpgradeMethodIds !== undefined) {
+      // Only methods an admin marked as usable for free shipping may be attached,
+      // so a stale or hand-crafted id cannot smuggle an arbitrary method in.
+      product.freeShippingUpgradeMethods = dto.freeShippingUpgradeMethodIds.length
+        ? await this.shippingMethodRepo.find({
+            where: {
+              id: In(dto.freeShippingUpgradeMethodIds),
+              availableForFreeShipping: true,
+            },
+          })
         : [];
     }
     if (dto.tagIds !== undefined) {

@@ -25,9 +25,19 @@ export const UpsertMethodSchema = z.object({
   estimatedDaysMax: z.number().int().min(0).optional(),
   isActive:         z.boolean().optional(),
   sortOrder:        z.number().int().optional(),
+  availableForFreeShipping: z.boolean().optional(),
 });
 export type UpsertZoneDto   = z.infer<typeof UpsertZoneSchema>;
 export type UpsertMethodDto = z.infer<typeof UpsertMethodSchema>;
+
+/**
+ * Stand-in id for the free-shipping option. It is not a real method: the free
+ * delivery is a property of the order, so binding it to one of the zone's
+ * methods used to make that method unofferable as a paid upgrade. A nil UUID
+ * keeps the existing `z.string().uuid()` contract intact; the checkout service
+ * maps it to a NULL `shippingMethodId` (the column is nullable).
+ */
+export const FREE_SHIPPING_METHOD_ID = '00000000-0000-0000-0000-000000000000';
 
 export interface ZoneInfo {
   id:                         string;
@@ -53,14 +63,21 @@ export class ShippingService {
   /**
    * @param opts.forceFree the order already qualifies for free shipping for a
    * reason this service cannot see (a free-shipping product in the basket, or a
-   * promotion/coupon resolved by the pricing engine). Methods are quoted at 0 so
-   * the customer is never shown a price that will not be charged.
+   * promotion/coupon resolved by the pricing engine).
+   * @param opts.upgradeMethodIds the paid alternatives configured on the
+   * free-shipping products. They keep their real price — they are the only
+   * things the customer can still choose to pay for — while everything else is
+   * quoted at 0. Any that belong to another shipping zone are absent from
+   * `methods` here and so drop out naturally: the zone decides what is offered.
+   *
+   * When `forceFree` is set the list collapses to the free option plus those
+   * upgrades. Quoting the rest would be a choice between identical zeroes.
    */
   async getMethodsForCountry(
     countryCode: string,
     cartTotalCents: number,
     lang?: string,
-    opts: { forceFree?: boolean } = {},
+    opts: { forceFree?: boolean; upgradeMethodIds?: string[] } = {},
   ): Promise<ShippingQuoteResult> {
     const zone = await this.resolveZoneForCountry(countryCode);
     if (!zone) return { zone: null, methods: [] };
@@ -70,7 +87,9 @@ export class ShippingService {
       order: { sortOrder: 'ASC' },
     });
 
-    const priced = this.applyZonePricing(methods, zone, cartTotalCents, opts.forceFree);
+    const priced = opts.forceFree
+      ? this.buildFreeShippingOptions(methods, zone, opts.upgradeMethodIds ?? [])
+      : this.applyZonePricing(methods, zone, cartTotalCents);
     const translated = await this.translationsService.maybeApply(priced, ET_SHOP_SHIPPING_METHOD, lang);
 
     return {
@@ -107,14 +126,13 @@ export class ShippingService {
     methods: ShippingMethod[],
     zone: ShippingZone,
     cartTotalCents: number,
-    forceFree = false,
   ): any[] {
     const zoneFree = zone.freeShippingThresholdCents !== null
       && cartTotalCents >= zone.freeShippingThresholdCents;
 
     return methods.map(m => {
       const methodFree = m.freeAboveCents !== null && cartTotalCents >= m.freeAboveCents;
-      const isFree = forceFree || zoneFree || methodFree;
+      const isFree = zoneFree || methodFree;
 
       return {
         ...m,
@@ -125,6 +143,70 @@ export class ShippingService {
         isFree,
       };
     });
+  }
+
+  /**
+   * The options offered on a free-shipping order: free delivery, plus every
+   * faster method the admin attached that serves this customer's zone.
+   *
+   * The free entry is synthetic. Earlier it borrowed one of the zone's methods
+   * for its name and delivery window, which meant a method could not be both the
+   * free baseline and a paid upgrade — so a zone with a single method silently
+   * offered nothing to upgrade to. Free delivery is a property of the order, not
+   * of a carrier, so it no longer consumes one.
+   *
+   * `methods` is already scoped to the customer's zone, so attached methods from
+   * other zones are simply absent — that is the country-based filtering.
+   */
+  private buildFreeShippingOptions(
+    methods: ShippingMethod[],
+    zone: ShippingZone,
+    upgradeMethodIds: string[],
+  ): any[] {
+    const upgrades = upgradeMethodIds.length
+      ? methods.filter(m => upgradeMethodIds.includes(m.id) && m.availableForFreeShipping)
+      : [];
+
+    // Delivery window for free shipping: the zone's ordinary (non-upgrade)
+    // method if there is one, else the slowest method available — free delivery
+    // is never faster than what you can pay for.
+    const upgradeIds = new Set(upgrades.map(m => m.id));
+    const reference =
+      methods.find(m => !upgradeIds.has(m.id)) ??
+      [...methods].sort((a, b) => b.estimatedDaysMax - a.estimatedDaysMax)[0] ??
+      null;
+
+    const options: any[] = [
+      {
+        id: FREE_SHIPPING_METHOD_ID,
+        zoneId: zone.id,
+        name: 'Free shipping',
+        description: null,
+        carrier: null,
+        priceCents: 0,
+        originalPriceCents: 0,
+        freeAboveCents: null,
+        estimatedDaysMin: reference?.estimatedDaysMin ?? 0,
+        estimatedDaysMax: reference?.estimatedDaysMax ?? 0,
+        isActive: true,
+        sortOrder: -1,
+        availableForFreeShipping: false,
+        isFree: true,
+      },
+    ];
+
+    for (const upgrade of upgrades) {
+      const price = upgrade.priceCents + zone.surchargeCents;
+      options.push({
+        ...upgrade,
+        priceCents: price,
+        originalPriceCents: price,
+        isFree: false,
+        isFreeShippingUpgrade: true,
+      });
+    }
+
+    return options;
   }
 
   async listZones(): Promise<ShippingZone[]> {
@@ -165,6 +247,27 @@ export class ShippingService {
     });
   }
 
+  /**
+   * Methods an admin may attach to a free-shipping product as paid upgrades.
+   * Feeds the picker on the product form, so only active + eligible ones, with
+   * their zone — a customer is only ever offered the ones in their own zone, so
+   * the admin needs to see which zone each belongs to when choosing.
+   */
+  async listFreeShippingUpgradeMethods(): Promise<
+    Array<ShippingMethod & { zoneName: string; zoneCountryCodes: string[] }>
+  > {
+    const methods = await this.methodRepo.find({
+      where: { availableForFreeShipping: true, isActive: true },
+      relations: ['zone'],
+      order: { sortOrder: 'ASC' },
+    });
+    return methods.map((m) => ({
+      ...m,
+      zoneName: m.zone?.name ?? '—',
+      zoneCountryCodes: m.zone?.countryCodes ?? [],
+    }));
+  }
+
   async createMethod(dto: UpsertMethodDto): Promise<ShippingMethod> {
     const zone = await this.zoneRepo.findOneBy({ id: dto.zoneId });
     if (!zone) throw new NotFoundException('Shipping zone not found');
@@ -178,6 +281,7 @@ export class ShippingService {
       estimatedDaysMax: dto.estimatedDaysMax ?? 5,
       isActive:         dto.isActive ?? true,
       sortOrder:        dto.sortOrder ?? 0,
+      availableForFreeShipping: dto.availableForFreeShipping ?? false,
     }));
   }
 
@@ -193,6 +297,9 @@ export class ShippingService {
       estimatedDaysMax: dto.estimatedDaysMax ?? method.estimatedDaysMax,
       isActive:         dto.isActive         !== undefined ? dto.isActive : method.isActive,
       sortOrder:        dto.sortOrder        !== undefined ? dto.sortOrder : method.sortOrder,
+      availableForFreeShipping: dto.availableForFreeShipping !== undefined
+        ? dto.availableForFreeShipping
+        : method.availableForFreeShipping,
     });
     return this.methodRepo.save(method);
   }

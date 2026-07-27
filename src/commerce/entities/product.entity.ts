@@ -15,6 +15,7 @@ import {
 } from 'typeorm';
 import { ProductCategory } from './product-category.entity';
 import { ProductTag } from './product-tag.entity';
+import { ShippingMethod } from './shipping-method.entity';
 import { ShopVendor } from './shop-vendor.entity';
 import { ProductMediaItem } from './product-media-item';
 import { ProductInfoSection } from './product-info-section';
@@ -140,6 +141,23 @@ export class Product {
    * whichever grants it first wins (see PricingEngineService).
    */
   @Column({ type: 'boolean', default: false }) freeShipping: boolean;
+
+  /**
+   * Optional paid alternatives offered next to free shipping, for customers who
+   * want faster delivery. Only meaningful when `freeShipping` is true, and only
+   * settable to methods flagged `availableForFreeShipping`.
+   *
+   * Several may be configured; which ones a given customer sees depends on the
+   * shipping zone resolved from their address — methods outside that zone are
+   * never quoted.
+   */
+  @ManyToMany(() => ShippingMethod)
+  @JoinTable({
+    name: 'shop_product_free_shipping_methods',
+    joinColumn: { name: 'productId', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'shippingMethodId', referencedColumnName: 'id' },
+  })
+  freeShippingUpgradeMethods: Relation<ShippingMethod>[];
   @Column({ type: 'varchar', length: 50, default: 'draft' })
   status: ProductStatus;
 

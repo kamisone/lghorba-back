@@ -16,6 +16,8 @@ export interface LineItemInput {
   unitPriceCents: number;
   /** Product is flagged `freeShipping`: its presence alone makes the order ship free. */
   freeShipping?:  boolean;
+  /** Paid upgrades this product offers alongside free shipping, if any. */
+  freeShippingUpgradeMethodIds?: string[];
 }
 
 export interface PricedLine {
@@ -46,6 +48,13 @@ export interface PricingResult {
    * it is the one tied to something the customer can see in their basket.
    */
   freeShippingReason:         'product' | 'promotion' | 'coupon' | null;
+  /**
+   * Paid faster-delivery options to offer next to free shipping. Resolved once
+   * here and carried on the order's pricing snapshot, so later steps do not have
+   * to re-read the basket's products. Which of them a customer actually sees is
+   * then narrowed to their shipping zone by ShippingService.
+   */
+  freeShippingUpgradeMethodIds: string[];
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -123,6 +132,17 @@ export class PricingEngineService {
     // whole order.
     const productFreeShipping =
       lines.length > 0 && lines.every((l) => l.freeShipping === true);
+
+    // One shipping choice covers the whole order, so an upgrade may only be
+    // offered when EVERY free-shipping product supports it — otherwise the
+    // customer would be paying for speed the rest of the basket cannot honour.
+    // Hence the intersection rather than the union.
+    const freeShippingUpgradeMethodIds = productFreeShipping
+      ? lines.reduce<string[]>((acc, line, i) => {
+          const ids = line.freeShippingUpgradeMethodIds ?? [];
+          return i === 0 ? [...ids] : acc.filter((id) => ids.includes(id));
+        }, [])
+      : [];
 
     const pricedLines: PricedLine[] = lines.map(line => {
       rawSubtotal += line.unitPriceCents * line.quantity;
@@ -248,6 +268,7 @@ export class PricingEngineService {
           : couponFreeShipping
             ? 'coupon'
             : null,
+      freeShippingUpgradeMethodIds,
     };
   }
 

@@ -12,6 +12,17 @@ import { TestCheckoutGuard } from '../shared/test-checkout-guard.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { COMMERCE_EVENTS } from '../events/commerce-events';
 
+/**
+ * PaymentIntent states whose amount Stripe still allows changing. Anything else
+ * (`processing`, `succeeded`, `requires_capture`) means the customer has already
+ * committed, so the total must not move under them.
+ */
+const AMOUNT_MUTABLE_INTENT_STATUSES = new Set<string>([
+  'requires_payment_method',
+  'requires_confirmation',
+  'requires_action',
+]);
+
 @Injectable()
 export class ShopPaymentService {
   private readonly logger = new Logger(ShopPaymentService.name);
@@ -45,6 +56,28 @@ export class ShopPaymentService {
     if (order.paymentIntentId) {
       const existing = await this.stripe.paymentIntents.retrieve(order.paymentIntentId);
       if (existing.status !== 'canceled') {
+        // The customer can step back from payment and change shipping, which
+        // moves the total. Without re-syncing, Stripe would still hold the
+        // amount from the first visit and charge the wrong sum. Updating keeps
+        // the same intent — and therefore the same client secret — so the
+        // payment form does not have to be rebuilt.
+        if (existing.amount !== order.totalCents) {
+          if (!AMOUNT_MUTABLE_INTENT_STATUSES.has(existing.status)) {
+            // Confirmed or in flight: the amount can no longer move, and letting
+            // it through would charge a total the customer never agreed to.
+            throw new BadRequestException(
+              'Payment is already in progress for this order — it can no longer be changed',
+            );
+          }
+          const updated = await this.stripe.paymentIntents.update(existing.id, {
+            amount: order.totalCents,
+          });
+          this.logger.log(
+            `Re-synced PaymentIntent ${existing.id} for order ${order.orderNumber}: ` +
+              `${existing.amount} -> ${order.totalCents} cents`,
+          );
+          return { clientSecret: updated.client_secret!, paymentIntentId: updated.id };
+        }
         return { clientSecret: existing.client_secret!, paymentIntentId: existing.id };
       }
     }

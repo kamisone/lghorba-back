@@ -26,6 +26,12 @@ export class ShippingAdminController {
   @Get('methods')
   listMethods(@Query('zoneId') zoneId?: string) { return this.shipping.listMethods(zoneId); }
 
+  // Options for the "paid upgrade" dropdown on a free-shipping product.
+  @Get('free-shipping-methods')
+  listFreeShippingUpgradeMethods() {
+    return this.shipping.listFreeShippingUpgradeMethods();
+  }
+
   @Post('methods')
   createMethod(@Body() dto: UpsertMethodDto) { return this.shipping.createMethod(dto); }
 

@@ -18,7 +18,7 @@ import { ShopPromotion } from '../entities/shop-promotion.entity';
 import { ProductVariant } from '../entities/product-variant.entity';
 import { Product } from '../entities/product.entity';
 import { InventoryService } from '../inventory/inventory.service';
-import { ShippingService, ZoneInfo } from '../shipping/shipping.service';
+import { FREE_SHIPPING_METHOD_ID, ShippingService, ZoneInfo } from '../shipping/shipping.service';
 import { CustomerService } from '../customer/customer.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { PricingEngineService, LineItemInput, PricingResult } from '../pricing/pricing-engine.service';
@@ -86,12 +86,16 @@ export interface CheckoutSnapshot {
     /** What the method would have cost — lets the UI strike it through. */
     originalPriceCents?: number;
     isFree?:          boolean;
+    /** The paid faster option offered alongside free shipping. */
+    isFreeShippingUpgrade?: boolean;
     estimatedDaysMin: number;
     estimatedDaysMax: number;
   }>;
   /** Order ships free, and why — so the storefront can name the reason. */
   freeShipping:         boolean;
   freeShippingReason:   'product' | 'promotion' | 'coupon' | null;
+  /** The paid faster options offered next to free shipping, narrowed to the zone. */
+  freeShippingUpgradeMethodIds: string[];
   zoneInfo:             ZoneInfo | null;
   reservationExpiresAt: string | null;
   trackingToken:        string | null;
@@ -145,14 +149,15 @@ export class CheckoutService {
       const items = cart.items as CartItem[];
       const productIds = [...new Set(items.map(i => i.productId))];
       const categoryMap = await this.loadProductCategoryIds(productIds);
-      const freeShipIds = await this.loadFreeShippingProductIds(productIds);
+      const freeShipMap = await this.loadFreeShippingProducts(productIds);
       const lineInputs: LineItemInput[] = items.map(item => ({
         variantId:      item.variantId,
         productId:      item.productId,
         categoryIds:    categoryMap.get(item.productId) ?? [],
         quantity:       item.quantity,
         unitPriceCents: item.unitPriceCents,
-        freeShipping:   freeShipIds.has(item.productId),
+        freeShipping:   freeShipMap.has(item.productId),
+        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId) ?? [],
       }));
       const pricing = await this.pricingEngine.compute(lineInputs, dto.couponCode ?? null);
 
@@ -186,7 +191,7 @@ export class CheckoutService {
 
       const { zone, methods } = await this.shippingService.getMethodsForCountry(
         dto.country, existing.subtotalCents, undefined,
-        { forceFree: pricing.freeShipping },
+        { forceFree: pricing.freeShipping, upgradeMethodIds: pricing.freeShippingUpgradeMethodIds },
       );
       return this.toSnapshot(existing, methods, zone);
     }
@@ -199,7 +204,7 @@ export class CheckoutService {
     // Load product category IDs for pricing engine
     const productIds = [...new Set(items.map(i => i.productId))];
     const categoryMap = await this.loadProductCategoryIds(productIds);
-    const freeShipIds = await this.loadFreeShippingProductIds(productIds);
+    const freeShipMap = await this.loadFreeShippingProducts(productIds);
     const isTestOrder = await containsTestProduct(this.productRepo, productIds);
 
     // Build line inputs with freshly verified prices
@@ -209,7 +214,8 @@ export class CheckoutService {
       categoryIds:    categoryMap.get(item.productId) ?? [],
       quantity:       item.quantity,
       unitPriceCents: item.unitPriceCents,
-      freeShipping:   freeShipIds.has(item.productId),
+      freeShipping:   freeShipMap.has(item.productId),
+        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId) ?? [],
     }));
 
     const pricing = await this.pricingEngine.compute(lineInputs, dto.couponCode ?? null);
@@ -298,7 +304,7 @@ export class CheckoutService {
 
     const { zone: shippingZone, methods: shippingMethods } = await this.shippingService.getMethodsForCountry(
       dto.country, snapshot.subtotalCents, undefined,
-      { forceFree: pricing.freeShipping },
+      { forceFree: pricing.freeShipping, upgradeMethodIds: pricing.freeShippingUpgradeMethodIds },
     );
     return this.toSnapshot(snapshot, shippingMethods, shippingZone);
   }
@@ -308,33 +314,33 @@ export class CheckoutService {
   async updateShipping(orderId: string, dto: UpdateShippingDto): Promise<CheckoutSnapshot> {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
-    if (order.status !== 'draft') {
-      // Resuming after a refresh: the order already moved past shipping selection
-      // (its PaymentIntent amount is locked in) — return the existing snapshot
-      // as a no-op rather than erroring, so the checkout flow can resume.
-      if (order.status === 'awaiting_payment') {
-        const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
-        const { zone, methods } = await this.shippingService.getMethodsForCountry(
-      country, order.subtotalCents, undefined,
-      { forceFree: this.orderShipsFree(order) },
-    );
-        return this.toSnapshot(order, methods, zone);
-      }
+    // `awaiting_payment` is still editable: the customer may step back from the
+    // payment screen to change carrier, and until the webhook confirms payment
+    // nothing is final. This used to no-op for that status, which silently threw
+    // the new selection away. The PaymentIntent is not "locked in" either —
+    // `createPaymentIntent` re-syncs its amount, and is called on every path that
+    // returns to payment.
+    if (order.status !== 'draft' && order.status !== 'awaiting_payment') {
       throw new BadRequestException('Order is no longer modifiable');
     }
 
     const country = (order.shippingAddressSnapshot as any)?.country ?? 'XX';
     const { zone, methods } = await this.shippingService.getMethodsForCountry(
       country, order.subtotalCents, undefined,
-      { forceFree: this.orderShipsFree(order) },
+      { forceFree: this.orderShipsFree(order), upgradeMethodIds: this.orderUpgradeMethodIds(order) },
     );
     const method = methods.find(m => m.id === dto.shippingMethodId);
     if (!method) throw new BadRequestException('Shipping method not available for this order');
 
-    const snapshot = order.pricingSnapshot as (PricingResult & Record<string, unknown>) | null;
-    const shippingCents = snapshot?.freeShipping ? 0 : method.priceCents;
+    // The quote already applied free shipping (0 for the free option, real
+    // price for the paid upgrade), so trust it. Overriding to 0 here would make
+    // the upgrade impossible to actually buy.
+    const shippingCents = method.priceCents;
 
-    order.shippingMethodId = method.id;
+    // The free option is synthetic — there is no such row in
+    // shop_shipping_methods, so it is stored as NULL (the column is nullable).
+    // `toSnapshot` maps it back to the sentinel so the UI can keep it selected.
+    order.shippingMethodId = method.id === FREE_SHIPPING_METHOD_ID ? null : method.id;
     order.shippingCents   = shippingCents;
     order.totalCents      = order.subtotalCents
       - order.categoryDiscountCents
@@ -362,7 +368,11 @@ export class CheckoutService {
       return { orderId: order.id, orderNumber: order.orderNumber, totalCents: order.totalCents };
     }
     if (order.status !== 'draft') throw new BadRequestException('Order is not in draft state');
-    if (!order.shippingMethodId) throw new BadRequestException('Please select a shipping method before payment');
+    // A free-shipping order legitimately has no method row: free delivery is the
+    // default and is stored as NULL. Only a payable order must name a carrier.
+    if (!order.shippingMethodId && !this.orderShipsFree(order)) {
+      throw new BadRequestException('Please select a shipping method before payment');
+    }
 
     order.status = 'awaiting_payment';
     await this.orderRepo.save(order);
@@ -414,7 +424,7 @@ export class CheckoutService {
     if (order.status === 'draft') {
       const { zone, methods } = await this.shippingService.getMethodsForCountry(
       country, order.subtotalCents, undefined,
-      { forceFree: this.orderShipsFree(order) },
+      { forceFree: this.orderShipsFree(order), upgradeMethodIds: this.orderUpgradeMethodIds(order) },
     );
       return this.toSnapshot(order, methods, zone);
     }
@@ -438,7 +448,7 @@ export class CheckoutService {
     const items = cart.items as CartItem[];
     const productIds = [...new Set(items.map(i => i.productId))];
     const categoryMap = await this.loadProductCategoryIds(productIds);
-    const freeShipIds = await this.loadFreeShippingProductIds(productIds);
+    const freeShipMap = await this.loadFreeShippingProducts(productIds);
 
     const lineInputs: LineItemInput[] = items.map(item => ({
       variantId:      item.variantId,
@@ -446,7 +456,8 @@ export class CheckoutService {
       categoryIds:    categoryMap.get(item.productId) ?? [],
       quantity:       item.quantity,
       unitPriceCents: item.unitPriceCents,
-      freeShipping:   freeShipIds.has(item.productId),
+      freeShipping:   freeShipMap.has(item.productId),
+        freeShippingUpgradeMethodIds: freeShipMap.get(item.productId) ?? [],
     }));
 
     const pricing = await this.pricingEngine.compute(lineInputs, couponCode);
@@ -553,14 +564,38 @@ export class CheckoutService {
     );
   }
 
-  /** Product ids flagged `freeShipping`, so the pricing engine can zero shipping. */
-  private async loadFreeShippingProductIds(productIds: string[]): Promise<Set<string>> {
-    if (!productIds.length) return new Set();
-    const rows = await this.dataSource.query<{ id: string }[]>(
-      `SELECT p."id" FROM shop_products p WHERE p."id" = ANY($1) AND p."freeShipping" = true`,
+  /**
+   * Free-shipping products in the basket, with the paid upgrade each one offers.
+   * A single query — the pricing engine needs both to decide whether the order
+   * ships free and what faster option to put next to it.
+   */
+  private async loadFreeShippingProducts(
+    productIds: string[],
+  ): Promise<Map<string, string[]>> {
+    if (!productIds.length) return new Map();
+    const rows = await this.dataSource.query<
+      { id: string; methodIds: string[] | null }[]
+    >(
+      `SELECT p."id",
+              COALESCE(
+                ARRAY_AGG(m."shippingMethodId") FILTER (WHERE m."shippingMethodId" IS NOT NULL),
+                '{}'
+              ) AS "methodIds"
+       FROM shop_products p
+       LEFT JOIN shop_product_free_shipping_methods m ON m."productId" = p."id"
+       WHERE p."id" = ANY($1) AND p."freeShipping" = true
+       GROUP BY p."id"`,
       [productIds],
     );
-    return new Set(rows.map((r) => r.id));
+    return new Map(rows.map((r) => [r.id, r.methodIds ?? []]));
+  }
+
+  /** The upgrades recorded on the order's pricing snapshot. */
+  private orderUpgradeMethodIds(order: Order): string[] {
+    return (
+      (order.pricingSnapshot as (PricingResult & Record<string, unknown>) | null)
+        ?.freeShippingUpgradeMethodIds ?? []
+    );
   }
 
   private toSnapshot(order: Order, shippingMethods: ShippingMethod[], zone: ZoneInfo | null): CheckoutSnapshot {
@@ -575,7 +610,8 @@ export class CheckoutService {
       discountCents:         order.discountCents,
       totalCents:            order.totalCents,
       couponCode:            order.couponCode,
-      shippingMethodId:      order.shippingMethodId,
+      shippingMethodId:      order.shippingMethodId
+        ?? (pricing?.freeShipping ? FREE_SHIPPING_METHOD_ID : null),
       shippingMethods:       shippingMethods.map(m => ({
         id:               m.id,
         name:             m.name,
@@ -583,11 +619,14 @@ export class CheckoutService {
         originalPriceCents: (m as ShippingMethod & { originalPriceCents?: number })
           .originalPriceCents ?? m.priceCents,
         isFree:           (m as ShippingMethod & { isFree?: boolean }).isFree ?? m.priceCents === 0,
+        isFreeShippingUpgrade:
+          (m as ShippingMethod & { isFreeShippingUpgrade?: boolean }).isFreeShippingUpgrade ?? false,
         estimatedDaysMin: m.estimatedDaysMin,
         estimatedDaysMax: m.estimatedDaysMax,
       })),
       freeShipping:         pricing?.freeShipping ?? false,
       freeShippingReason:   pricing?.freeShippingReason ?? null,
+      freeShippingUpgradeMethodIds: pricing?.freeShippingUpgradeMethodIds ?? [],
       zoneInfo:             zone,
       reservationExpiresAt: order.reservationExpiresAt?.toISOString() ?? null,
       trackingToken:        order.trackingToken ?? null,
