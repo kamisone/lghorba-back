@@ -4,14 +4,9 @@ import {
 import { Request } from 'express';
 import { Public } from '../../auth/public.decorator';
 import { CartService } from './cart.service';
+import { resolveClientIp } from '../../common/utils/client-ip.util';
 
-/** First hop of `x-forwarded-for` behind the proxy, else the socket address. */
-function clientIp(req: Request): string | null {
-  const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
-    .split(',')[0]
-    .trim();
-  return req.ip ?? (forwarded || null);
-}
+
 
 @Public()
 @Controller('public/shop/cart')
@@ -37,7 +32,7 @@ export class CartController {
   ) {
     const userAgent = (req.headers['user-agent'] as string) ?? null;
     return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds, {
-      ip: clientIp(req),
+      ip: resolveClientIp(req),
       userAgent,
     });
   }
@@ -50,7 +45,7 @@ export class CartController {
     @Body('quantity') quantity: number,
     @Req() req: Request,
   ) {
-    return this.carts.updateItem(token, itemId, quantity, clientIp(req));
+    return this.carts.updateItem(token, itemId, quantity, resolveClientIp(req));
   }
 
   @Delete(':token/items/:itemId')
@@ -59,7 +54,7 @@ export class CartController {
     @Param('itemId') itemId: string,
     @Req() req: Request,
   ) {
-    return this.carts.removeItem(token, itemId, clientIp(req));
+    return this.carts.removeItem(token, itemId, resolveClientIp(req));
   }
 
   @Post(':token/validate-coupon')

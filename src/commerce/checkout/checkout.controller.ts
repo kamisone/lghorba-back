@@ -3,6 +3,7 @@ import {
   Param, ParseUUIDPipe, Patch, Post, Put, Query, Req,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { resolveClientIp } from '../../common/utils/client-ip.util';
 import { Public } from '../../auth/public.decorator';
 import {
   CheckoutService,
@@ -58,10 +59,9 @@ export class CheckoutController {
   @HttpCode(201)
   initiate(@Body() body: unknown, @Req() req: Request) {
     const dto = InitiateCheckoutSchema.parse(body);
-    const forwarded = ((req.headers['x-forwarded-for'] as string) ?? '')
-      .split(',')[0]
-      .trim();
-    const ip = req.ip ?? (forwarded || null);
+    // Stored on the order as `clientIpAddress`, which is what geolocates the
+    // checkout_started and test_checkout_blocked demand events later.
+    const ip = resolveClientIp(req);
     const userAgent = req.headers['user-agent'] ?? null;
     return this.checkoutService.initiate(dto, { ip, userAgent });
   }
