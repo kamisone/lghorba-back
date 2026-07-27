@@ -14,7 +14,27 @@ async function bootstrap() {
     process.exit(1);
   }
 
+  // console.*, not the Nest logger: `bufferLogs` holds every logged line until
+  // useLogger() below, so anything that hangs or throws inside
+  // NestFactory.create produces a completely silent pod — the npm banner and
+  // nothing else. These lines bypass the buffer.
+  console.log('[boot] creating Nest application (DB connect + migrations)…');
+
+  // NestFactory.create can block indefinitely rather than fail: a migration
+  // waiting on an ACCESS EXCLUSIVE table lock held by another pod never times
+  // out. Name the likely cause instead of leaving an empty log.
+  const watchdog = setTimeout(() => {
+    console.error(
+      '[boot] still starting after 60s — most likely a pending migration is ' +
+        'blocked on a table lock, or the database is unreachable. Check ' +
+        'pg_stat_activity for a waiting ALTER/CREATE INDEX statement.',
+    );
+  }, 60_000);
+  watchdog.unref?.();
+
   const app = await NestFactory.create(AppModule, { rawBody: true, bufferLogs: true });
+  clearTimeout(watchdog);
+  console.log('[boot] Nest application created');
 
   // Requests reach the pod through nginx (back/docker/nginx/default.conf, which
   // sets `X-Forwarded-For $proxy_add_x_forwarded_for`) and then the k8s/minikube
@@ -42,6 +62,15 @@ async function bootstrap() {
     methods:     ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   });
   app.useGlobalFilters(new AllExceptionsFilter(app.get(ErrorCollectorService)));
-  await app.listen(process.env.BACK_PORT || 3000);
+  const port = process.env.BACK_PORT || 3000;
+  await app.listen(port);
+  console.log(`[boot] listening on ${port}`);
 }
-bootstrap();
+
+// Without this an unhandled rejection can leave the container "running" with an
+// empty log while the service has no endpoints. Fail loudly and exit so the
+// orchestrator restarts it and the reason is on stdout.
+bootstrap().catch((err) => {
+  console.error('[boot] FAILED to start:', err);
+  process.exit(1);
+});
