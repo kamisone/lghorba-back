@@ -272,6 +272,7 @@ export class CartService {
       quantity,
       countryCode: this.geoIp.countryFromIp(requestMeta?.ip),
       visitorHash: this.geoIp.visitorHashFromIp(requestMeta?.ip),
+      clientIp: requestMeta?.ip,
     });
 
     // Schedule abandonment email — delay 1h, jobId ensures only one pending per cart
@@ -323,6 +324,7 @@ export class CartService {
       quantity,
       countryCode: this.geoIp.countryFromIp(clientIp),
       visitorHash: this.geoIp.visitorHashFromIp(clientIp),
+      clientIp,
     });
     return this.getOrCreate(token);
   }
@@ -340,6 +342,7 @@ export class CartService {
       quantity: item.quantity,
       countryCode: this.geoIp.countryFromIp(clientIp),
       visitorHash: this.geoIp.visitorHashFromIp(clientIp),
+      clientIp,
     });
     return this.getOrCreate(token);
   }

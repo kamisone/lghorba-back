@@ -76,6 +76,7 @@ export class MetaCapiOrderListener {
         shopCustomerId: order.customerId,
         countryCode: this.geoIp.countryFromIp(order.clientIpAddress),
         visitorHash: this.geoIp.visitorHashFromIp(order.clientIpAddress),
+        clientIp: order.clientIpAddress,
       };
       if (startedProductIds.length) {
         for (const productId of startedProductIds) {

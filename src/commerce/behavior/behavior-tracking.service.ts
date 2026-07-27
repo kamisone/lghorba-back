@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import {
   BehaviorEventType,
   ShopBehaviorEvent,
@@ -15,6 +16,11 @@ interface RecordInput {
   resultCount?: number | null;
   countryCode?: string | null;
   visitorHash?: string | null;
+  /**
+   * Caller's address, used only to test the admin exclusion list. Never stored —
+   * `visitorHash` is the persisted, pseudonymous identity.
+   */
+  clientIp?: string | null;
 }
 
 @Injectable()
@@ -24,11 +30,22 @@ export class BehaviorTrackingService {
   constructor(
     @InjectRepository(ShopBehaviorEvent)
     private readonly repo: Repository<ShopBehaviorEvent>,
+    private readonly platformSettings: PlatformSettingsService,
   ) {}
 
   /** Fire-and-forget: never throws, never blocks the calling commerce flow. */
   async record(eventType: BehaviorEventType, data: RecordInput): Promise<void> {
     try {
+      // Staff browsing their own shop would register as real demand and skew the
+      // very numbers used to decide what to stock. Checked here rather than at
+      // each call site so every event type is covered by one rule.
+      if (this.platformSettings.isAnalyticsExcluded(data.clientIp)) {
+        this.logger.debug(
+          `Skipped "${eventType}" — client IP is in the analytics exclusion list`,
+        );
+        return;
+      }
+
       await this.repo.save(
         this.repo.create({
           eventType,

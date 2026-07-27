@@ -52,6 +52,24 @@ export class PlatformSettingsController {
     return this.service.getPlatformConfig();
   }
 
+  /** Admin-only — addresses excluded from shop analytics. */
+  @Get('admin/platform-settings/analytics-excluded-ips')
+  getAnalyticsExcludedIps(): { rules: string[] } {
+    return { rules: this.service.getAnalyticsExcludedIps() };
+  }
+
+  /**
+   * Admin-only — replaces the exclusion list. Echoes back anything unparseable
+   * so the UI can tell the admin their entry did not take effect.
+   */
+  @Put('admin/platform-settings/analytics-excluded-ips')
+  @HttpCode(HttpStatus.OK)
+  async updateAnalyticsExcludedIps(
+    @Body() body: { value: string },
+  ): Promise<{ rules: string[]; invalid: string[] }> {
+    return this.service.setAnalyticsExcludedIps(body?.value ?? '');
+  }
+
   /** Admin-only — whether the Meta Conversions API access token is set server-side. Never returns the token itself. */
   @Get('admin/platform-settings/meta-capi-status')
   getCapiStatus(): { configured: boolean } {

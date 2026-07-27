@@ -87,6 +87,7 @@ export class TestCheckoutGuard {
           productId,
           countryCode,
           visitorHash,
+          clientIp: order.clientIpAddress,
         });
       }
     } catch (err) {

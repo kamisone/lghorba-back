@@ -7,11 +7,13 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { PlatformSettings } from './platform-settings.entity';
+import { ipMatchesAny, parseIpRules } from '../common/utils/ip-match.util';
 
 const TIMEZONE_KEY = 'business_timezone';
 const DEFAULT_TZ = 'Europe/Paris';
 const META_PIXEL_ID_KEY = 'meta_pixel_id';
 const META_PIXEL_ENABLED_KEY = 'meta_pixel_enabled';
+const ANALYTICS_EXCLUDED_IPS_KEY = 'analytics_excluded_ips';
 const CACHE_TTL_MS = 60_000; // refresh ceiling: 60 s
 
 export interface MetaPixelConfig {
@@ -25,6 +27,7 @@ export class PlatformSettingsService implements OnModuleInit {
 
   private cachedTimezone: string = DEFAULT_TZ;
   private cachedMetaPixel: MetaPixelConfig = { pixelId: null, enabled: false };
+  private cachedExcludedIps: string[] = [];
   private cacheExpiresAt: number = 0;
 
   constructor(
@@ -46,6 +49,22 @@ export class PlatformSettingsService implements OnModuleInit {
   getMetaPixelConfig(): MetaPixelConfig {
     this.refreshIfStale();
     return this.cachedMetaPixel;
+  }
+
+  /** Admin-configured addresses whose traffic is kept out of shop analytics. */
+  getAnalyticsExcludedIps(): string[] {
+    this.refreshIfStale();
+    return this.cachedExcludedIps;
+  }
+
+  /**
+   * Whether an address should be left out of analytics — staff browsing their
+   * own shop would otherwise register as real demand.
+   *
+   * Reads from the 60 s cache, so this is safe on the hot event-write path.
+   */
+  isAnalyticsExcluded(ip: string | null | undefined): boolean {
+    return ipMatchesAny(ip, this.getAnalyticsExcludedIps());
   }
 
   getPlatformConfig(): { timezone: string; metaPixel: MetaPixelConfig } {
@@ -91,6 +110,21 @@ export class PlatformSettingsService implements OnModuleInit {
     this.logger.log(`Meta Pixel config updated (enabled=${input.enabled})`);
   }
 
+  /**
+   * Replaces the exclusion list. Returns the entries that could not be parsed so
+   * the admin sees them rather than assuming a typo took effect.
+   */
+  async setAnalyticsExcludedIps(raw: string): Promise<{ rules: string[]; invalid: string[] }> {
+    const { rules, invalid } = parseIpRules(raw ?? '');
+    await this.repo.save(
+      this.repo.create({ key: ANALYTICS_EXCLUDED_IPS_KEY, value: rules.join('\n') }),
+    );
+    this.cachedExcludedIps = rules;
+    this.cacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    this.logger.log(`Analytics IP exclusions updated (${rules.length} rule(s))`);
+    return { rules, invalid };
+  }
+
   // ── Internal ───────────────────────────────────────────────────────────────
 
   private refreshIfStale(): void {
@@ -108,7 +142,12 @@ export class PlatformSettingsService implements OnModuleInit {
     try {
       const rows = await this.repo.find({
         where: {
-          key: In([TIMEZONE_KEY, META_PIXEL_ID_KEY, META_PIXEL_ENABLED_KEY]),
+          key: In([
+            TIMEZONE_KEY,
+            META_PIXEL_ID_KEY,
+            META_PIXEL_ENABLED_KEY,
+            ANALYTICS_EXCLUDED_IPS_KEY,
+          ]),
         },
       });
       const byKey = new Map(rows.map((r) => [r.key, r.value]));
@@ -118,6 +157,10 @@ export class PlatformSettingsService implements OnModuleInit {
         pixelId: byKey.get(META_PIXEL_ID_KEY) || null,
         enabled: byKey.get(META_PIXEL_ENABLED_KEY) === 'true',
       };
+      this.cachedExcludedIps = (byKey.get(ANALYTICS_EXCLUDED_IPS_KEY) ?? '')
+        .split('\n')
+        .map((r) => r.trim())
+        .filter(Boolean);
       this.cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     } catch (err) {
       this.logger.warn(
