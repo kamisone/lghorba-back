@@ -298,7 +298,9 @@ export class MediaService {
 
   // ── Folders ───────────────────────────────────────────────────────────────
 
-  async listFolders(): Promise<Array<MediaFolder & { assetCount: number }>> {
+  async listFolders(): Promise<
+    Array<MediaFolder & { assetCount: number; thumbnailUrl: string | null }>
+  > {
     const folders = await this.folderRepo.find({ order: { name: 'ASC' } });
     if (!folders.length) return [];
 
@@ -310,11 +312,45 @@ export class MediaService {
       .groupBy('a."folder_id"')
       .getRawMany<{ folderId: string; count: string }>();
 
+    // Cover image per folder, so the grid is scannable without opening each one.
+    // `createdAt DESC` matches the order `list()` returns assets in, so the
+    // cover is the first tile the admin sees after opening the folder.
+    //
+    // A video stands in with its generated poster, which is also an image — a
+    // folder of videos would otherwise look empty at a glance. DISTINCT ON picks
+    // one row per folder in a single pass rather than a query per folder.
+    const thumbs = await this.assetRepo
+      .createQueryBuilder('a')
+      .select('a."folder_id"', 'folderId')
+      .addSelect(
+        `CASE WHEN a."mimeType" LIKE 'image/%' THEN a."storageKey" ELSE a."autoPosterKey" END`,
+        'key',
+      )
+      .distinctOn(['a."folder_id"'])
+      .where('a."folder_id" IS NOT NULL')
+      .andWhere(`(a."mimeType" LIKE 'image/%' OR a."autoPosterKey" IS NOT NULL)`)
+      .orderBy('a."folder_id"')
+      .addOrderBy('a."createdAt"', 'DESC')
+      .getRawMany<{ folderId: string; key: string | null }>();
+
+    const keys = thumbs.map(t => t.key).filter((k): k is string => !!k);
+    const urlMap = await this.urls.resolveBatch(keys);
+    const thumbMap = new Map(
+      thumbs.map(t => [t.folderId, (t.key && urlMap.get(t.key)) || null]),
+    );
+
     const countMap = new Map(counts.map(r => [r.folderId, parseInt(r.count, 10)]));
-    return folders.map(f => ({ ...f, assetCount: countMap.get(f.id) ?? 0 }));
+    return folders.map(f => ({
+      ...f,
+      assetCount: countMap.get(f.id) ?? 0,
+      thumbnailUrl: thumbMap.get(f.id) ?? null,
+    }));
   }
 
-  async createFolder(name: string, parentId?: string | null): Promise<MediaFolder & { assetCount: number }> {
+  async createFolder(
+    name: string,
+    parentId?: string | null,
+  ): Promise<MediaFolder & { assetCount: number; thumbnailUrl: string | null }> {
     if (parentId) {
       const parent = await this.folderRepo.findOneBy({ id: parentId });
       if (!parent) throw new NotFoundException('Parent folder not found');
@@ -322,16 +358,19 @@ export class MediaService {
     const folder = await this.folderRepo.save(
       this.folderRepo.create({ name: name.trim(), parentId: parentId ?? null }),
     );
-    return { ...folder, assetCount: 0 };
+    return { ...folder, assetCount: 0, thumbnailUrl: null };
   }
 
-  async renameFolder(id: string, name: string): Promise<MediaFolder & { assetCount: number }> {
+  async renameFolder(
+    id: string,
+    name: string,
+  ): Promise<MediaFolder & { assetCount: number; thumbnailUrl: string | null }> {
     const folder = await this.folderRepo.findOneBy({ id });
     if (!folder) throw new NotFoundException('Folder not found');
     folder.name = name.trim();
     await this.folderRepo.save(folder);
     const [all] = await this.listFolders().then(list => [list.find(f => f.id === id)]);
-    return all ?? { ...folder, assetCount: 0 };
+    return all ?? { ...folder, assetCount: 0, thumbnailUrl: null };
   }
 
   async deleteFolder(id: string): Promise<void> {
