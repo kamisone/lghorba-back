@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { z } from 'zod';
@@ -54,6 +54,8 @@ export interface ShippingQuoteResult {
 
 @Injectable()
 export class ShippingService {
+  private readonly logger = new Logger(ShippingService.name);
+
   constructor(
     @InjectRepository(ShippingZone)   private readonly zoneRepo:   Repository<ShippingZone>,
     @InjectRepository(ShippingMethod) private readonly methodRepo: Repository<ShippingMethod>,
@@ -131,15 +133,38 @@ export class ShippingService {
     return worldwide ?? null;
   }
 
+  /**
+   * Ordinary quoting, for orders that do not ship free.
+   *
+   * Methods flagged `availableForFreeShipping` are excluded: they exist to be
+   * sold as the paid faster option *alongside* free shipping, so offering them
+   * as a normal choice puts a free-shipping-only method in front of customers
+   * buying an ordinary product.
+   *
+   * Fail-open if that would empty the zone. An admin who flagged every method
+   * has misconfigured things, but silently offering no delivery at all blocks
+   * every sale in that country — far worse than showing one method too many.
+   * The warning says which zone to fix.
+   */
   private applyZonePricing(
     methods: ShippingMethod[],
     zone: ShippingZone,
     cartTotalCents: number,
   ): any[] {
+    const ordinary = methods.filter(m => !m.availableForFreeShipping);
+    if (!ordinary.length && methods.length) {
+      this.logger.warn(
+        `Zone "${zone.name}" has no ordinary shipping method — every method is ` +
+          `flagged "used for free shipping". Falling back to all of them so ` +
+          `checkout still works; leave at least one method unflagged.`,
+      );
+    }
+    const quotable = ordinary.length ? ordinary : methods;
+
     const zoneFree = zone.freeShippingThresholdCents !== null
       && cartTotalCents >= zone.freeShippingThresholdCents;
 
-    return methods.map(m => {
+    return quotable.map(m => {
       const methodFree = m.freeAboveCents !== null && cartTotalCents >= m.freeAboveCents;
       const isFree = zoneFree || methodFree;
 
