@@ -159,7 +159,10 @@ export class RentSessionsService {
    * last accepted position (the anchor) and the last rejected one (used to
    * corroborate a genuine relocation). Both hit the composite index.
    */
-  private async runFilter(sessionId: string, dto: CreateRentPositionDto): Promise<FilterResult> {
+  private async runFilter(
+    sessionId: string,
+    dto: CreateRentPositionDto,
+  ): Promise<{ result: FilterResult; anchor: RentPosition | null }> {
     const [anchor, lastRejected] = await Promise.all([
       this.positionRepo.findOne({
         where: { sessionId, rejected: false },
@@ -171,10 +174,11 @@ export class RentSessionsService {
       }),
     ]);
 
-    return filterPosition(
+    const result = filterPosition(
       { lat: dto.lat, lng: dto.lng, recordedAt: dto.recordedAt, rawMessage: dto.rawMessage },
       { anchor, lastRejected, now: new Date(), config: this.filterConfig },
     );
+    return { result, anchor };
   }
 
   /**
@@ -196,17 +200,26 @@ export class RentSessionsService {
       );
     }
 
-    const result = await this.runFilter(id, dto);
+    const { result, anchor } = await this.runFilter(id, dto);
 
     // Retries carry no audit value and would otherwise accumulate.
     if (result.reason === 'duplicate') return null;
 
     if (!result.accepted) {
+      // Anchor snapshot lets a rejection be diagnosed straight from the logs:
+      // a plausible anchor with an implausible speed is a real threshold miss,
+      // an anchor far from every subsequent reading is a poisoned anchor that
+      // needs a manual correction (see addPosition's skipFilter admin path).
+      const anchorInfo = anchor
+        ? ` anchor=(${anchor.lat},${anchor.lng} @ ${anchor.recordedAt.toISOString()})`
+        : '';
       this.logger.warn(
         `Rejected position for session ${id}: ${result.reason}` +
           (result.impliedSpeedKmh !== undefined
             ? ` (impliedSpeedKmh=${result.impliedSpeedKmh.toFixed(1)})`
-            : ''),
+            : '') +
+          ` candidate=(${dto.lat},${dto.lng} @ ${dto.recordedAt.toISOString()})` +
+          anchorInfo,
       );
     }
 
