@@ -38,6 +38,7 @@ export function loadPositionFilterConfig(): PositionFilterConfig {
     confirmMaxGapHours: num('GPS_CONFIRM_MAX_GAP_HOURS', d.confirmMaxGapHours),
     futureToleranceMs: d.futureToleranceMs,
     dedupeWindowMs: d.dedupeWindowMs,
+    outOfOrderToleranceMs: d.outOfOrderToleranceMs,
     geoBounds: bounds(d.geoBounds),
   };
 }

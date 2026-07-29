@@ -55,19 +55,37 @@ export interface PositionFilterConfig {
   futureToleranceMs: number;
   /** Window in which an identical rawMessage is treated as a retry. */
   dedupeWindowMs: number;
+  /**
+   * A candidate stamped slightly before the anchor is tolerated up to this
+   * much and judged by speed instead of rejected outright — concurrent POSTs
+   * from one SMS burst can be persisted out of stamped order.
+   */
+  outOfOrderToleranceMs: number;
   /** Optional bounding box; null disables the check. */
   geoBounds: GeoBounds | null;
 }
 
+/**
+ * How often the phone is polled for a fix. `recordedAt` is SMS *receipt* time,
+ * not GPS fix time — the companion phone queues replies while offline and
+ * posts them in a burst, so fixes representing this much real driving can
+ * arrive seconds apart. `minDtHours` below must never be tighter than this,
+ * or receipt-time delta divided into real distance produces impossible speeds
+ * and every fix in a burst gets rejected. rent-sessions.service.ts derives its
+ * polling interval from this same constant so the two cannot drift apart.
+ */
+export const TRACKING_INTERVAL_HOURS = 0.25;
+
 export const DEFAULT_POSITION_FILTER_CONFIG: PositionFilterConfig = {
   maxSpeedKmh: 200,
   noiseFloorKm: 0.3,
-  minDtHours: 1 / 60,
+  minDtHours: TRACKING_INTERVAL_HOURS,
   staleAnchorHours: 24,
   confirmRadiusKm: 5,
   confirmMaxGapHours: 6,
   futureToleranceMs: 5 * 60 * 1000,
   dedupeWindowMs: 60 * 1000,
+  outOfOrderToleranceMs: 5 * 60 * 1000,
   // Morocco including Western Sahara, with a small margin.
   geoBounds: { latMin: 20.5, latMax: 36.2, lngMin: -17.3, lngMax: -0.8 },
 };
@@ -173,7 +191,13 @@ export function filterPosition(candidate: FilterCandidate, ctx: FilterContext): 
     return { accepted: false, reason: 'duplicate' };
   }
   if (recordedMs <= anchor.recordedAt.getTime()) {
-    return { accepted: false, reason: 'non_monotonic' };
+    const behindMs = anchor.recordedAt.getTime() - recordedMs;
+    if (behindMs > cfg.outOfOrderToleranceMs) {
+      return { accepted: false, reason: 'non_monotonic' };
+    }
+    // Within tolerance: fall through to stage 3, which floors the negative
+    // elapsed time to minDtHours and judges the reading on implied speed
+    // rather than discarding it purely for arriving out of stamped order.
   }
 
   // --- Stage 3: implied speed ----------------------------------------------

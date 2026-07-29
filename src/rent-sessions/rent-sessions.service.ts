@@ -12,12 +12,17 @@ import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
 import { extractLatLng, extractMapsUrl } from '../common/utils/map.util';
 import { Booking } from '../bookings/booking.entity';
-import { filterPosition, FilterResult, PositionFilterConfig } from './position-filter';
+import {
+  filterPosition,
+  FilterResult,
+  PositionFilterConfig,
+  TRACKING_INTERVAL_HOURS,
+} from './position-filter';
 import { loadPositionFilterConfig } from './position-filter.config';
 import { RentPosition } from './rent-position.entity';
 import { RentSession, RentSessionStatus } from './rent-session.entity';
 
-const LOCATION_INTERVAL_MS = 15 * 60 * 1000;
+const LOCATION_INTERVAL_MS = TRACKING_INTERVAL_HOURS * 60 * 60 * 1000;
 
 export function addLocationInterval(from: Date): Date {
   return new Date(from.getTime() + LOCATION_INTERVAL_MS);

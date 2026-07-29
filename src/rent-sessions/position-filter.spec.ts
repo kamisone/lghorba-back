@@ -2,6 +2,7 @@ import {
   DEFAULT_POSITION_FILTER_CONFIG,
   FilterContext,
   FilterReference,
+  FilterResult,
   filterPosition,
   PositionFilterConfig,
 } from './position-filter';
@@ -114,15 +115,35 @@ describe('filterPosition', () => {
       expect(result).toMatchObject({ accepted: false, reason: 'duplicate' });
     });
 
-    it('rejects a timestamp equal to the anchor', () => {
+    it('judges a same-instant reading by speed instead of rejecting it outright', () => {
+      // A burst can persist two positions with an identical receipt time;
+      // without a floor this would always be non_monotonic regardless of
+      // plausibility. A nearby point should still pass, an implausible one
+      // should still fail — just via the speed stage, not blanket rejection.
+      const anchor = ref(RABAT, 0);
+      const jitter = offsetKm(RABAT, 0.15);
       expect(
-        filterPosition({ ...CASABLANCA, recordedAt: at(0) }, ctx({ anchor: ref(RABAT, 0) })),
-      ).toMatchObject({ reason: 'non_monotonic' });
+        filterPosition({ ...jitter, recordedAt: at(0) }, ctx({ anchor })).accepted,
+      ).toBe(true);
+      expect(
+        filterPosition({ ...CASABLANCA, recordedAt: at(0) }, ctx({ anchor })),
+      ).toMatchObject({ accepted: false, reason: 'implied_speed' });
     });
 
-    it('rejects an out-of-order delivery', () => {
+    it('tolerates a small out-of-order arrival within the burst window', () => {
+      // Concurrent POSTs from one burst can be persisted out of stamped
+      // order; a few minutes of reorder must not sink an otherwise-plausible
+      // reading.
+      const anchor = ref(RABAT, 10);
+      const jitter = offsetKm(RABAT, 0.15);
       expect(
-        filterPosition({ ...CASABLANCA, recordedAt: at(5) }, ctx({ anchor: ref(RABAT, 10) })),
+        filterPosition({ ...jitter, recordedAt: at(8) }, ctx({ anchor })).accepted,
+      ).toBe(true);
+    });
+
+    it('rejects an out-of-order delivery beyond the tolerance window', () => {
+      expect(
+        filterPosition({ ...CASABLANCA, recordedAt: at(-1) }, ctx({ anchor: ref(RABAT, 10) })),
       ).toMatchObject({ reason: 'non_monotonic' });
     });
   });
@@ -184,8 +205,10 @@ describe('filterPosition', () => {
     });
 
     it('floors the elapsed time so a near-zero gap yields a finite speed', () => {
+      // Displacement must exceed maxSpeedKmh * minDtHours (200 * 0.25 = 50 km)
+      // to still be implausible once the floor applies.
       const result = filterPosition(
-        { ...offsetKm(RABAT, 5), recordedAt: at(1 / 60) },
+        { ...offsetKm(RABAT, 60), recordedAt: at(1 / 60) },
         ctx({ anchor: ref(RABAT, 0) }),
       );
       expect(result.accepted).toBe(false);
@@ -260,6 +283,65 @@ describe('filterPosition', () => {
         ctx({ anchor: ref(RABAT, 0), now: at(60), config: cfg }),
       );
       expect(result).toMatchObject({ accepted: false, reason: 'implied_speed' });
+    });
+  });
+
+  // Regression guard for the bug that motivated this filter's tuning:
+  // `minDtHours` drifting below the tracking cadence, or `non_monotonic`
+  // having no tolerance, silently rejects every fix in a real drive as soon
+  // as delivery timing isn't perfectly even. Single-step tests against a
+  // hand-placed anchor are structurally blind to this — the anchor only
+  // advances on acceptance, so one wrong rejection stalls the whole replay.
+  // If this block ever fails, look at `minDtHours` and `outOfOrderToleranceMs`
+  // before touching speed thresholds.
+  describe('regression — whole-session ingestion', () => {
+    // Five legs of a genuine ~87 km Rabat→Casablanca drive at ~70 km/h,
+    // interpolated at even fractions so each leg is itself plausible.
+    const FRACTIONS = [0, 0.2, 0.4, 0.6, 0.8, 1];
+    const TOTAL_MINUTES = 75; // ~87 km at ~70 km/h
+
+    function waypoint(t: number) {
+      return {
+        lat: RABAT.lat + (CASABLANCA.lat - RABAT.lat) * t,
+        lng: RABAT.lng + (CASABLANCA.lng - RABAT.lng) * t,
+      };
+    }
+
+    /** Replays the drive with the given per-fix receipt times, as ingestion would. */
+    function replay(deliveryMinutes: number[]): FilterResult[] {
+      let anchor: FilterReference | null = null;
+      let lastRejected: FilterReference | null = null;
+      return FRACTIONS.map((f, i) => {
+        const candidate = { ...waypoint(f), recordedAt: at(deliveryMinutes[i]) };
+        const result = filterPosition(candidate, {
+          anchor,
+          lastRejected,
+          now: at(deliveryMinutes[i]),
+        });
+        const stored: FilterReference = { id: `p${i}`, ...candidate };
+        if (result.accepted) {
+          anchor = stored;
+        } else {
+          lastRejected = stored;
+        }
+        return result;
+      });
+    }
+
+    it('accepts every fix delivered exactly on the polling cadence', () => {
+      const onTime = FRACTIONS.map((f) => f * TOTAL_MINUTES);
+      expect(replay(onTime).every((r) => r.accepted)).toBe(true);
+    });
+
+    it('accepts every fix under 2-4 minute delivery jitter', () => {
+      const jitterOffsets = [0, 3, -2, 4, -3, 2];
+      const jittered = FRACTIONS.map((f, i) => f * TOTAL_MINUTES + jitterOffsets[i]);
+      expect(replay(jittered).every((r) => r.accepted)).toBe(true);
+    });
+
+    it('accepts every fix delivered in a single burst after being offline', () => {
+      const burst = FRACTIONS.map((_, i) => (i === 0 ? 0 : TOTAL_MINUTES + i / 60));
+      expect(replay(burst).every((r) => r.accepted)).toBe(true);
     });
   });
 });
