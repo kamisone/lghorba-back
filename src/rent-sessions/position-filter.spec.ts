@@ -4,6 +4,7 @@ import {
   FilterReference,
   FilterResult,
   filterPosition,
+  GeoBounds,
   PositionFilterConfig,
 } from './position-filter';
 
@@ -79,28 +80,31 @@ describe('filterPosition', () => {
 
   describe('stage 1 — geographic bounds', () => {
     const PARIS = { lat: 48.8566, lng: 2.3522 };
+    // Disabled by default (no fixed country fence); a caller can still opt in
+    // via config, which this block exercises explicitly.
+    const MOROCCO: GeoBounds = { latMin: 20.5, latMax: 36.2, lngMin: -17.3, lngMax: -0.8 };
 
-    it('rejects a point outside the configured bounds', () => {
-      expect(filterPosition({ ...PARIS, recordedAt: at(0) }, ctx())).toMatchObject({
-        reason: 'outside_geo_bounds',
-      });
+    it('is disabled by default, accepting anywhere', () => {
+      expect(DEFAULT_POSITION_FILTER_CONFIG.geoBounds).toBeNull();
+      expect(filterPosition({ ...PARIS, recordedAt: at(0) }, ctx()).accepted).toBe(true);
     });
 
-    it('accepts anywhere when bounds are disabled', () => {
+    it('rejects a point outside explicitly configured bounds', () => {
       expect(
-        filterPosition({ ...PARIS, recordedAt: at(0) }, ctx({ config: { geoBounds: null } }))
-          .accepted,
-      ).toBe(true);
+        filterPosition({ ...PARIS, recordedAt: at(0) }, ctx({ config: { geoBounds: MOROCCO } })),
+      ).toMatchObject({ reason: 'outside_geo_bounds' });
     });
 
-    it('accepts points just inside each edge', () => {
-      const b = DEFAULT_POSITION_FILTER_CONFIG.geoBounds!;
+    it('accepts points just inside each edge of configured bounds', () => {
       const corners = [
-        { lat: b.latMin + 0.01, lng: b.lngMin + 0.01 },
-        { lat: b.latMax - 0.01, lng: b.lngMax - 0.01 },
+        { lat: MOROCCO.latMin + 0.01, lng: MOROCCO.lngMin + 0.01 },
+        { lat: MOROCCO.latMax - 0.01, lng: MOROCCO.lngMax - 0.01 },
       ];
       for (const c of corners) {
-        expect(filterPosition({ ...c, recordedAt: at(0) }, ctx()).accepted).toBe(true);
+        expect(
+          filterPosition({ ...c, recordedAt: at(0) }, ctx({ config: { geoBounds: MOROCCO } }))
+            .accepted,
+        ).toBe(true);
       }
     });
   });

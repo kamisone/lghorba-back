@@ -86,8 +86,11 @@ export const DEFAULT_POSITION_FILTER_CONFIG: PositionFilterConfig = {
   futureToleranceMs: 5 * 60 * 1000,
   dedupeWindowMs: 60 * 1000,
   outOfOrderToleranceMs: 5 * 60 * 1000,
-  // Morocco including Western Sahara, with a small margin.
-  geoBounds: { latMin: 20.5, latMax: 36.2, lngMin: -17.3, lngMax: -0.8 },
+  // Disabled by default: the requirement is to judge a position against the
+  // previous one by time and distance, not to fence it to one country. A
+  // fixed box breaks the moment a car legitimately crosses a border. Set
+  // GPS_GEO_BOUNDS to opt into a hard geographic fence if ever needed.
+  geoBounds: null,
 };
 
 export type RejectReason =
