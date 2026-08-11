@@ -866,7 +866,7 @@ export class BookingsService {
   // ── Status update — optimistic lock prevents concurrent overwrite ─────────
 
   async updateBookingStatus(id: string, status: BookingStatus): Promise<Booking> {
-    return withRetry(async () => {
+    const booking = await withRetry(async () => {
       const booking = await this.findBooking(id);
       return this.bookingRepo.save({ ...booking, status });
     }, {
@@ -875,6 +875,36 @@ export class BookingsService {
         (err as { name?: string })?.name === 'OptimisticLockVersionMismatchError' ||
         isTransientDbError(err),
     });
+
+    if (CANCELLED_STATUSES.includes(status as typeof CANCELLED_STATUSES[number])) {
+      await this.stopRentSessionForBooking(id, new Date());
+    }
+
+    return booking;
+  }
+
+  /**
+   * Admin cancel/delete voids the booking entirely, so tracking must fully
+   * stop regardless of gpsStopMode — "manual" only extends tracking past a
+   * rental that actually happened, which is not the case here.
+   */
+  private async stopRentSessionForBooking(bookingId: string, now: Date): Promise<void> {
+    const session = await this.sessionRepo.findOne({ where: { bookingId } });
+    if (!session) return;
+
+    if (session.status === RentSessionStatus.ACTIVE) {
+      await this.sessionRepo.update(session.id, {
+        status: RentSessionStatus.ENDED,
+        endedAt: now,
+        trackingPaused: true,
+        nextLocationAt: null,
+      });
+    } else if (!session.trackingPaused) {
+      await this.sessionRepo.update(session.id, {
+        trackingPaused: true,
+        nextLocationAt: null,
+      });
+    }
   }
 
   async reactivateBooking(id: string, endDateTime: string): Promise<Booking> {
@@ -938,6 +968,7 @@ export class BookingsService {
 
   async deleteBooking(id: string): Promise<void> {
     await this.findBooking(id);
+    await this.stopRentSessionForBooking(id, new Date());
     await this.bookingRepo.delete(id);
   }
 
