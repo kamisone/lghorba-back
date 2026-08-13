@@ -277,7 +277,13 @@ config();
       // TypeORM 0.3 serializes Date objects using local getHours() — forcing the
       // PostgreSQL session to UTC ensures the server and DB always agree on time,
       // regardless of the OS timezone of the Node.js process.
-      extra: { options: '-c TimeZone=UTC' },
+      //
+      // `max` caps this pod's pg pool. Postgres defaults to max_connections=100,
+      // and back-hpa.yaml scales this deployment out to 10 replicas — with no
+      // cap, pg's default pool size (10 per pod) could reach 100 connections
+      // from this service alone, leaving no headroom for migrations or other
+      // clients. 8/pod x 10 pods = 80, keeping that headroom.
+      extra: { options: '-c TimeZone=UTC', max: 8 },
     }),
     ThrottlerModule.forRoot([
       { name: 'auth', ttl: 15 * 60 * 1000, limit: 10 },

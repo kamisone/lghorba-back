@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Booking, CANCELLED_STATUSES } from '../bookings/booking.entity';
 import { Car } from '../cars/car.entity';
 import { SmsService } from '../sms/sms.service';
@@ -62,27 +62,40 @@ export class RentSessionsTasksService {
       .andWhere('b.endDateTime > :now', { now })
       .getMany();
 
-    await Promise.all(
-      bookings.map(async (booking) => {
-        const existing = await this.sessionRepo.findOne({ where: { bookingId: booking.id } });
-        if (existing) return;
-        const car = await this.carRepo.findOne({ where: { id: booking.carId } });
-        if (!car) return;
-        const ts = new Date();
+    if (bookings.length === 0) return;
+
+    // Batch the "does this booking already have a session?" / "does its car
+    // still exist?" lookups instead of two round trips per booking — this
+    // cron runs every minute, so a per-row Promise.all here scales query
+    // count with the number of concurrently active bookings.
+    const [existingSessions, cars] = await Promise.all([
+      this.sessionRepo.find({ where: { bookingId: In(bookings.map((b) => b.id)) } }),
+      this.carRepo.find({ where: { id: In([...new Set(bookings.map((b) => b.carId))]) } }),
+    ]);
+    const sessionedBookingIds = new Set(existingSessions.map((s) => s.bookingId));
+    const carById = new Map(cars.map((c) => [c.id, c]));
+
+    const toStart = bookings.filter((b) => !sessionedBookingIds.has(b.id) && carById.has(b.carId));
+    if (toStart.length === 0) return;
+
+    const ts = new Date();
+    await this.sessionRepo.save(
+      toStart.map((booking) => {
         const trackingPaused = !booking.autoStartTracking;
-        await this.sessionRepo.save(
-          this.sessionRepo.create({
-            carId: booking.carId,
-            bookingId: booking.id,
-            lastLocationRequestedAt: trackingPaused ? null : ts,
-            nextLocationAt: trackingPaused ? null : addLocationInterval(ts),
-            trackingPaused,
-          }),
-        );
-        if (!trackingPaused) {
-          await this.smsService.addMessage(car.phoneNumber, 'location');
-        }
+        return this.sessionRepo.create({
+          carId: booking.carId,
+          bookingId: booking.id,
+          lastLocationRequestedAt: trackingPaused ? null : ts,
+          nextLocationAt: trackingPaused ? null : addLocationInterval(ts),
+          trackingPaused,
+        });
       }),
+    );
+
+    await Promise.all(
+      toStart
+        .filter((b) => b.autoStartTracking)
+        .map((b) => this.smsService.addMessage(carById.get(b.carId)!.phoneNumber, 'location')),
     );
   }
 

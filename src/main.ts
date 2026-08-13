@@ -1,5 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
+// NestJS's --watch build (SWC) doesn't apply the same esModuleInterop
+// wrapping tsc does for `import x from 'y'` on a CJS `module.exports = fn`
+// package — `import x = require('y')` compiles to a plain require() in
+// every compiler and works everywhere.
+import compression = require('compression');
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ErrorCollectorService } from './common/error-collector/error-collector.service';
@@ -54,6 +59,11 @@ async function bootstrap() {
     .getHttpAdapter()
     .getInstance()
     .set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
+
+  // Neither this app nor the nginx layer in front of it (docker/nginx/default.conf)
+  // compresses responses today — gzip here cuts JSON list-endpoint payloads
+  // significantly for free.
+  app.use(compression());
 
   app.useLogger(app.get(Logger));
   app.enableCors({

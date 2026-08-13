@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -18,6 +19,9 @@ export enum RentSessionStatus {
   ENDED = 'ended',
 }
 
+// sendLocationRequests (every-minute cron) filters exactly this pair:
+// trackingPaused = false AND nextLocationAt <= now.
+@Index(['trackingPaused', 'nextLocationAt'])
 @Entity('rent_sessions')
 export class RentSession {
   @PrimaryGeneratedColumn('uuid')
@@ -26,6 +30,9 @@ export class RentSession {
   @ManyToOne(() => Car, { onDelete: 'CASCADE' })
   car: Car;
 
+  // No @Index() here — IDX_rent_sessions_carId_startedAt already covers
+  // carId lookups (added out-of-band; not reflected in this entity, but
+  // confirmed present in the actual schema).
   @Column({ type: 'uuid' })
   carId: string;
 
@@ -33,6 +40,9 @@ export class RentSession {
   @JoinColumn()
   booking: Booking | null;
 
+  // unique: true already gives this column a unique index — no separate
+  // @Index() needed for the bookingId lookups in rent-sessions.service.ts
+  // and the batched In(...) query in rent-sessions-tasks.service.ts.
   @Column({ type: 'uuid', nullable: true, unique: true })
   bookingId: string | null;
 
@@ -42,6 +52,8 @@ export class RentSession {
   @Column({ type: 'uuid', nullable: true })
   userId: string | null;
 
+  // endExpiredScheduledSessions filters status = ACTIVE across the whole table.
+  @Index()
   @Column({ type: 'enum', enum: RentSessionStatus, default: RentSessionStatus.ACTIVE })
   status: RentSessionStatus;
 
