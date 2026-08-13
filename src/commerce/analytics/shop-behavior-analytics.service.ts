@@ -647,6 +647,8 @@ export class ShopBehaviorAnalyticsService {
       cartToken: string | null;
       quantity: number | null;
       searchQuery: string | null;
+      /** Null for rows written before this column existed. */
+      clientIp: string | null;
     }>
   > {
     const { window, eventTypes, filter = {}, limit = 100, productScope = 'all' } = opts;
@@ -715,6 +717,7 @@ export class ShopBehaviorAnalyticsService {
       cartToken: e.cartToken,
       quantity: e.quantity,
       searchQuery: e.searchQuery,
+      clientIp: e.clientIp,
     }));
   }
 

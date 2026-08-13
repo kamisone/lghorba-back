@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
   HttpStatus,
+  Post,
   Put,
 } from '@nestjs/common';
 import { Public } from '../auth/public.decorator';
@@ -68,6 +70,36 @@ export class PlatformSettingsController {
     @Body() body: { value: string },
   ): Promise<{ rules: string[]; invalid: string[] }> {
     return this.service.setAnalyticsExcludedIps(body?.value ?? '');
+  }
+
+  /**
+   * Admin-only — appends a single address without disturbing the rest of the
+   * list. Powers the "block this IP" action on an analytics event-detail row.
+   */
+  @Post('admin/platform-settings/analytics-excluded-ips/add')
+  @HttpCode(HttpStatus.OK)
+  async addAnalyticsExcludedIp(
+    @Body() body: { ip: string },
+  ): Promise<{ rules: string[]; invalid: string[] }> {
+    if (!body?.ip?.trim()) {
+      throw new BadRequestException('An address is required');
+    }
+    return this.service.addAnalyticsExcludedIp(body.ip.trim());
+  }
+
+  /** Admin-only — bot/crawler User-Agent substrings excluded from shop analytics. */
+  @Get('admin/platform-settings/analytics-bot-user-agents')
+  getAnalyticsBotUserAgents(): { patterns: string[] } {
+    return { patterns: this.service.getAnalyticsBotUserAgentPatterns() };
+  }
+
+  /** Admin-only — replaces the bot User-Agent pattern list. */
+  @Put('admin/platform-settings/analytics-bot-user-agents')
+  @HttpCode(HttpStatus.OK)
+  async updateAnalyticsBotUserAgents(
+    @Body() body: { value: string },
+  ): Promise<{ patterns: string[] }> {
+    return this.service.setAnalyticsBotUserAgentPatterns(body?.value ?? '');
   }
 
   /** Admin-only — whether the Meta Conversions API access token is set server-side. Never returns the token itself. */

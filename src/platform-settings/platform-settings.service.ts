@@ -14,7 +14,23 @@ const DEFAULT_TZ = 'Europe/Paris';
 const META_PIXEL_ID_KEY = 'meta_pixel_id';
 const META_PIXEL_ENABLED_KEY = 'meta_pixel_enabled';
 const ANALYTICS_EXCLUDED_IPS_KEY = 'analytics_excluded_ips';
+const ANALYTICS_BOT_USER_AGENTS_KEY = 'analytics_bot_user_agents';
 const CACHE_TTL_MS = 60_000; // refresh ceiling: 60 s
+
+/**
+ * Used only when the admin has never saved a list of their own — an empty
+ * saved list is a deliberate "stop filtering" choice and is respected as-is.
+ * Broad substrings (bot/spider/crawl) catch the vast majority of
+ * self-identifying crawlers by convention (Googlebot, Twitterbot, AhrefsBot,
+ * GPTBot, ClaudeBot, Baiduspider, UptimeRobot, ...); the rest are named
+ * crawlers/tools that don't include those words in their UA string.
+ */
+const DEFAULT_BOT_USER_AGENT_PATTERNS = [
+  'bot', 'spider', 'crawl',
+  'facebookexternalhit', 'facebookcatalog', 'whatsapp', 'telegrambot',
+  'skypeuripreview', 'pingdom', 'gtmetrix', 'headlesschrome', 'phantomjs',
+  'python-requests', 'curl/', 'postman', 'node-fetch', 'go-http-client', 'axios/',
+];
 
 export interface MetaPixelConfig {
   pixelId: string | null;
@@ -28,6 +44,7 @@ export class PlatformSettingsService implements OnModuleInit {
   private cachedTimezone: string = DEFAULT_TZ;
   private cachedMetaPixel: MetaPixelConfig = { pixelId: null, enabled: false };
   private cachedExcludedIps: string[] = [];
+  private cachedBotUserAgentPatterns: string[] = DEFAULT_BOT_USER_AGENT_PATTERNS;
   private cacheExpiresAt: number = 0;
 
   constructor(
@@ -65,6 +82,26 @@ export class PlatformSettingsService implements OnModuleInit {
    */
   isAnalyticsExcluded(ip: string | null | undefined): boolean {
     return ipMatchesAny(ip, this.getAnalyticsExcludedIps());
+  }
+
+  /** Admin-configured (or, if unset, built-in default) bot/crawler UA substrings. */
+  getAnalyticsBotUserAgentPatterns(): string[] {
+    this.refreshIfStale();
+    return this.cachedBotUserAgentPatterns;
+  }
+
+  /**
+   * Whether a request's User-Agent looks like a bot/crawler rather than a
+   * real visitor — checked before writing a shop behavior event, the same
+   * way `isAnalyticsExcluded` is checked for IPs.
+   *
+   * A missing/empty UA is treated as bot-like too: every real browser sends
+   * one, so its absence means a script or scraper, not a visitor.
+   */
+  isBotUserAgent(userAgent: string | null | undefined): boolean {
+    if (!userAgent) return true;
+    const ua = userAgent.toLowerCase();
+    return this.getAnalyticsBotUserAgentPatterns().some((p) => ua.includes(p));
   }
 
   getPlatformConfig(): { timezone: string; metaPixel: MetaPixelConfig } {
@@ -125,6 +162,36 @@ export class PlatformSettingsService implements OnModuleInit {
     return { rules, invalid };
   }
 
+  /**
+   * Appends a single address to the exclusion list without disturbing the
+   * rest — powers the "block this IP" action on an analytics event-detail
+   * row, where re-sending the admin's full edited textarea isn't available.
+   */
+  async addAnalyticsExcludedIp(ip: string): Promise<{ rules: string[]; invalid: string[] }> {
+    const combined = [...this.getAnalyticsExcludedIps(), ip].join('\n');
+    return this.setAnalyticsExcludedIps(combined);
+  }
+
+  /**
+   * Replaces the bot User-Agent pattern list. An explicitly empty list is
+   * respected (stops bot filtering) rather than falling back to the default.
+   */
+  async setAnalyticsBotUserAgentPatterns(raw: string): Promise<{ patterns: string[] }> {
+    const patterns = [...new Set(
+      (raw ?? '')
+        .split(/[\n,]/)
+        .map((p) => p.trim().toLowerCase())
+        .filter(Boolean),
+    )];
+    await this.repo.save(
+      this.repo.create({ key: ANALYTICS_BOT_USER_AGENTS_KEY, value: patterns.join('\n') }),
+    );
+    this.cachedBotUserAgentPatterns = patterns;
+    this.cacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    this.logger.log(`Analytics bot UA patterns updated (${patterns.length} pattern(s))`);
+    return { patterns };
+  }
+
   // ── Internal ───────────────────────────────────────────────────────────────
 
   private refreshIfStale(): void {
@@ -147,6 +214,7 @@ export class PlatformSettingsService implements OnModuleInit {
             META_PIXEL_ID_KEY,
             META_PIXEL_ENABLED_KEY,
             ANALYTICS_EXCLUDED_IPS_KEY,
+            ANALYTICS_BOT_USER_AGENTS_KEY,
           ]),
         },
       });
@@ -161,6 +229,12 @@ export class PlatformSettingsService implements OnModuleInit {
         .split('\n')
         .map((r) => r.trim())
         .filter(Boolean);
+      // No saved row at all -> nobody has configured this yet, use the
+      // built-in defaults. A saved row that parses to zero patterns is a
+      // deliberate "stop filtering" choice and is respected as empty.
+      this.cachedBotUserAgentPatterns = byKey.has(ANALYTICS_BOT_USER_AGENTS_KEY)
+        ? byKey.get(ANALYTICS_BOT_USER_AGENTS_KEY)!.split('\n').map((p) => p.trim()).filter(Boolean)
+        : DEFAULT_BOT_USER_AGENT_PATTERNS;
       this.cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     } catch (err) {
       this.logger.warn(

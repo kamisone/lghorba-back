@@ -55,7 +55,7 @@ export class ShopBehaviorEvent {
   @Column({ type: 'int', nullable: true }) resultCount: number | null;
 
   // ISO-3166-1 alpha-2 country code, resolved from the request IP at write
-  // time (see GeoIpService) — the IP itself is never stored, only this.
+  // time (see GeoIpService).
   /**
    * Salted SHA-256 of the visitor's IP — never the IP itself. Lets reports count
    * one visitor once per product no matter how often they refresh. NULL on rows
@@ -67,6 +67,14 @@ export class ShopBehaviorEvent {
   @Column({ type: 'varchar', length: 2, nullable: true }) countryCode:
     | string
     | null;
+
+  /**
+   * The visitor's raw address, kept (unlike earlier rows, where only
+   * `visitorHash` was written) so an admin reviewing event details can add an
+   * unwanted/bot source straight to the analytics IP exclusion list. NULL on
+   * every row written before this column existed.
+   */
+  @Column({ type: 'varchar', length: 45, nullable: true }) clientIp: string | null;
 
   @CreateDateColumn() createdAt: Date;
 }

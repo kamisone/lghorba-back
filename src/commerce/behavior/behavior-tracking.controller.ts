@@ -87,6 +87,10 @@ export class BehaviorTrackingController {
       countryCode,
       visitorHash: this.geoIp.visitorHashFromIp(ip),
       clientIp: ip,
+      // Always a string (possibly '') so record() knows to run the bot
+      // check — this is the one caller of record() that has a real request
+      // to check a User-Agent against.
+      userAgent: (req.headers['user-agent'] as string | undefined) ?? '',
     });
   }
 }
