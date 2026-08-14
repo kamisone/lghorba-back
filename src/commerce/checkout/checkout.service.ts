@@ -22,7 +22,7 @@ import { FREE_SHIPPING_METHOD_ID, ShippingService, ZoneInfo } from '../shipping/
 import { CustomerService } from '../customer/customer.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { PricingEngineService, LineItemInput, PricingResult } from '../pricing/pricing-engine.service';
-import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
+import { resolveUnitPriceForQuantity, sumOptionAdjustments } from '../pricing/variant-price';
 import { containsTestProduct } from '../shared/test-product';
 import { TestCheckoutGuard } from '../shared/test-checkout-guard.service';
 import { COMMERCE_EVENTS } from '../events/commerce-events';
@@ -532,11 +532,19 @@ export class CheckoutService {
         );
       }
 
-      const currentPrice = resolveVariantPrice({
-        variantPriceCents:     variant.priceCents,
-        basePriceCents:        product.basePriceCents ?? null,
-        optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
-      });
+      // Quantity-aware: an upselling product's line must re-verify at the
+      // tier price for item.quantity, not the flat variant/option price —
+      // otherwise checkout would reject every upsell-priced cart with a
+      // false PRICE_CHANGED.
+      const currentPrice = resolveUnitPriceForQuantity(
+        {
+          variantPriceCents:     variant.priceCents,
+          basePriceCents:        product.basePriceCents ?? null,
+          optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
+        },
+        item.quantity,
+        { upsellingEnabled: product.upsellingEnabled, upsellTiers: product.upsellTiers },
+      );
 
       if (currentPrice !== item.unitPriceCents) {
         throw new BadRequestException({

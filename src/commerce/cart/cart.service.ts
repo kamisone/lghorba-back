@@ -24,7 +24,7 @@ import {
 } from '../../common/entity-types';
 import { CART_ABANDONMENT_QUEUE } from './cart-abandonment.constants';
 import {
-  resolveVariantPrice,
+  resolveUnitPriceForQuantity,
   sumOptionAdjustments,
 } from '../pricing/variant-price';
 import { MetaCapiService } from '../../marketing/meta-capi/meta-capi.service';
@@ -148,7 +148,21 @@ export class CartService {
           available: inventory.available,
         });
       }
+      const product = (variant as any).product as Product;
       existing.quantity = newQty;
+      // Re-resolve at the new total quantity — a line already past an
+      // upsell threshold, or one that just crossed it by adding more, must
+      // reflect the tier price for its new quantity, not keep the price
+      // that applied when it had fewer units.
+      existing.unitPriceCents = resolveUnitPriceForQuantity(
+        {
+          variantPriceCents: variant.priceCents,
+          basePriceCents: (product as any).basePriceCents ?? null,
+          optionAdjustmentCents: sumOptionAdjustments((variant as any).options ?? []),
+        },
+        newQty,
+        { upsellingEnabled: product.upsellingEnabled, upsellTiers: product.upsellTiers },
+      );
       await this.itemRepo.save(existing);
       trackUnitPriceCents = existing.unitPriceCents;
     } else {
@@ -203,15 +217,20 @@ export class CartService {
         }
       }
 
-      // Resolve effective unit price using the three-tier model:
-      // variant override → product base + option adjustments
-      const unitPriceCents = resolveVariantPrice({
-        variantPriceCents: variant.priceCents,
-        basePriceCents: (product as any).basePriceCents ?? null,
-        optionAdjustmentCents: sumOptionAdjustments(
-          (variant as any).options ?? [],
-        ),
-      });
+      // Resolve effective unit price: variant override → product base +
+      // option adjustments → (if the product has upselling enabled) the
+      // best-qualifying quantity tier for this line's quantity.
+      const unitPriceCents = resolveUnitPriceForQuantity(
+        {
+          variantPriceCents: variant.priceCents,
+          basePriceCents: (product as any).basePriceCents ?? null,
+          optionAdjustmentCents: sumOptionAdjustments(
+            (variant as any).options ?? [],
+          ),
+        },
+        quantity,
+        { upsellingEnabled: product.upsellingEnabled, upsellTiers: product.upsellTiers },
+      );
 
       // Image priority mirrors the PDP hero (ShopProductDetail.tsx): the variant's own
       // featured media, then the picked option value's per-product image override
@@ -316,7 +335,32 @@ export class CartService {
       });
     }
 
+    // Re-resolve price for the new quantity — this previously just bumped
+    // `quantity` and left the add-time price snapshot untouched, which is
+    // exactly wrong for quantity tiers (raising the quantity from the
+    // upselling UI must apply the new tier's price) and was already stale
+    // for ordinary variant/option repricing.
+    const [variant, product] = await Promise.all([
+      this.variantRepo.findOne({
+        where: { id: item.variantId },
+        relations: ['options', 'options.optionValue'],
+      }),
+      this.productRepo.findOneBy({ id: item.productId }),
+    ]);
+    if (!variant || !product) {
+      throw new BadRequestException('This item is no longer available. Please remove it from your cart.');
+    }
+
     item.quantity = quantity;
+    item.unitPriceCents = resolveUnitPriceForQuantity(
+      {
+        variantPriceCents: variant.priceCents,
+        basePriceCents: product.basePriceCents ?? null,
+        optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
+      },
+      quantity,
+      { upsellingEnabled: product.upsellingEnabled, upsellTiers: product.upsellTiers },
+    );
     await this.itemRepo.save(item);
     await this.behaviorTracking.record('update_cart_item', {
       cartToken: token,

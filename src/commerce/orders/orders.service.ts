@@ -21,7 +21,7 @@ import { ProductVariant } from '../entities/product-variant.entity';
 import { Product } from '../entities/product.entity';
 import { InventoryService } from '../inventory/inventory.service';
 import {
-  resolveVariantPrice,
+  resolveUnitPriceForQuantity,
   sumOptionAdjustments,
 } from '../pricing/variant-price';
 import { containsTestProduct } from '../shared/test-product';
@@ -611,11 +611,19 @@ export class OrdersService {
         );
       }
 
-      const currentPrice = resolveVariantPrice({
-        variantPriceCents: variant.priceCents,
-        basePriceCents: product.basePriceCents ?? null,
-        optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
-      });
+      // Quantity-aware for the same reason as CheckoutService.verifyCartItemPrices:
+      // this is the second, independent order-creation path (see createFromCart's
+      // comment above) and must apply the exact same upsell-tier resolution, or an
+      // upselling product's cart would be rejected here with a false PRICE_CHANGED.
+      const currentPrice = resolveUnitPriceForQuantity(
+        {
+          variantPriceCents: variant.priceCents,
+          basePriceCents: product.basePriceCents ?? null,
+          optionAdjustmentCents: sumOptionAdjustments(variant.options ?? []),
+        },
+        item.quantity,
+        { upsellingEnabled: product.upsellingEnabled, upsellTiers: product.upsellTiers },
+      );
 
       if (currentPrice !== item.unitPriceCents) {
         throw new BadRequestException({

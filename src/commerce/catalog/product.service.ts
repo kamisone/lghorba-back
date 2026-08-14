@@ -28,6 +28,7 @@ import { slugify } from '../../common/utils/slug.util';
 import { ProductMediaItem, ResolvedProductMediaItem } from '../entities/product-media-item';
 import { ProductStoryItem, ResolvedProductStoryItem } from '../entities/product-story-item';
 import { ProductSocialVideo, ResolvedProductSocialVideo } from '../entities/product-social-video';
+import { ProductUpsellTier } from '../entities/product-upsell-tier';
 import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 
 // ── Schemas ────────────────────────────────────────────────────────────────────
@@ -78,6 +79,15 @@ export const ProductStoryItemSchema = z.object({
   description: z.string().max(5000).optional(),
   sortOrder:   z.number().int().optional(),
   isActive:    z.boolean().optional(),
+});
+
+export const ProductUpsellTierSchema = z.object({
+  /** Omit when adding a new tier — the server assigns a stable id. */
+  id:             z.string().min(1).max(100).optional(),
+  quantity:       z.number().int().min(1),
+  unitPriceCents: z.number().int().min(0),
+  active:         z.boolean().optional(),
+  sortOrder:      z.number().int().optional(),
 });
 
 export const ProductSocialVideoSchema = z.object({
@@ -139,6 +149,12 @@ export const CreateProductSchema = z.object({
   basePriceCents:      z.number().int().min(0),
   compareAtPriceCents: z.number().int().min(0).nullish(),
   initialStock:        z.number().int().min(0).optional(),
+  /** Quantity-based upselling ("buy N, pay X each"). Ignored entirely (tiers included) while false. */
+  upsellingEnabled:    z.boolean().optional(),
+  upsellTiers:         z.array(ProductUpsellTierSchema).optional().refine(
+    tiers => !tiers || new Set(tiers.map(t => t.quantity)).size === tiers.length,
+    { message: 'Two tiers cannot use the same quantity threshold' },
+  ),
 });
 
 export const UpdateProductSchema = CreateProductSchema.omit({ initialStock: true }).extend({
@@ -283,6 +299,22 @@ function normalizeSocialVideos(items: z.infer<typeof ProductSocialVideoSchema>[]
     title:     v.title?.trim() ? v.title : null,
     sortOrder: i,
     isActive:  v.isActive ?? true,
+  }));
+}
+
+/**
+ * Assigns stable ids to new tiers and re-derives sortOrder from array
+ * position. Does not de-duplicate or sort by quantity — admins may
+ * intentionally list tiers out of order while editing; resolution (highest
+ * qualifying quantity wins) doesn't depend on storage order.
+ */
+function normalizeUpsellTiers(tiers: z.infer<typeof ProductUpsellTierSchema>[]): ProductUpsellTier[] {
+  return tiers.map((t, i) => ({
+    id:             t.id ?? randomUUID(),
+    quantity:       t.quantity,
+    unitPriceCents: t.unitPriceCents,
+    active:         t.active ?? true,
+    sortOrder:      t.sortOrder ?? i,
   }));
 }
 
@@ -658,6 +690,10 @@ export class ProductService {
     withTranslations.documents    = await this.resolveDocuments(product.id, product.documents ?? [], lang);
     withTranslations.storyGallery = await this.resolveStoryGallery(product.id, resolved.storyGallery ?? [], lang);
     withTranslations.socialVideos = await this.resolveSocialVideos(product.id, resolved.socialVideos ?? [], lang);
+    // Public consumers never see inactive/draft tiers — only what the buy box may show.
+    withTranslations.upsellTiers = (resolved.upsellTiers ?? [])
+      .filter((t: ProductUpsellTier) => t.active)
+      .sort((a: ProductUpsellTier, b: ProductUpsellTier) => a.quantity - b.quantity);
 
     // Same computation as the listing's outOfStock flag: true only when
     // inventory items exist AND every variant is at 0 or below.
@@ -843,6 +879,8 @@ export class ProductService {
         status:            'draft',
         primaryCategoryId: dto.primaryCategoryId ?? null,
         basePriceCents:    dto.basePriceCents,
+        upsellingEnabled:  dto.upsellingEnabled ?? false,
+        upsellTiers:       dto.upsellTiers ? normalizeUpsellTiers(dto.upsellTiers) : [],
         categories,
         tags,
       });
@@ -917,6 +955,8 @@ export class ProductService {
       status:            dto.status             ?? product.status,
       primaryCategoryId: dto.primaryCategoryId  !== undefined ? dto.primaryCategoryId ?? null : product.primaryCategoryId,
       basePriceCents:    dto.basePriceCents      !== undefined ? dto.basePriceCents ?? null : product.basePriceCents,
+      upsellingEnabled:  dto.upsellingEnabled   !== undefined ? dto.upsellingEnabled : product.upsellingEnabled,
+      upsellTiers:       dto.upsellTiers        !== undefined ? normalizeUpsellTiers(dto.upsellTiers) : product.upsellTiers,
     });
 
     if (dto.categoryIds !== undefined) {

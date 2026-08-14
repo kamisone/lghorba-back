@@ -24,6 +24,7 @@ import { ProductFaq } from './product-faq';
 import { ProductDocument } from './product-document';
 import { ProductStoryItem } from './product-story-item';
 import { ProductSocialVideo } from './product-social-video';
+import { ProductUpsellTier } from './product-upsell-tier';
 
 export type ProductStatus =
   | 'draft'
@@ -122,6 +123,17 @@ export class Product {
    * NULL on legacy products that use per-variant explicit prices exclusively.
    */
   @Column({ type: 'int', nullable: true }) basePriceCents: number | null;
+
+  /**
+   * Quantity-based upselling ("buy N, pay X each"). When false, the product
+   * behaves exactly as it did before this existed — `upsellTiers` is ignored
+   * entirely, not just hidden, everywhere price is resolved.
+   */
+  @Column({ type: 'boolean', default: false }) upsellingEnabled: boolean;
+
+  /** Ordered quantity-price tiers. See resolveUnitPriceForQuantity for how these apply. */
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  upsellTiers: ProductUpsellTier[];
 
   @Column({ type: 'boolean', default: false }) featured: boolean;
 
