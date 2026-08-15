@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -9,35 +14,78 @@ import { AssetUrlService } from '../asset-url/asset-url.service';
 import { MediaAsset } from './media-asset.entity';
 import { MediaFolder } from './media-folder.entity';
 import { MediaUsage, MediaEntityType } from './media-usage.entity';
-import { TRANSCODE_JOB, TranscodeJobData, VIDEO_TRANSCODE_QUEUE } from './video-transcode.constants';
+import {
+  TRANSCODE_JOB,
+  TranscodeJobData,
+  VIDEO_TRANSCODE_QUEUE,
+} from './video-transcode.constants';
 
 export interface MediaListOptions {
-  search?:    string;
-  mimeType?:  string;
+  search?: string;
+  mimeType?: string;
   /** Broad type filter — translates to a mimeType prefix match */
   mediaType?: 'image' | 'video';
-  tag?:       string;
-  folderId?:  string | null; // undefined = all, null/string = filter by folder
-  folderSet?: boolean;       // true when folderId was explicitly provided (even as null)
-  limit?:     number;
-  offset?:    number;
+  tag?: string;
+  folderId?: string | null; // undefined = all, null/string = filter by folder
+  folderSet?: boolean; // true when folderId was explicitly provided (even as null)
+  limit?: number;
+  offset?: number;
 }
 
 export interface TrackUsageDto {
   entityType: MediaEntityType;
-  entityId:   string;
-  field:      string;
+  entityId: string;
+  field: string;
 }
 
-const MEDIA_PREFIX       = 'media/';
+const MEDIA_PREFIX = 'media/';
 /** Media object paths are content-addressed, so they can be cached indefinitely.
  *  Matches HLS_CACHE_CONTROL in video-transcode.processor.ts. */
 const MEDIA_CACHE_CONTROL = 'public, max-age=31536000, immutable';
-const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif', 'image/svg+xml'];
+const ALLOWED_IMAGE_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+  'image/gif',
+  'image/svg+xml',
+];
 const ALLOWED_VIDEO_MIME_TYPES = ['video/mp4', 'video/webm'];
-const ALLOWED_MIME_TYPES = [...ALLOWED_IMAGE_MIME_TYPES, ...ALLOWED_VIDEO_MIME_TYPES];
-const MAX_IMAGE_BYTES    = 20 * 1024 * 1024;  // 20 MB
-const MAX_VIDEO_BYTES    = 200 * 1024 * 1024; // 200 MB
+const ALLOWED_MIME_TYPES = [
+  ...ALLOWED_IMAGE_MIME_TYPES,
+  ...ALLOWED_VIDEO_MIME_TYPES,
+];
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // 20 MB
+const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200 MB
+const IMAGE_EXTENSION_BY_MIME: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/avif': 'avif',
+  'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+};
+
+/**
+ * Ordinary image URLs end in a real filename (`.../product123.jpg`), but
+ * some sources (e.g. prompt-in-path AI image generators) put arbitrary long
+ * text in the last path segment instead — used verbatim that overflows
+ * originalFilename's varchar(500) and, worse, gets read as a bogus multi-
+ * hundred-character "extension" by persistBuffer's `split('.').pop()`. Falls
+ * back to a content-type-derived generic name whenever the last segment
+ * doesn't look like a real `name.ext`.
+ */
+function deriveFilenameFromUrl(sourceUrl: string, contentType: string): string {
+  const lastSegment = decodeURIComponent(
+    sourceUrl.split('/').pop()?.split('?')[0] || '',
+  );
+  const looksLikeRealFilename =
+    lastSegment.length > 0 &&
+    lastSegment.length <= 200 &&
+    /\.[a-z0-9]{2,5}$/i.test(lastSegment);
+  if (looksLikeRealFilename) return lastSegment;
+  return `image.${IMAGE_EXTENSION_BY_MIME[contentType] ?? 'bin'}`;
+}
 
 export type MediaKind = 'image' | 'video' | 'other';
 
@@ -53,25 +101,35 @@ export class MediaService {
   private readonly logger = new Logger(MediaService.name);
 
   constructor(
-    @InjectRepository(MediaAsset)  private readonly assetRepo:  Repository<MediaAsset>,
-    @InjectRepository(MediaFolder) private readonly folderRepo: Repository<MediaFolder>,
-    @InjectRepository(MediaUsage)  private readonly usageRepo:  Repository<MediaUsage>,
-    private readonly gcs:  GcsService,
+    @InjectRepository(MediaAsset)
+    private readonly assetRepo: Repository<MediaAsset>,
+    @InjectRepository(MediaFolder)
+    private readonly folderRepo: Repository<MediaFolder>,
+    @InjectRepository(MediaUsage)
+    private readonly usageRepo: Repository<MediaUsage>,
+    private readonly gcs: GcsService,
     private readonly urls: AssetUrlService,
-    @InjectQueue(VIDEO_TRANSCODE_QUEUE) private readonly transcodeQueue: Queue<TranscodeJobData>,
+    @InjectQueue(VIDEO_TRANSCODE_QUEUE)
+    private readonly transcodeQueue: Queue<TranscodeJobData>,
   ) {}
 
   /** Queues HLS/MP4 transcoding for a video asset. Never throws — upload must not fail on queue issues. */
   private async enqueueTranscode(assetId: string): Promise<void> {
     try {
-      await this.transcodeQueue.add(TRANSCODE_JOB, { assetId }, {
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 30_000 },
-        removeOnComplete: true,
-        removeOnFail: false,
-      });
+      await this.transcodeQueue.add(
+        TRANSCODE_JOB,
+        { assetId },
+        {
+          attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
+          removeOnComplete: true,
+          removeOnFail: false,
+        },
+      );
     } catch (err) {
-      this.logger.error(`Failed to enqueue transcode for asset ${assetId}: ${err}`);
+      this.logger.error(
+        `Failed to enqueue transcode for asset ${assetId}: ${err}`,
+      );
     }
   }
 
@@ -91,19 +149,52 @@ export class MediaService {
     if (file.size > maxBytes) {
       throw new Error(`File too large (max ${maxBytes / 1024 / 1024} MB)`);
     }
+    return this.persistBuffer(
+      file.buffer,
+      file.originalname,
+      file.mimetype,
+      altText,
+      uploadedBy,
+      folderId,
+    );
+  }
 
-    const checksum = crypto.createHash('sha256').update(new Uint8Array(file.buffer)).digest('hex');
+  /**
+   * Checksum → dedup → GCS upload → dimension extraction → MediaAsset insert.
+   * Shared by upload() (multipart) and ingestFromUrl() (server-fetched bytes)
+   * so both paths produce byte-for-byte identical MediaAsset records.
+   */
+  private async persistBuffer(
+    buffer: Buffer,
+    originalFilename: string,
+    mimeType: string,
+    altText?: string,
+    uploadedBy?: string,
+    folderId?: string | null,
+  ): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
+    const kind = getMediaKind(mimeType);
+    const checksum = crypto
+      .createHash('sha256')
+      .update(new Uint8Array(buffer))
+      .digest('hex');
 
     // Dedup: return existing asset (move to requested folder if specified)
     const existing = await this.assetRepo.findOne({ where: { checksum } });
     if (existing) {
       if (folderId !== undefined && existing.folderId !== folderId) {
-        await this.assetRepo.update(existing.id, { folderId: folderId ?? null });
+        await this.assetRepo.update(existing.id, {
+          folderId: folderId ?? null,
+        });
         existing.folderId = folderId ?? null;
       }
       // Opportunistic backfill: legacy videos uploaded before the transcode pipeline
-      if (getMediaKind(existing.mimeType) === 'video' && existing.transcodeStatus == null) {
-        await this.assetRepo.update(existing.id, { transcodeStatus: 'pending' });
+      if (
+        getMediaKind(existing.mimeType) === 'video' &&
+        existing.transcodeStatus == null
+      ) {
+        await this.assetRepo.update(existing.id, {
+          transcodeStatus: 'pending',
+        });
         existing.transcodeStatus = 'pending';
         await this.enqueueTranscode(existing.id);
       }
@@ -111,8 +202,8 @@ export class MediaService {
       return { ...existing, url, mediaType: getMediaKind(existing.mimeType) };
     }
 
-    const ext        = file.originalname.split('.').pop()?.toLowerCase() ?? 'bin';
-    const datePart   = new Date().toISOString().slice(0, 7);
+    const ext = originalFilename.split('.').pop()?.toLowerCase() ?? 'bin';
+    const datePart = new Date().toISOString().slice(0, 7);
     const storageKey = `${MEDIA_PREFIX}${datePart}/${checksum.slice(0, 8)}-${Date.now()}.${ext}`;
 
     // storageKey embeds the content checksum and an upload timestamp, so an
@@ -120,33 +211,37 @@ export class MediaService {
     // Without this GCS applies its 1 h default, which expires browser caches and
     // Next's image cache hourly for content that can never change.
     await this.gcs.upload(
-      file.buffer,
+      buffer,
       storageKey,
-      file.mimetype,
+      mimeType,
       'publicRead',
       MEDIA_CACHE_CONTROL,
     );
 
-    const { width, height, durationSeconds } = kind === 'video'
-      ? await extractVideoMetadata(file.buffer, file.mimetype)
-      : { ...(await extractImageDimensions(file.buffer, file.mimetype)), durationSeconds: null };
+    const { width, height, durationSeconds } =
+      kind === 'video'
+        ? await extractVideoMetadata(buffer, mimeType)
+        : {
+            ...(await extractImageDimensions(buffer, mimeType)),
+            durationSeconds: null,
+          };
 
-    const resolvedFolderId = folderId !== undefined ? (folderId ?? null) : null;
+    const resolvedFolderId = folderId !== undefined ? folderId ?? null : null;
 
     const asset = this.assetRepo.create({
       storageKey,
-      originalFilename: file.originalname,
-      mimeType:         file.mimetype,
-      sizeBytes:        file.size,
+      originalFilename,
+      mimeType,
+      sizeBytes: buffer.byteLength,
       width,
       height,
       durationSeconds,
-      altText:          altText ?? null,
+      altText: altText ?? null,
       checksum,
-      uploadedBy:       uploadedBy ?? null,
-      folderId:         resolvedFolderId,
-      tags:             [],
-      transcodeStatus:  kind === 'video' ? 'pending' : null,
+      uploadedBy: uploadedBy ?? null,
+      folderId: resolvedFolderId,
+      tags: [],
+      transcodeStatus: kind === 'video' ? 'pending' : null,
     });
     await this.assetRepo.save(asset);
 
@@ -156,10 +251,84 @@ export class MediaService {
     return { ...asset, url, mediaType: kind };
   }
 
+  /**
+   * Fetches an image from an arbitrary URL and persists it through the same
+   * pipeline as a manual upload — used by server-side importers (e.g. the
+   * product importer) so ingested images are indistinguishable from
+   * uploaded ones. Never throws for a per-image failure — returns null so a
+   * batch of imports can degrade gracefully instead of aborting as a unit.
+   */
+  async ingestFromUrl(
+    sourceUrl: string,
+    opts: {
+      altText?: string;
+      uploadedBy?: string;
+      folderId?: string | null;
+    } = {},
+  ): Promise<(MediaAsset & { url: string; mediaType: MediaKind }) | null> {
+    const shortUrl =
+      sourceUrl.length > 150 ? `${sourceUrl.slice(0, 150)}…` : sourceUrl;
+    try {
+      const res = await fetch(sourceUrl, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) {
+        this.logger.warn(
+          `ingestFromUrl got HTTP ${res.status} for ${shortUrl}`,
+        );
+        return null;
+      }
+      const contentType =
+        res.headers.get('content-type')?.split(';')[0]?.trim() ?? '';
+      if (!ALLOWED_IMAGE_MIME_TYPES.includes(contentType)) {
+        this.logger.warn(
+          `ingestFromUrl got unsupported content-type "${contentType}" for ${shortUrl}`,
+        );
+        return null;
+      }
+      const arrayBuf = await res.arrayBuffer();
+      if (arrayBuf.byteLength === 0 || arrayBuf.byteLength > MAX_IMAGE_BYTES) {
+        this.logger.warn(
+          `ingestFromUrl got ${arrayBuf.byteLength} bytes (outside allowed range) for ${shortUrl}`,
+        );
+        return null;
+      }
+      const buffer = Buffer.from(arrayBuf);
+      const filename = deriveFilenameFromUrl(sourceUrl, contentType);
+      return await this.persistBuffer(
+        buffer,
+        filename,
+        contentType,
+        opts.altText,
+        opts.uploadedBy,
+        opts.folderId,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `ingestFromUrl failed for ${shortUrl}: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
   // ── List ──────────────────────────────────────────────────────────────────
 
-  async list(opts: MediaListOptions = {}): Promise<{ items: Array<MediaAsset & { url: string; usageCount: number; mediaType: MediaKind }>; total: number }> {
-    const { search, mimeType, mediaType, tag, folderId, folderSet, limit = 48, offset = 0 } = opts;
+  async list(opts: MediaListOptions = {}): Promise<{
+    items: Array<
+      MediaAsset & { url: string; usageCount: number; mediaType: MediaKind }
+    >;
+    total: number;
+  }> {
+    const {
+      search,
+      mimeType,
+      mediaType,
+      tag,
+      folderId,
+      folderSet,
+      limit = 48,
+      offset = 0,
+    } = opts;
 
     const qb = this.assetRepo
       .createQueryBuilder('a')
@@ -167,10 +336,14 @@ export class MediaService {
       .take(limit)
       .skip(offset);
 
-    if (search)    qb.andWhere('a.originalFilename ILIKE :q',    { q: `%${search}%` });
-    if (mimeType)  qb.andWhere('a.mimeType = :mimeType',         { mimeType });
-    if (mediaType) qb.andWhere('a.mimeType ILIKE :mediaTypePfx', { mediaTypePfx: `${mediaType}/%` });
-    if (tag)       qb.andWhere(':tag = ANY(a.tags)',             { tag });
+    if (search)
+      qb.andWhere('a.originalFilename ILIKE :q', { q: `%${search}%` });
+    if (mimeType) qb.andWhere('a.mimeType = :mimeType', { mimeType });
+    if (mediaType)
+      qb.andWhere('a.mimeType ILIKE :mediaTypePfx', {
+        mediaTypePfx: `${mediaType}/%`,
+      });
+    if (tag) qb.andWhere(':tag = ANY(a.tags)', { tag });
 
     if (folderSet) {
       if (folderId === null || folderId === '') {
@@ -182,9 +355,11 @@ export class MediaService {
 
     const [assets, total] = await qb.getManyAndCount();
 
-    const urlMap = await this.urls.resolveBatch(assets.map(a => a.storageKey));
+    const urlMap = await this.urls.resolveBatch(
+      assets.map((a) => a.storageKey),
+    );
 
-    const ids = assets.map(a => a.id);
+    const ids = assets.map((a) => a.id);
     const usageCounts = ids.length
       ? await this.usageRepo
           .createQueryBuilder('u')
@@ -194,14 +369,16 @@ export class MediaService {
           .groupBy('u.assetId')
           .getRawMany()
       : [];
-    const countMap = new Map(usageCounts.map(r => [r.assetId as string, parseInt(r.cnt, 10)]));
+    const countMap = new Map(
+      usageCounts.map((r) => [r.assetId as string, parseInt(r.cnt, 10)]),
+    );
 
     return {
-      items: assets.map(a => ({
+      items: assets.map((a) => ({
         ...a,
-        url:        urlMap.get(a.storageKey) ?? '',
+        url: urlMap.get(a.storageKey) ?? '',
         usageCount: countMap.get(a.id) ?? 0,
-        mediaType:  getMediaKind(a.mimeType),
+        mediaType: getMediaKind(a.mimeType),
       })),
       total,
     };
@@ -210,12 +387,16 @@ export class MediaService {
   /** Batch-loads assets by storage key — used to enrich product media items (e.g. video duration/mimeType). */
   async findByStorageKeys(keys: string[]): Promise<MediaAsset[]> {
     if (!keys.length) return [];
-    return this.assetRepo.find({ where: [...new Set(keys)].map(storageKey => ({ storageKey })) });
+    return this.assetRepo.find({
+      where: [...new Set(keys)].map((storageKey) => ({ storageKey })),
+    });
   }
 
   // ── Single ────────────────────────────────────────────────────────────────
 
-  async findById(id: string): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
+  async findById(
+    id: string,
+  ): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
     const asset = await this.assetRepo.findOneBy({ id });
     if (!asset) throw new NotFoundException('Media asset not found');
     const url = await this.urls.resolve(asset.storageKey);
@@ -226,15 +407,20 @@ export class MediaService {
 
   async updateMetadata(
     id: string,
-    dto: { altText?: string; title?: string; tags?: string[]; folderId?: string | null },
+    dto: {
+      altText?: string;
+      title?: string;
+      tags?: string[];
+      folderId?: string | null;
+    },
   ): Promise<MediaAsset & { url: string; mediaType: MediaKind }> {
     const asset = await this.assetRepo.findOneBy({ id });
     if (!asset) throw new NotFoundException('Media asset not found');
 
-    if (dto.altText   !== undefined) asset.altText  = dto.altText;
-    if (dto.title     !== undefined) asset.title    = dto.title ?? null;
-    if (dto.tags      !== undefined) asset.tags     = dto.tags;
-    if ('folderId' in dto)           asset.folderId = dto.folderId ?? null;
+    if (dto.altText !== undefined) asset.altText = dto.altText;
+    if (dto.title !== undefined) asset.title = dto.title ?? null;
+    if (dto.tags !== undefined) asset.tags = dto.tags;
+    if ('folderId' in dto) asset.folderId = dto.folderId ?? null;
     await this.assetRepo.save(asset);
 
     const url = await this.urls.resolve(asset.storageKey);
@@ -265,7 +451,8 @@ export class MediaService {
       );
     }
 
-    const refs = await this.assetRepo.manager.query<{ cnt: string }[]>(`
+    const refs = await this.assetRepo.manager.query<{ cnt: string }[]>(
+      `
       SELECT COUNT(*) AS cnt FROM (
         SELECT 1 FROM shop_products           WHERE "featuredImageKey" = $1 AND "deletedAt" IS NULL
         UNION ALL
@@ -284,7 +471,9 @@ export class MediaService {
         UNION ALL
         SELECT 1 FROM shop_payment_types      WHERE "iconKey"  = $1
       ) refs
-    `, [asset.storageKey]);
+    `,
+      [asset.storageKey],
+    );
     if (parseInt(refs[0].cnt, 10) > 0) {
       throw new ConflictException(
         'Asset is referenced by commerce entities and cannot be deleted. Remove all references first.',
@@ -328,19 +517,23 @@ export class MediaService {
       )
       .distinctOn(['a."folder_id"'])
       .where('a."folder_id" IS NOT NULL')
-      .andWhere(`(a."mimeType" LIKE 'image/%' OR a."autoPosterKey" IS NOT NULL)`)
+      .andWhere(
+        `(a."mimeType" LIKE 'image/%' OR a."autoPosterKey" IS NOT NULL)`,
+      )
       .orderBy('a."folder_id"')
       .addOrderBy('a."createdAt"', 'DESC')
       .getRawMany<{ folderId: string; key: string | null }>();
 
-    const keys = thumbs.map(t => t.key).filter((k): k is string => !!k);
+    const keys = thumbs.map((t) => t.key).filter((k): k is string => !!k);
     const urlMap = await this.urls.resolveBatch(keys);
     const thumbMap = new Map(
-      thumbs.map(t => [t.folderId, (t.key && urlMap.get(t.key)) || null]),
+      thumbs.map((t) => [t.folderId, (t.key && urlMap.get(t.key)) || null]),
     );
 
-    const countMap = new Map(counts.map(r => [r.folderId, parseInt(r.count, 10)]));
-    return folders.map(f => ({
+    const countMap = new Map(
+      counts.map((r) => [r.folderId, parseInt(r.count, 10)]),
+    );
+    return folders.map((f) => ({
       ...f,
       assetCount: countMap.get(f.id) ?? 0,
       thumbnailUrl: thumbMap.get(f.id) ?? null,
@@ -350,7 +543,9 @@ export class MediaService {
   async createFolder(
     name: string,
     parentId?: string | null,
-  ): Promise<MediaFolder & { assetCount: number; thumbnailUrl: string | null }> {
+  ): Promise<
+    MediaFolder & { assetCount: number; thumbnailUrl: string | null }
+  > {
     if (parentId) {
       const parent = await this.folderRepo.findOneBy({ id: parentId });
       if (!parent) throw new NotFoundException('Parent folder not found');
@@ -364,12 +559,16 @@ export class MediaService {
   async renameFolder(
     id: string,
     name: string,
-  ): Promise<MediaFolder & { assetCount: number; thumbnailUrl: string | null }> {
+  ): Promise<
+    MediaFolder & { assetCount: number; thumbnailUrl: string | null }
+  > {
     const folder = await this.folderRepo.findOneBy({ id });
     if (!folder) throw new NotFoundException('Folder not found');
     folder.name = name.trim();
     await this.folderRepo.save(folder);
-    const [all] = await this.listFolders().then(list => [list.find(f => f.id === id)]);
+    const [all] = await this.listFolders().then((list) => [
+      list.find((f) => f.id === id),
+    ]);
     return all ?? { ...folder, assetCount: 0, thumbnailUrl: null };
   }
 
@@ -396,36 +595,58 @@ export class MediaService {
 
   async trackUsage(assetId: string, dto: TrackUsageDto): Promise<MediaUsage> {
     const existing = await this.usageRepo.findOne({
-      where: { assetId, entityType: dto.entityType, entityId: dto.entityId, field: dto.field },
+      where: {
+        assetId,
+        entityType: dto.entityType,
+        entityId: dto.entityId,
+        field: dto.field,
+      },
     });
     if (existing) return existing;
     const usage = this.usageRepo.create({ assetId, ...dto });
     return this.usageRepo.save(usage);
   }
 
-  async removeUsage(assetId: string, entityType: MediaEntityType, entityId: string, field: string): Promise<void> {
+  async removeUsage(
+    assetId: string,
+    entityType: MediaEntityType,
+    entityId: string,
+    field: string,
+  ): Promise<void> {
     await this.usageRepo.delete({ assetId, entityType, entityId, field });
   }
 
   async getUsage(assetId: string): Promise<MediaUsage[]> {
-    return this.usageRepo.find({ where: { assetId }, order: { createdAt: 'DESC' } });
+    return this.usageRepo.find({
+      where: { assetId },
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async syncEntityUsages(
     entityType: MediaEntityType,
-    entityId:   string,
+    entityId: string,
     storageKeys: Array<{ key: string; field: string }>,
   ): Promise<void> {
     await this.usageRepo.delete({ entityType, entityId });
     if (!storageKeys.length) return;
 
-    const uniqueKeys = [...new Set(storageKeys.map(s => s.key))];
-    const assets = await this.assetRepo.find({ where: uniqueKeys.map(k => ({ storageKey: k })) });
-    const keyToId = new Map(assets.map(a => [a.storageKey, a.id]));
+    const uniqueKeys = [...new Set(storageKeys.map((s) => s.key))];
+    const assets = await this.assetRepo.find({
+      where: uniqueKeys.map((k) => ({ storageKey: k })),
+    });
+    const keyToId = new Map(assets.map((a) => [a.storageKey, a.id]));
 
     const records = storageKeys
       .filter(({ key }) => keyToId.has(key))
-      .map(({ key, field }) => this.usageRepo.create({ assetId: keyToId.get(key)!, entityType, entityId, field }));
+      .map(({ key, field }) =>
+        this.usageRepo.create({
+          assetId: keyToId.get(key)!,
+          entityType,
+          entityId,
+          field,
+        }),
+      );
 
     if (records.length) await this.usageRepo.save(records);
   }
@@ -433,38 +654,66 @@ export class MediaService {
 
 // ── Dimension extraction ──────────────────────────────────────────────────────
 
-async function extractImageDimensions(buf: Buffer, mime: string): Promise<{ width: number | null; height: number | null }> {
+async function extractImageDimensions(
+  buf: Buffer,
+  mime: string,
+): Promise<{ width: number | null; height: number | null }> {
   try {
     if (mime === 'image/png') {
-      if (buf.length >= 24) return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+      if (buf.length >= 24)
+        return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
     } else if (mime === 'image/jpeg') {
       let i = 2;
       while (i < buf.length - 8) {
-        if (buf[i] !== 0xFF) break;
+        if (buf[i] !== 0xff) break;
         const marker = buf[i + 1];
-        const len    = buf.readUInt16BE(i + 2);
-        if ((marker >= 0xC0 && marker <= 0xC3) || marker === 0xC9 || marker === 0xCA) {
-          return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+        const len = buf.readUInt16BE(i + 2);
+        if (
+          (marker >= 0xc0 && marker <= 0xc3) ||
+          marker === 0xc9 ||
+          marker === 0xca
+        ) {
+          return {
+            height: buf.readUInt16BE(i + 5),
+            width: buf.readUInt16BE(i + 7),
+          };
         }
         i += 2 + len;
       }
     } else if (mime === 'image/webp') {
-      if (buf.length >= 30 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+      if (
+        buf.length >= 30 &&
+        buf.toString('ascii', 0, 4) === 'RIFF' &&
+        buf.toString('ascii', 8, 12) === 'WEBP'
+      ) {
         const chunk = buf.toString('ascii', 12, 16);
         if (chunk === 'VP8 ' && buf.length >= 30) {
-          return { width: (buf[26] | (buf[27] << 8)) & 0x3FFF, height: (buf[28] | (buf[29] << 8)) & 0x3FFF };
+          return {
+            width: (buf[26] | (buf[27] << 8)) & 0x3fff,
+            height: (buf[28] | (buf[29] << 8)) & 0x3fff,
+          };
         } else if (chunk === 'VP8L' && buf.length >= 25) {
           const bits = buf.readUInt32LE(21);
-          return { width: (bits & 0x3FFF) + 1, height: ((bits >> 14) & 0x3FFF) + 1 };
+          return {
+            width: (bits & 0x3fff) + 1,
+            height: ((bits >> 14) & 0x3fff) + 1,
+          };
         }
       }
     }
-  } catch { /* Non-fatal */ }
+  } catch {
+    /* Non-fatal */
+  }
   return { width: null, height: null };
 }
 
 /** Locates a top-level MP4/ISO-BMFF box of the given type within [start, end), returning its content range (after the header). */
-function findMp4Box(buf: Buffer, type: string, start: number, end: number): { start: number; end: number } | null {
+function findMp4Box(
+  buf: Buffer,
+  type: string,
+  start: number,
+  end: number,
+): { start: number; end: number } | null {
   let offset = start;
   while (offset + 8 <= end) {
     let size = buf.readUInt32BE(offset);
@@ -478,24 +727,45 @@ function findMp4Box(buf: Buffer, type: string, start: number, end: number): { st
       size = end - offset;
     }
     if (size < headerSize || offset + size > end) break;
-    if (boxType === type) return { start: offset + headerSize, end: offset + size };
+    if (boxType === type)
+      return { start: offset + headerSize, end: offset + size };
     offset += size;
   }
   return null;
 }
 
-async function extractVideoMetadata(buf: Buffer, mime: string): Promise<{ width: number | null; height: number | null; durationSeconds: number | null }> {
+async function extractVideoMetadata(
+  buf: Buffer,
+  mime: string,
+): Promise<{
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+}> {
   try {
     if (mime === 'video/mp4') {
       const moov = findMp4Box(buf, 'moov', 0, buf.length);
       const mvhd = moov && findMp4Box(buf, 'mvhd', moov.start, moov.end);
       if (mvhd) {
         const version = buf.readUInt8(mvhd.start);
-        const timescale = version === 1 ? buf.readUInt32BE(mvhd.start + 20) : buf.readUInt32BE(mvhd.start + 12);
-        const duration  = version === 1 ? Number(buf.readBigUInt64BE(mvhd.start + 24)) : buf.readUInt32BE(mvhd.start + 16);
-        if (timescale > 0) return { width: null, height: null, durationSeconds: Math.round(duration / timescale) };
+        const timescale =
+          version === 1
+            ? buf.readUInt32BE(mvhd.start + 20)
+            : buf.readUInt32BE(mvhd.start + 12);
+        const duration =
+          version === 1
+            ? Number(buf.readBigUInt64BE(mvhd.start + 24))
+            : buf.readUInt32BE(mvhd.start + 16);
+        if (timescale > 0)
+          return {
+            width: null,
+            height: null,
+            durationSeconds: Math.round(duration / timescale),
+          };
       }
     }
-  } catch { /* Non-fatal */ }
+  } catch {
+    /* Non-fatal */
+  }
   return { width: null, height: null, durationSeconds: null };
 }

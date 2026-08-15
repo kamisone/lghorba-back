@@ -10,6 +10,7 @@ import { TranslationsModule } from '../translations/translations.module';
 import { AntiSpamModule } from '../common/anti-spam/anti-spam.module';
 import { MetaCapiModule } from '../marketing/meta-capi/meta-capi.module';
 import { BehaviorTrackingModule } from './behavior/behavior-tracking.module';
+import { AiModule } from '../ai/ai.module';
 
 // Entities
 import { Product } from './entities/product.entity';
@@ -232,6 +233,7 @@ const ENTITIES = [
     AntiSpamModule,
     MetaCapiModule,
     BehaviorTrackingModule,
+    AiModule,
   ],
   controllers: [
     ProductAdminController,

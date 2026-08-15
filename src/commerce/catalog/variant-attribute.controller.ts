@@ -1,23 +1,46 @@
 import {
-  Body, ConflictException, Controller, Delete, Get, HttpCode, Inject, Param, Patch, Post, Query,
+  Body,
+  ConflictException,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { QueryFailedError, Repository } from 'typeorm';
+import { z } from 'zod';
 import { Public } from '../../auth/public.decorator';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
+import { TranslationService } from '../../ai/translation.service';
 import { VariantAttribute } from '../entities/variant-attribute.entity';
 import { VariationOptionValue } from '../entities/variation-option-value.entity';
 import { TranslationsService } from '../../translations/translations.service';
-import { ET_SHOP_VARIANT_ATTR, ET_SHOP_VARIATION_OPTION } from '../../common/entity-types';
+import {
+  ET_SHOP_VARIANT_ATTR,
+  ET_SHOP_VARIATION_OPTION,
+} from '../../common/entity-types';
+
+const TranslateTextSchema = z.object({ text: z.string().min(1).max(200) });
 
 /** Translate a Postgres unique-violation into a friendly 409, instead of an opaque 500. */
 function rethrowAsConflict(err: unknown): never {
   if (err instanceof QueryFailedError) {
-    const driverError = (err as unknown as { driverError?: { code?: string; constraint?: string } }).driverError;
+    const driverError = (
+      err as unknown as { driverError?: { code?: string; constraint?: string } }
+    ).driverError;
     if (driverError?.code === '23505') {
       if (driverError.constraint === 'UQ_shop_va_admin_label') {
-        throw new ConflictException('Internal label must be unique — choose a different value.');
+        throw new ConflictException(
+          'Internal label must be unique — choose a different value.',
+        );
       }
-      throw new ConflictException('A variant attribute with this value already exists.');
+      throw new ConflictException(
+        'A variant attribute with this value already exists.',
+      );
     }
   }
   throw err;
@@ -30,6 +53,7 @@ export class VariantAttributeAdminController {
     private readonly attrRepo: Repository<VariantAttribute>,
     @InjectRepository(VariationOptionValue)
     private readonly valueRepo: Repository<VariationOptionValue>,
+    private readonly translation: TranslationService,
   ) {}
 
   @Get()
@@ -50,13 +74,19 @@ export class VariantAttributeAdminController {
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: Partial<VariantAttribute>) {
+  async update(
+    @Param('id') id: string,
+    @Body() dto: Partial<VariantAttribute>,
+  ) {
     try {
       await this.attrRepo.update(id, dto);
     } catch (err) {
       rethrowAsConflict(err);
     }
-    return this.attrRepo.findOneOrFail({ where: { id }, relations: ['optionValues'] });
+    return this.attrRepo.findOneOrFail({
+      where: { id },
+      relations: ['optionValues'],
+    });
   }
 
   @Delete(':id')
@@ -89,6 +119,29 @@ export class VariantAttributeAdminController {
   async removeValue(@Param('valueId') valueId: string) {
     await this.valueRepo.delete(valueId);
   }
+
+  // ── AI translation ───────────────────────────────────────────────────────
+  // The admin writes the attribute name / option display value in English,
+  // then clicks "Generate" to get French (the shop's base language) plus the
+  // other overlay languages back.
+
+  @Post('sections/name/translate')
+  @HttpCode(200)
+  translateNameSection(
+    @Body(new ZodValidationPipe(TranslateTextSchema))
+    dto: z.infer<typeof TranslateTextSchema>,
+  ) {
+    return this.translation.translateAttributeName(dto.text);
+  }
+
+  @Post('sections/display-value/translate')
+  @HttpCode(200)
+  translateDisplayValueSection(
+    @Body(new ZodValidationPipe(TranslateTextSchema))
+    dto: z.infer<typeof TranslateTextSchema>,
+  ) {
+    return this.translation.translateOptionDisplayValue(dto.text);
+  }
 }
 
 @Public()
@@ -110,11 +163,17 @@ export class VariantAttributePublicController {
       .addOrderBy('v.sortOrder', 'ASC')
       .getMany();
 
-    const translated = await this.translationsService.maybeApply(attrs, ET_SHOP_VARIANT_ATTR, lang);
+    const translated = await this.translationsService.maybeApply(
+      attrs,
+      ET_SHOP_VARIANT_ATTR,
+      lang,
+    );
     for (const attr of translated) {
       if (attr.optionValues?.length) {
         attr.optionValues = await this.translationsService.maybeApply(
-          attr.optionValues, ET_SHOP_VARIATION_OPTION, lang,
+          attr.optionValues,
+          ET_SHOP_VARIATION_OPTION,
+          lang,
         );
       }
     }

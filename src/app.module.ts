@@ -154,6 +154,7 @@ import { MediaUsage } from './media/media-usage.entity';
 import { MediaModule } from './media/media.module';
 import { VendorModule } from './commerce/vendor/vendor.module';
 import { MeilisearchModule } from './meilisearch/meilisearch.module';
+import { IntegrationCredential } from './integration-credentials/integration-credential.entity';
 
 import { config } from 'dotenv';
 
@@ -270,6 +271,7 @@ config();
         DocumentLine,
         CommerceNotificationLog,
         CheckoutSession,
+        IntegrationCredential,
       ],
       migrations: [__dirname + '/migrations/*.{ts,js}'],
       migrationsRun: true,

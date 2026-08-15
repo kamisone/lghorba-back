@@ -43,6 +43,7 @@
     "@stripe/stripe-js": "^9.3.1",
     "bcrypt": "^6.0.0",
     "bullmq": "^5.76.4",
+    "cheerio": "^1.2.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
     "compression": "^1.8.1",
@@ -64,6 +65,7 @@
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "stripe": "^22.1.0",
+    "translate": "^3.1.0",
     "typeorm": "^0.3.28",
     "uuid": "^14.0.0",
     "zod": "^4.3.6"
