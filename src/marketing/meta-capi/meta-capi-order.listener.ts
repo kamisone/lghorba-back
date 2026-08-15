@@ -12,6 +12,7 @@ import {
 import { MetaCapiService } from './meta-capi.service';
 import { BehaviorTrackingService } from '../../commerce/behavior/behavior-tracking.service';
 import { GeoIpService } from '../../commerce/behavior/geo-ip.service';
+import { deviceFromUserAgent } from '../../common/utils/device.util';
 
 /**
  * Meta Conversions API — reacts to the same domain events ShopOrderEventsListener
@@ -77,6 +78,7 @@ export class MetaCapiOrderListener {
         countryCode: this.geoIp.countryFromIp(order.clientIpAddress),
         visitorHash: this.geoIp.visitorHashFromIp(order.clientIpAddress),
         clientIp: order.clientIpAddress,
+        device: deviceFromUserAgent(order.clientUserAgent),
       };
       if (startedProductIds.length) {
         for (const productId of startedProductIds) {

@@ -6,6 +6,7 @@ import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import { BehaviorTrackingService } from './behavior-tracking.service';
 import { GeoIpService } from './geo-ip.service';
 import { resolveClientIp, ORIGINAL_CLIENT_IP_HEADER } from '../../common/utils/client-ip.util';
+import { deviceFromUserAgent } from '../../common/utils/device.util';
 
 // Restricted to signals with no natural backend mutation to hook into
 // (product_view, search) — cart/checkout events are logged from their own
@@ -79,6 +80,7 @@ export class BehaviorTrackingController {
       );
     }
 
+    const userAgent = (req.headers['user-agent'] as string | undefined) ?? '';
     await this.behaviorTracking.record(dto.eventType, {
       cartToken: dto.cartToken,
       productId: dto.productId,
@@ -90,7 +92,8 @@ export class BehaviorTrackingController {
       // Always a string (possibly '') so record() knows to run the bot
       // check — this is the one caller of record() that has a real request
       // to check a User-Agent against.
-      userAgent: (req.headers['user-agent'] as string | undefined) ?? '',
+      userAgent,
+      device: deviceFromUserAgent(userAgent),
     });
   }
 }

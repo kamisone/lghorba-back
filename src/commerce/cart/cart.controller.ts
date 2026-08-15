@@ -45,7 +45,13 @@ export class CartController {
     @Body('quantity') quantity: number,
     @Req() req: Request,
   ) {
-    return this.carts.updateItem(token, itemId, quantity, resolveClientIp(req));
+    return this.carts.updateItem(
+      token,
+      itemId,
+      quantity,
+      resolveClientIp(req),
+      (req.headers['user-agent'] as string) ?? null,
+    );
   }
 
   @Delete(':token/items/:itemId')
@@ -54,7 +60,12 @@ export class CartController {
     @Param('itemId') itemId: string,
     @Req() req: Request,
   ) {
-    return this.carts.removeItem(token, itemId, resolveClientIp(req));
+    return this.carts.removeItem(
+      token,
+      itemId,
+      resolveClientIp(req),
+      (req.headers['user-agent'] as string) ?? null,
+    );
   }
 
   @Post(':token/validate-coupon')

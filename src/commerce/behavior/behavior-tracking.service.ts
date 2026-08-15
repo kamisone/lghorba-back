@@ -24,6 +24,8 @@ interface RecordInput {
   clientIp?: string | null;
   /** Tested against the admin bot-UA pattern list. Never persisted. */
   userAgent?: string | null;
+  /** 'mobile' | 'desktop', classified from a User-Agent by the caller. */
+  device?: 'mobile' | 'desktop' | null;
 }
 
 @Injectable()
@@ -76,6 +78,7 @@ export class BehaviorTrackingService {
           countryCode: data.countryCode ?? null,
           visitorHash: data.visitorHash ?? null,
           clientIp: data.clientIp ?? null,
+          device: data.device ?? null,
         }),
       );
     } catch (err) {

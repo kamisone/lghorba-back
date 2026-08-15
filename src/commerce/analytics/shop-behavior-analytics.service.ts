@@ -649,6 +649,8 @@ export class ShopBehaviorAnalyticsService {
       searchQuery: string | null;
       /** Null for rows written before this column existed. */
       clientIp: string | null;
+      /** 'mobile' | 'desktop', null when no User-Agent was available to classify. */
+      device: string | null;
     }>
   > {
     const { window, eventTypes, filter = {}, limit = 100, productScope = 'all' } = opts;
@@ -718,6 +720,7 @@ export class ShopBehaviorAnalyticsService {
       quantity: e.quantity,
       searchQuery: e.searchQuery,
       clientIp: e.clientIp,
+      device: e.device,
     }));
   }
 

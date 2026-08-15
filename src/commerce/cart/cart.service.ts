@@ -30,6 +30,7 @@ import {
 import { MetaCapiService } from '../../marketing/meta-capi/meta-capi.service';
 import { BehaviorTrackingService } from '../behavior/behavior-tracking.service';
 import { GeoIpService } from '../behavior/geo-ip.service';
+import { deviceFromUserAgent } from '../../common/utils/device.util';
 
 @Injectable()
 export class CartService {
@@ -292,6 +293,7 @@ export class CartService {
       countryCode: this.geoIp.countryFromIp(requestMeta?.ip),
       visitorHash: this.geoIp.visitorHashFromIp(requestMeta?.ip),
       clientIp: requestMeta?.ip,
+      device: deviceFromUserAgent(requestMeta?.userAgent),
     });
 
     // Schedule abandonment email — delay 1h, jobId ensures only one pending per cart
@@ -318,8 +320,9 @@ export class CartService {
     itemId: string,
     quantity: number,
     clientIp?: string | null,
+    userAgent?: string | null,
   ): Promise<any> {
-    if (quantity < 1) return this.removeItem(token, itemId, clientIp);
+    if (quantity < 1) return this.removeItem(token, itemId, clientIp, userAgent);
 
     const cart = await this.ensureActiveCart(token);
     const item = cart.items.find((i: CartItem) => i.id === itemId);
@@ -369,13 +372,19 @@ export class CartService {
       countryCode: this.geoIp.countryFromIp(clientIp),
       visitorHash: this.geoIp.visitorHashFromIp(clientIp),
       clientIp,
+      device: deviceFromUserAgent(userAgent),
     });
     return this.getOrCreate(token);
   }
 
   // ── Remove item ────────────────────────────────────────────────────────────
 
-  async removeItem(token: string, itemId: string, clientIp?: string | null): Promise<any> {
+  async removeItem(
+    token: string,
+    itemId: string,
+    clientIp?: string | null,
+    userAgent?: string | null,
+  ): Promise<any> {
     const cart = await this.ensureActiveCart(token);
     const item = cart.items.find((i: CartItem) => i.id === itemId);
     if (!item) throw new NotFoundException('Cart item not found');
@@ -387,6 +396,7 @@ export class CartService {
       countryCode: this.geoIp.countryFromIp(clientIp),
       visitorHash: this.geoIp.visitorHashFromIp(clientIp),
       clientIp,
+      device: deviceFromUserAgent(userAgent),
     });
     return this.getOrCreate(token);
   }

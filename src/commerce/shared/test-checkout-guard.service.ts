@@ -6,6 +6,7 @@ import { OrderItem } from '../entities/order-item.entity';
 import { Product } from '../entities/product.entity';
 import { BehaviorTrackingService } from '../behavior/behavior-tracking.service';
 import { GeoIpService } from '../behavior/geo-ip.service';
+import { deviceFromUserAgent } from '../../common/utils/device.util';
 import { testCheckoutBlockedException } from './test-product';
 
 /**
@@ -80,6 +81,7 @@ export class TestCheckoutGuard {
       // signal can be geolocated without plumbing the request down.
       const countryCode = this.geoIp.countryFromIp(order.clientIpAddress);
       const visitorHash = this.geoIp.visitorHashFromIp(order.clientIpAddress);
+      const device = deviceFromUserAgent(order.clientUserAgent);
       for (const productId of productIds) {
         await this.behaviorTracking.record('test_checkout_blocked', {
           cartToken: order.cartToken,
@@ -88,6 +90,7 @@ export class TestCheckoutGuard {
           countryCode,
           visitorHash,
           clientIp: order.clientIpAddress,
+          device,
         });
       }
     } catch (err) {

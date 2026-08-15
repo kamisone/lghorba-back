@@ -76,5 +76,16 @@ export class ShopBehaviorEvent {
    */
   @Column({ type: 'varchar', length: 45, nullable: true }) clientIp: string | null;
 
+  /**
+   * 'mobile' | 'desktop', classified from the request's User-Agent at write
+   * time (see device.util.ts). NULL when no User-Agent was available (e.g.
+   * server-originated events with no request in scope) or on rows written
+   * before this column existed.
+   */
+  @Column({ type: 'varchar', length: 10, nullable: true }) device:
+    | 'mobile'
+    | 'desktop'
+    | null;
+
   @CreateDateColumn() createdAt: Date;
 }
