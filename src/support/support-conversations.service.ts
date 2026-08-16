@@ -12,6 +12,33 @@ function sanitize(raw: string): string {
   return raw.replace(/<[^>]*>/g, '').replace(/[<>]/g, '').trim().slice(0, MAX_MESSAGE_LENGTH);
 }
 
+// High enough that a real cart's line items are never trimmed — this only
+// exists to bound a hostile/malformed websocket payload's storage size.
+const MAX_CHECKOUT_PRODUCTS = 50;
+
+/**
+ * Client-supplied over the websocket, same trust level as `pageUrl` (also
+ * unvalidated client input rendered as a link in the admin panel) — just
+ * capped in shape/size so a malformed or hostile payload can't bloat the row.
+ */
+function sanitizeCheckoutProducts(
+  raw: Array<{ title: string; url: string }> | undefined,
+): Array<{ title: string; url: string }> | null {
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const cleaned = raw
+    .filter(
+      (p): p is { title: string; url: string } =>
+        !!p && typeof p.title === 'string' && typeof p.url === 'string',
+    )
+    .map((p) => ({
+      title: sanitize(p.title).slice(0, 200),
+      url: p.url.trim().slice(0, 500),
+    }))
+    .filter((p) => p.title && p.url)
+    .slice(0, MAX_CHECKOUT_PRODUCTS);
+  return cleaned.length ? cleaned : null;
+}
+
 export interface ReadResult {
   messageIds: string[];
   seenAt: Date;
@@ -80,12 +107,14 @@ export class SupportConversationsService {
     content: string,
     clientId?: string,
     pageUrl?: string,
+    checkoutProducts?: Array<{ title: string; url: string }>,
   ): Promise<{ conversation: SupportConversation; message: SupportMessage & { clientId?: string } }> {
     const conversation = await this.convRepo.save(
       this.convRepo.create({
         guestToken,
         guestName: guestName ?? null,
         pageUrl:   pageUrl ?? null,
+        checkoutProducts: sanitizeCheckoutProducts(checkoutProducts),
         status:    ConversationStatus.WAITING_ADMIN,
       }),
     );

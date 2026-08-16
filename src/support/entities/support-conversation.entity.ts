@@ -27,6 +27,15 @@ export class SupportConversation {
   @Column({ nullable: true })
   pageUrl: string | null;
 
+  /**
+   * Product(s) the guest had in their cart when the conversation was opened
+   * from the checkout page — `pageUrl` alone is just "/shop/checkout" there,
+   * which tells an admin nothing about what the customer is actually buying.
+   * Captured once at conversation creation, same as pageUrl.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  checkoutProducts: Array<{ title: string; url: string }> | null;
+
   @Column({ nullable: true })
   assignedAdminId: string | null;
 

@@ -113,7 +113,13 @@ export class SupportGateway implements OnGatewayConnection, OnGatewayDisconnect 
   @SubscribeMessage('message:send')
   async handleGuestMessage(
     @ConnectedSocket() socket: Socket,
-    @MessageBody() data: { content: string; clientId?: string; guestName?: string; pageUrl?: string },
+    @MessageBody() data: {
+      content: string;
+      clientId?: string;
+      guestName?: string;
+      pageUrl?: string;
+      checkoutProducts?: Array<{ title: string; url: string }>;
+    },
   ): Promise<{ ok: boolean; message?: unknown; clientId?: string; error?: string }> {
     if (!socket.data.guestToken) return { ok: false, error: 'NOT_JOINED' };
     if (!checkRate(socket.id))   return { ok: false, error: 'RATE_LIMITED' };
@@ -130,6 +136,7 @@ export class SupportGateway implements OnGatewayConnection, OnGatewayDisconnect 
           content,
           data.clientId,
           data.pageUrl,
+          data.checkoutProducts,
         );
         socket.data.conversationId = conversation.id;
         await socket.join(`conv:${conversation.id}`);
