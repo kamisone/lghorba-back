@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger } from 'nestjs-pino';
 // NestJS's --watch build (SWC) doesn't apply the same esModuleInterop
 // wrapping tsc does for `import x from 'y'` on a CJS `module.exports = fn`
@@ -37,9 +38,18 @@ async function bootstrap() {
   }, 60_000);
   watchdog.unref?.();
 
-  const app = await NestFactory.create(AppModule, { rawBody: true, bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true, bufferLogs: true });
   clearTimeout(watchdog);
   console.log('[boot] Nest application created');
+
+  // Express's body-parser defaults to a 100kb JSON limit — too small for
+  // legitimate admin payloads like PUT /translations/bulk, which saves every
+  // overlay-language translation for a product (title/description/story/FAQ/
+  // trust-badge text, etc.) in one request. `rawBody: true` above is still
+  // honored — this re-registers the parser, it doesn't disable raw-body
+  // capture, which the Stripe webhook signature check depends on.
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { limit: '10mb', extended: true });
 
   // Requests reach the pod through nginx (back/docker/nginx/default.conf, which
   // sets `X-Forwarded-For $proxy_add_x_forwarded_for`) and then the k8s/minikube
