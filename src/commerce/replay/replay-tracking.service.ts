@@ -19,6 +19,7 @@ import {
 import {
   computeDurationMs,
   containsLikelySensitiveData,
+  extractIncrementalEventsJson,
   sanitizeMarkers,
   sanitizePageTitle,
   sanitizePageUrl,
@@ -128,7 +129,7 @@ export class ReplayTrackingService {
         this.logger.warn(`Rejected replay batch — ${sizeBytes} bytes exceeds the per-batch cap`);
         return;
       }
-      if (containsLikelySensitiveData(json)) {
+      if (containsLikelySensitiveData(extractIncrementalEventsJson(input.events))) {
         this.logger.warn(
           `Rejected replay batch for session ${session.id} — payload matched the sensitive-data backstop`,
         );

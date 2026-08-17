@@ -1,6 +1,7 @@
 import {
   computeDurationMs,
   containsLikelySensitiveData,
+  extractIncrementalEventsJson,
   retentionCutoff,
   sanitizeMarkers,
   sanitizePageTitle,
@@ -92,6 +93,36 @@ describe('retentionCutoff', () => {
   it('subtracts N days from the reference time', () => {
     const now = new Date('2026-02-15T12:00:00.000Z');
     expect(retentionCutoff(30, now)).toEqual(new Date('2026-01-16T12:00:00.000Z'));
+  });
+});
+
+describe('extractIncrementalEventsJson', () => {
+  it('keeps only IncrementalSnapshot (type 3) events', () => {
+    const events = [
+      { type: 4, data: { href: 'https://vitecamion.com' } }, // Meta
+      { type: 2, data: { node: { id: 1 } } }, // FullSnapshot
+      { type: 3, data: { source: 5, text: 'hello' } }, // IncrementalSnapshot
+    ];
+    const out = JSON.parse(extractIncrementalEventsJson(events));
+    expect(out).toEqual([{ type: 3, data: { source: 5, text: 'hello' } }]);
+  });
+
+  it('never throws on a non-array/garbage list', () => {
+    expect(extractIncrementalEventsJson([null, 'x', 42])).toBe('[]');
+  });
+
+  // Pins the actual production bug: the storefront footer's own contact
+  // email (info@vitecamion.com) appears in every page's initial DOM, so it
+  // shows up in every session's FullSnapshot — scanning the *whole* batch
+  // rejected the FullSnapshot on every session, leaving click/scroll
+  // markers recorded (a separate code path) but the replay video always
+  // empty. This must never regress.
+  it('excludes an email that only appears in the FullSnapshot', () => {
+    const events = [
+      { type: 2, data: { text: 'contact us at info@vitecamion.com' } },
+    ];
+    const json = extractIncrementalEventsJson(events);
+    expect(containsLikelySensitiveData(json)).toBe(false);
   });
 });
 

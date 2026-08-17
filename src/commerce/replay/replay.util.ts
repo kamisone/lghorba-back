@@ -68,11 +68,34 @@ export function retentionCutoff(days: number, now: Date = new Date()): Date {
   return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
 }
 
+// rrweb EventType.IncrementalSnapshot — mutations, inputs, scroll, etc.
+// EventType.FullSnapshot (2) and Meta (4) are deliberately excluded (see
+// containsLikelySensitiveData below).
+const INCREMENTAL_SNAPSHOT_TYPE = 3;
+
+/**
+ * Serializes only the incremental-mutation events from a raw rrweb batch —
+ * the subset that can ever contain something a visitor actually typed or
+ * that changed live, as opposed to the initial full-DOM snapshot (which is
+ * the page's own static markup, not user data).
+ */
+export function extractIncrementalEventsJson(events: unknown[]): string {
+  return JSON.stringify(
+    events.filter((e) => (e as { type?: number })?.type === INCREMENTAL_SNAPSHOT_TYPE),
+  );
+}
+
 // Defense-in-depth server-side backstop behind the client's rrweb masking
-// config (maskAllInputs + blockClass/maskTextClass) — catches sensitive
-// values that end up in recorded text nodes rather than form inputs (e.g. an
-// email printed as page copy, not typed into a field), which client-side
-// input-masking alone would not cover.
+// config (maskAllInputs + blockClass/maskTextClass) — catches a customer's
+// own input leaking through as a live text/attribute mutation despite that
+// config (e.g. a masking bug, or a field that should have been tagged
+// data-sensitive but wasn't). Only ever applied to *incremental* mutations
+// (see extractIncrementalEventsJson below) — never the initial FullSnapshot,
+// which is a serialization of the page's own static DOM and is expected to
+// legitimately contain things that are email-shaped (a footer contact
+// address, for one) without being user data at all. Scanning the snapshot
+// too was tried first and rejected on every single session, because the
+// storefront footer's own contact email is present on every page.
 //
 // Deliberately NOT scanning for bare phone-number digit runs here: rrweb's
 // own event envelope always contains 13-digit epoch-millisecond timestamps
