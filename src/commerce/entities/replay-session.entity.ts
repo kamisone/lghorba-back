@@ -72,5 +72,8 @@ export class ReplaySession {
   @Column({ type: 'timestamptz', nullable: true }) endedAt: Date | null;
   @Column({ type: 'int', nullable: true }) durationMs: number | null;
 
+  /** Set the first time any admin opens this session's detail view — null means unread. */
+  @Column({ type: 'timestamptz', nullable: true }) viewedAt: Date | null;
+
   @CreateDateColumn() createdAt: Date;
 }

@@ -24,6 +24,8 @@ export interface ReplaySessionListItem {
   maxScrollPct: number;
   pageUrl: string | null;
   clientIp: string | null;
+  /** Null means no admin has opened this session's replay yet. */
+  viewedAt: Date | null;
 }
 
 @Injectable()
@@ -35,6 +37,34 @@ export class ReplayAdminService {
     @InjectRepository(Country) private readonly countryRepo: Repository<Country>,
     private readonly gcs: GcsService,
   ) {}
+
+  /**
+   * Unread-session count per product, for the "▶ Replays" badge on the
+   * test-products table. A real GROUP BY COUNT rather than listSessions'
+   * fetch-then-filter approach (that one is fine for a single product's
+   * capped list view, but would silently under-count here once a product
+   * has more sessions than the list `limit`).
+   */
+  async getUnreadCounts(
+    productIds: string[],
+    window: DateWindow,
+  ): Promise<Record<string, number>> {
+    if (!productIds.length) return {};
+    const rows = await this.sessionRepo
+      .createQueryBuilder('s')
+      .select('s.productId', 'productId')
+      .addSelect('COUNT(*)', 'count')
+      .where('s.productId IN (:...productIds)', { productIds })
+      .andWhere('s.viewedAt IS NULL')
+      .andWhere('s.startedAt >= :since', { since: window.since })
+      .andWhere('s.startedAt < :until', { until: window.until })
+      .groupBy('s.productId')
+      .getRawMany<{ productId: string; count: string }>();
+
+    const counts: Record<string, number> = {};
+    for (const r of rows) counts[r.productId] = parseInt(r.count, 10);
+    return counts;
+  }
 
   /** Sessions for one product's replay list — newest first. */
   async listSessions(
@@ -78,16 +108,28 @@ export class ReplayAdminService {
       maxScrollPct: s.maxScrollPct,
       pageUrl: s.pageUrl,
       clientIp: s.clientIp,
+      viewedAt: s.viewedAt,
     }));
   }
 
-  /** Session metadata + its timeline markers — no GCS reads, used to render the player shell + event list. */
+  /**
+   * Session metadata + its timeline markers — no GCS reads, used to render
+   * the player shell + event list. Also marks the session as viewed
+   * (first-open only, never overwritten on subsequent opens) so the list
+   * can show admins which sessions they've already looked at.
+   */
   async getSessionDetail(sessionId: string): Promise<{
     session: ReplaySession;
     markers: ReplayEvent[];
   }> {
     const session = await this.sessionRepo.findOneBy({ id: sessionId });
     if (!session) throw new NotFoundException('Replay session not found');
+
+    if (!session.viewedAt) {
+      session.viewedAt = new Date();
+      await this.sessionRepo.update(session.id, { viewedAt: session.viewedAt });
+    }
+
     const markers = await this.eventRepo.find({
       where: { sessionId },
       order: { timestampMs: 'ASC' },

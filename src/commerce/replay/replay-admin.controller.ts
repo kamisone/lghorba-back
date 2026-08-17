@@ -13,6 +13,22 @@ import { ReplayAdminService } from './replay-admin.service';
 export class ReplayAdminController {
   constructor(private readonly replayAdmin: ReplayAdminService) {}
 
+  // A distinct top-level path (not nested under sessions/:id) so it can
+  // never collide with the sessions/:id route regardless of declaration
+  // order.
+  @Get('unread-counts')
+  getUnreadCounts(
+    @Query('productIds') productIds: string,
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.replayAdmin.getUnreadCounts(
+      productIds ? productIds.split(',').filter(Boolean) : [],
+      resolveWindow({ days, startDate, endDate }),
+    );
+  }
+
   @Get('sessions')
   listSessions(
     @Query('productId') productId: string,
