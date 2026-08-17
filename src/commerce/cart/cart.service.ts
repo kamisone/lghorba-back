@@ -31,6 +31,7 @@ import { MetaCapiService } from '../../marketing/meta-capi/meta-capi.service';
 import { BehaviorTrackingService } from '../behavior/behavior-tracking.service';
 import { GeoIpService } from '../behavior/geo-ip.service';
 import { deviceFromUserAgent } from '../../common/utils/device.util';
+import { platformFromSource } from '../../common/utils/platform.util';
 
 @Injectable()
 export class CartService {
@@ -107,7 +108,12 @@ export class CartService {
     variantId: string,
     quantity: number,
     selectedOptionValueIds?: string[],
-    requestMeta?: { ip: string | null; userAgent: string | null },
+    requestMeta?: {
+      ip: string | null;
+      userAgent: string | null;
+      referrer?: string;
+      utmSource?: string;
+    },
   ): Promise<any> {
     if (quantity < 1)
       throw new BadRequestException('Quantity must be at least 1');
@@ -294,6 +300,7 @@ export class CartService {
       visitorHash: this.geoIp.visitorHashFromIp(requestMeta?.ip),
       clientIp: requestMeta?.ip,
       device: deviceFromUserAgent(requestMeta?.userAgent),
+      source: platformFromSource(requestMeta?.referrer, requestMeta?.utmSource),
     });
 
     // Schedule abandonment email — delay 1h, jobId ensures only one pending per cart
@@ -321,6 +328,8 @@ export class CartService {
     quantity: number,
     clientIp?: string | null,
     userAgent?: string | null,
+    referrer?: string,
+    utmSource?: string,
   ): Promise<any> {
     if (quantity < 1) return this.removeItem(token, itemId, clientIp, userAgent);
 
@@ -373,6 +382,7 @@ export class CartService {
       visitorHash: this.geoIp.visitorHashFromIp(clientIp),
       clientIp,
       device: deviceFromUserAgent(userAgent),
+      source: platformFromSource(referrer, utmSource),
     });
     return this.getOrCreate(token);
   }

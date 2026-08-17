@@ -28,12 +28,21 @@ export class CartController {
     @Body('variantId') variantId: string,
     @Body('quantity')  quantity: number,
     @Body('selectedOptionValueIds') selectedOptionValueIds: string[] | undefined,
+    // Visitor's first-touch referrer/utm_source, captured once client-side
+    // and resent on every cart mutation (see front/src/lib/shopBehavior.ts) —
+    // there is no per-request header equivalent to User-Agent for this: the
+    // Referer on an in-app fetch is always the current page, not the original
+    // external source.
+    @Body('referrer') referrer: string | undefined,
+    @Body('utmSource') utmSource: string | undefined,
     @Req() req: Request,
   ) {
     const userAgent = (req.headers['user-agent'] as string) ?? null;
     return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds, {
       ip: resolveClientIp(req),
       userAgent,
+      referrer,
+      utmSource,
     });
   }
 
@@ -43,6 +52,8 @@ export class CartController {
     @Param('token')  token: string,
     @Param('itemId') itemId: string,
     @Body('quantity') quantity: number,
+    @Body('referrer') referrer: string | undefined,
+    @Body('utmSource') utmSource: string | undefined,
     @Req() req: Request,
   ) {
     return this.carts.updateItem(
@@ -51,6 +62,8 @@ export class CartController {
       quantity,
       resolveClientIp(req),
       (req.headers['user-agent'] as string) ?? null,
+      referrer,
+      utmSource,
     );
   }
 

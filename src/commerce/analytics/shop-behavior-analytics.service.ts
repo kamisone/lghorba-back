@@ -651,6 +651,8 @@ export class ShopBehaviorAnalyticsService {
       clientIp: string | null;
       /** 'mobile' | 'desktop', null when no User-Agent was available to classify. */
       device: string | null;
+      /** First-touch acquisition channel (e.g. 'Instagram'), null when not captured for this event type. */
+      source: string | null;
     }>
   > {
     const { window, eventTypes, filter = {}, limit = 100, productScope = 'all' } = opts;
@@ -721,6 +723,7 @@ export class ShopBehaviorAnalyticsService {
       searchQuery: e.searchQuery,
       clientIp: e.clientIp,
       device: e.device,
+      source: e.source,
     }));
   }
 

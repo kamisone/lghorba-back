@@ -7,6 +7,7 @@ import { BehaviorTrackingService } from './behavior-tracking.service';
 import { GeoIpService } from './geo-ip.service';
 import { resolveClientIp, ORIGINAL_CLIENT_IP_HEADER } from '../../common/utils/client-ip.util';
 import { deviceFromUserAgent } from '../../common/utils/device.util';
+import { platformFromSource } from '../../common/utils/platform.util';
 
 // Restricted to signals with no natural backend mutation to hook into
 // (product_view, search) — cart/checkout events are logged from their own
@@ -19,6 +20,11 @@ const TrackBehaviorSchema = z.object({
   productId: z.string().uuid().nullish(),
   searchQuery: z.string().max(500).nullish(),
   resultCount: z.number().int().min(0).nullish(),
+  // Captured once client-side at first landing (see front/src/lib/shopBehavior.ts)
+  // and resent on every event — classified into a platform label here, not on
+  // the client, so the platform list can change without a frontend redeploy.
+  referrer: z.string().max(500).nullish(),
+  utmSource: z.string().max(100).nullish(),
 });
 type TrackBehaviorDto = z.infer<typeof TrackBehaviorSchema>;
 
@@ -94,6 +100,7 @@ export class BehaviorTrackingController {
       // to check a User-Agent against.
       userAgent,
       device: deviceFromUserAgent(userAgent),
+      source: platformFromSource(dto.referrer, dto.utmSource),
     });
   }
 }

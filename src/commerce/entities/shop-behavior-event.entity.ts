@@ -87,5 +87,14 @@ export class ShopBehaviorEvent {
     | 'desktop'
     | null;
 
+  /**
+   * First-touch acquisition channel (e.g. 'Instagram', 'Facebook', 'TikTok',
+   * 'Google', 'Other'), classified from a utm_source or the visitor's
+   * landing Referer at write time (see platform.util.ts). NULL when neither
+   * was available/captured, or on rows written before this column existed —
+   * only event types with a natural client touchpoint at landing capture it.
+   */
+  @Column({ type: 'varchar', length: 30, nullable: true }) source: string | null;
+
   @CreateDateColumn() createdAt: Date;
 }

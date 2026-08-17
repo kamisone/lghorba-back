@@ -26,6 +26,8 @@ interface RecordInput {
   userAgent?: string | null;
   /** 'mobile' | 'desktop', classified from a User-Agent by the caller. */
   device?: 'mobile' | 'desktop' | null;
+  /** First-touch acquisition channel, classified by the caller (see platform.util.ts). */
+  source?: string | null;
 }
 
 @Injectable()
@@ -79,6 +81,7 @@ export class BehaviorTrackingService {
           visitorHash: data.visitorHash ?? null,
           clientIp: data.clientIp ?? null,
           device: data.device ?? null,
+          source: data.source ?? null,
         }),
       );
     } catch (err) {
