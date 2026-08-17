@@ -10,6 +10,7 @@ import { TranslationsModule } from '../translations/translations.module';
 import { AntiSpamModule } from '../common/anti-spam/anti-spam.module';
 import { MetaCapiModule } from '../marketing/meta-capi/meta-capi.module';
 import { BehaviorTrackingModule } from './behavior/behavior-tracking.module';
+import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
 import { AiModule } from '../ai/ai.module';
 
 // Entities
@@ -113,6 +114,14 @@ import { CommerceNotificationService } from './notifications/commerce-notificati
 import { CommerceNotificationController } from './notifications/commerce-notification.controller';
 import { SmsModule } from '../sms/sms.module';
 import { PlatformSettings } from '../platform-settings/platform-settings.entity';
+import { ReplaySession } from './entities/replay-session.entity';
+import { ReplaySessionChunk } from './entities/replay-session-chunk.entity';
+import { ReplayEvent } from './entities/replay-event.entity';
+import { ReplayTrackingService } from './replay/replay-tracking.service';
+import { ReplayTrackingController } from './replay/replay-tracking.controller';
+import { ReplayAdminService } from './replay/replay-admin.service';
+import { ReplayAdminController } from './replay/replay-admin.controller';
+import { ReplayRetentionService } from './replay/replay-retention.service';
 
 // Controllers
 import { ProductAdminController } from './catalog/product-admin.controller';
@@ -211,6 +220,10 @@ const ENTITIES = [
   ShopCustomerGroup,
   // Checkout sessions
   CheckoutSession,
+  // Session replay (rrweb) — test-product landing pages only
+  ReplaySession,
+  ReplaySessionChunk,
+  ReplayEvent,
 ];
 
 @Module({
@@ -233,9 +246,12 @@ const ENTITIES = [
     AntiSpamModule,
     MetaCapiModule,
     BehaviorTrackingModule,
+    PlatformSettingsModule,
     AiModule,
   ],
   controllers: [
+    ReplayTrackingController,
+    ReplayAdminController,
     ProductAdminController,
     ProductPublicController,
     VariantStockController,
@@ -309,6 +325,9 @@ const ENTITIES = [
     CheckoutSessionService,
     CheckoutSessionCleanupService,
     CommerceNotificationService,
+    ReplayTrackingService,
+    ReplayAdminService,
+    ReplayRetentionService,
   ],
   exports: [
     ProductService,

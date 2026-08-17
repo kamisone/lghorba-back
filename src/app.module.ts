@@ -139,6 +139,9 @@ import { ShopVendorPayout } from './commerce/entities/shop-vendor-payout.entity'
 import { CommerceEventLog } from './commerce/events/commerce-event-log.entity';
 import { CommerceNotificationLog } from './commerce/notifications/commerce-notification-log.entity';
 import { CheckoutSession } from './commerce/checkout/checkout-session.entity';
+import { ReplaySession } from './commerce/entities/replay-session.entity';
+import { ReplaySessionChunk } from './commerce/entities/replay-session-chunk.entity';
+import { ReplayEvent } from './commerce/entities/replay-event.entity';
 import { VariationOptionValue } from './commerce/entities/variation-option-value.entity';
 import { Address } from './commerce/entities/address.entity';
 import { Country } from './commerce/entities/country.entity';
@@ -271,6 +274,9 @@ config();
         DocumentLine,
         CommerceNotificationLog,
         CheckoutSession,
+        ReplaySession,
+        ReplaySessionChunk,
+        ReplayEvent,
         IntegrationCredential,
       ],
       migrations: [__dirname + '/migrations/*.{ts,js}'],

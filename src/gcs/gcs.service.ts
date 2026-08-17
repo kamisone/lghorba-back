@@ -60,6 +60,12 @@ export class GcsService {
     });
   }
 
+  /** Buffers a small object fully into memory — for JSON payloads, not video/large media (use downloadToFile for those). */
+  async downloadBuffer(objectName: string): Promise<Buffer> {
+    const [buf] = await this.storage.bucket(this.bucketName).file(objectName).download();
+    return buf;
+  }
+
   async delete(objectName: string): Promise<void> {
     await this.storage.bucket(this.bucketName).file(objectName).delete({ ignoreNotFound: true });
   }
