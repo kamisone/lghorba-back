@@ -173,12 +173,37 @@ export class ShopAnalyticsController {
     @Query('productId') productId?: string,
     @Query('limit') limit?: string,
     @Query('productScope') productScope?: string,
+    @Query('device') device?: string,
+    @Query('source') source?: string,
   ) {
     return this.behaviorAnalytics.getEventDetails({
       window: resolveWindow({ days, startDate, endDate }),
       eventTypes: eventType ? eventType.split(',') : undefined,
       filter: { countryCode, continent, productId },
       limit: intParam(limit),
+      productScope: productScope === 'real' ? 'real' : 'all',
+      device: device === 'mobile' || device === 'desktop' ? device : undefined,
+      source: source || undefined,
+    });
+  }
+
+  // Distinct Source/Country values actually present for a scope — populates
+  // the event-details modal's filter dropdowns with only real options.
+  @Get('event-detail-filters')
+  eventDetailFilters(
+    @Query('eventType') eventType?: string,
+    @Query('days') days?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('countryCode') countryCode?: string,
+    @Query('continent') continent?: string,
+    @Query('productId') productId?: string,
+    @Query('productScope') productScope?: string,
+  ) {
+    return this.behaviorAnalytics.getEventDetailFilterOptions({
+      window: resolveWindow({ days, startDate, endDate }),
+      eventTypes: eventType ? eventType.split(',') : undefined,
+      filter: { countryCode, continent, productId },
       productScope: productScope === 'real' ? 'real' : 'all',
     });
   }

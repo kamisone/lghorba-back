@@ -635,6 +635,9 @@ export class ShopBehaviorAnalyticsService {
      * test-product report is already scoped by an explicit productId.
      */
     productScope?: 'real' | 'all';
+    /** Exact match against the classified device/source columns. */
+    device?: 'mobile' | 'desktop';
+    source?: string;
   }): Promise<
     Array<{
       id: string;
@@ -655,7 +658,7 @@ export class ShopBehaviorAnalyticsService {
       source: string | null;
     }>
   > {
-    const { window, eventTypes, filter = {}, limit = 100, productScope = 'all' } = opts;
+    const { window, eventTypes, filter = {}, limit = 100, productScope = 'all', device, source } = opts;
     const { since, until } = window;
 
     const codes = await this.countryCodesFor(filter);
@@ -687,6 +690,8 @@ export class ShopBehaviorAnalyticsService {
     if (filter.productId) qb.andWhere('be.productId = :pid', { pid: filter.productId });
     if (codes) qb.andWhere('be.countryCode IN (:...codes)', { codes });
     if (productScope === 'real') qb.andWhere(EXCLUDE_TEST_PRODUCTS);
+    if (device) qb.andWhere('be.device = :device', { device });
+    if (source) qb.andWhere('be.source = :source', { source });
 
     const events = await qb.getMany();
     // Re-sort for display: the query had to order by the dedupe key first.
@@ -725,6 +730,64 @@ export class ShopBehaviorAnalyticsService {
       device: e.device,
       source: e.source,
     }));
+  }
+
+  /**
+   * Distinct Source/Country values actually present for a scope — populates
+   * the event-details modal's Source and Country filter dropdowns with only
+   * options that have real rows, instead of every platform ever classified or
+   * every country in the seed list. Deliberately ignores the modal's own
+   * device/source/country selections (only the date/event/product scope), so
+   * picking one filter doesn't shrink the others' options out from under the
+   * admin mid-selection.
+   */
+  async getEventDetailFilterOptions(opts: {
+    window: DateWindow;
+    eventTypes?: string[];
+    filter?: ConversionFilter;
+    productScope?: 'real' | 'all';
+  }): Promise<{ sources: string[]; countries: Array<{ isoCode: string; name: string }> }> {
+    const { window, eventTypes, filter = {}, productScope = 'all' } = opts;
+    const { since, until } = window;
+
+    const codes = await this.countryCodesFor(filter);
+    if (codes && codes.length === 0) return { sources: [], countries: [] };
+
+    const baseQb = () => {
+      const qb = this.behaviorRepo
+        .createQueryBuilder('be')
+        .where('be.createdAt >= :since', { since })
+        .andWhere('be.createdAt < :until', { until });
+      if (eventTypes && eventTypes.length) qb.andWhere('be.eventType IN (:...ets)', { ets: eventTypes });
+      if (filter.productId) qb.andWhere('be.productId = :pid', { pid: filter.productId });
+      if (codes) qb.andWhere('be.countryCode IN (:...codes)', { codes });
+      if (productScope === 'real') qb.andWhere(EXCLUDE_TEST_PRODUCTS);
+      return qb;
+    };
+
+    const [sourceRows, countryCodeRows] = await Promise.all([
+      baseQb()
+        .select('DISTINCT be.source', 'source')
+        .andWhere('be.source IS NOT NULL')
+        .getRawMany<{ source: string }>(),
+      baseQb()
+        .select('DISTINCT be.countryCode', 'countryCode')
+        .andWhere('be.countryCode IS NOT NULL')
+        .getRawMany<{ countryCode: string }>(),
+    ]);
+
+    const isoCodes = countryCodeRows.map((r) => r.countryCode);
+    const countryRows = isoCodes.length
+      ? await this.countryRepo.find({ where: { isoCode: In(isoCodes) }, select: ['isoCode', 'name'] })
+      : [];
+    const nameMap = new Map(countryRows.map((c) => [c.isoCode, c.name]));
+
+    return {
+      sources: sourceRows.map((r) => r.source).sort((a, b) => a.localeCompare(b)),
+      countries: isoCodes
+        .map((code) => ({ isoCode: code, name: nameMap.get(code) ?? code }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
   }
 
   /**
