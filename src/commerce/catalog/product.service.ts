@@ -28,6 +28,7 @@ import { slugify } from '../../common/utils/slug.util';
 import { ProductMediaItem, ResolvedProductMediaItem } from '../entities/product-media-item';
 import { ProductStoryItem, ResolvedProductStoryItem } from '../entities/product-story-item';
 import { ProductSocialVideo, ResolvedProductSocialVideo } from '../entities/product-social-video';
+import { ProductZoomedImage, ResolvedProductZoomedImage } from '../entities/product-zoomed-image';
 import { ProductUpsellTier } from '../entities/product-upsell-tier';
 import { resolveVariantPrice, sumOptionAdjustments } from '../pricing/variant-price';
 
@@ -81,6 +82,15 @@ export const ProductStoryItemSchema = z.object({
   isActive:    z.boolean().optional(),
 });
 
+export const ProductZoomedImageSchema = z.object({
+  /** Omit when adding a new image — the server assigns a stable id. */
+  id:        z.string().min(1).max(100).optional(),
+  key:       z.string().min(1).max(1000),
+  altText:   z.string().max(500).nullish(),
+  sortOrder: z.number().int().optional(),
+  isActive:  z.boolean().optional(),
+});
+
 export const ProductUpsellTierSchema = z.object({
   /** Omit when adding a new tier — the server assigns a stable id. */
   id:             z.string().min(1).max(100).optional(),
@@ -110,6 +120,7 @@ export const CreateProductSchema = z.object({
   infoSections:       z.array(ProductInfoSectionSchema).optional(),
   trustBadges:        z.array(ProductTrustBadgeSchema).optional(),
   faqs:               z.array(ProductFaqSchema).optional(),
+  zoomedImages:       z.array(ProductZoomedImageSchema).optional(),
   storyGallery:       z.array(ProductStoryItemSchema).optional(),
   socialVideos:       z.array(ProductSocialVideoSchema).optional(),
   socialVideosTitle:  z.string().max(300).nullish(),
@@ -273,6 +284,17 @@ function normalizeFaqs(faqs: z.infer<typeof ProductFaqSchema>[]): ProductFaq[] {
   }));
 }
 
+/** Assigns stable ids to new zoomed images and re-derives sortOrder from array position. */
+function normalizeZoomedImages(items: z.infer<typeof ProductZoomedImageSchema>[]): ProductZoomedImage[] {
+  return items.map((img, i) => ({
+    id:        img.id ?? randomUUID(),
+    key:       img.key,
+    altText:   img.altText?.trim() ? img.altText : null,
+    sortOrder: i,
+    isActive:  img.isActive ?? true,
+  }));
+}
+
 /**
  * Assigns stable ids to new story items and re-derives sortOrder from array
  * position within each location (side and narrative are ordered independently).
@@ -383,6 +405,7 @@ export class ProductService {
       if (m.posterKey) keys.push({ key: m.posterKey, field: 'media' });
     }
     for (const s of product.storyGallery ?? []) keys.push({ key: s.key, field: 'storyGallery' });
+    for (const z of product.zoomedImages ?? []) keys.push({ key: z.key, field: 'zoomedImages' });
     for (const v of product.socialVideos ?? []) keys.push({ key: v.key, field: 'socialVideos' });
     this.mediaService
       .syncEntityUsages('product', product.id, keys)
@@ -407,11 +430,13 @@ export class ProductService {
     media:             ResolvedProductMediaItem[];
     storyGallery:      ResolvedProductStoryItem[];
     socialVideos:      ResolvedProductSocialVideo[];
+    zoomedImages:      ResolvedProductZoomedImage[];
   }> {
     const variants = (product as any).variants as Array<{ mediaKeys?: string[]; mediaUrls?: string[] }> | undefined;
     const media = product.media ?? [];
     const story = product.storyGallery ?? [];
     const social = (product.socialVideos ?? []).filter(v => v.isActive !== false);
+    const zoomed = product.zoomedImages ?? [];
 
     // Video assets first — their transcode output keys (HLS/MP4/poster) join the URL batch
     const videoKeys = [
@@ -438,6 +463,7 @@ export class ProductService {
       addTranscodeKeys(allKeys, m.key);
     }
     for (const s of story) allKeys.add(s.key);
+    for (const z of zoomed) allKeys.add(z.key);
     for (const v of social) {
       allKeys.add(v.key);
       addTranscodeKeys(allKeys, v.key);
@@ -490,6 +516,7 @@ export class ProductService {
       media: resolvedMedia,
       storyGallery: story.map(s => ({ ...s, url: urlMap.get(s.key) ?? '' })),
       socialVideos: resolvedSocial,
+      zoomedImages: zoomed.map(z => ({ ...z, url: urlMap.get(z.key) ?? '' })),
     });
   }
 
@@ -687,6 +714,7 @@ export class ProductService {
     withTranslations.infoSections = await this.resolveInfoSections(product.id, product.infoSections, lang);
     withTranslations.trustBadges  = await this.resolveTrustBadges(product.id, product.trustBadges, lang);
     withTranslations.faqs         = await this.resolveFaqs(product.id, product.faqs, lang);
+    withTranslations.zoomedImages = await this.resolveZoomedImages(product.id, resolved.zoomedImages ?? [], lang);
     withTranslations.documents    = await this.resolveDocuments(product.id, product.documents ?? [], lang);
     withTranslations.storyGallery = await this.resolveStoryGallery(product.id, resolved.storyGallery ?? [], lang);
     withTranslations.socialVideos = await this.resolveSocialVideos(product.id, resolved.socialVideos ?? [], lang);
@@ -790,6 +818,20 @@ export class ProductService {
   }
 
   /**
+   * Sorts Zoomed Images by sortOrder and drops inactive items or items whose
+   * image URL could not be resolved. No admin-entered copy, so there is
+   * nothing to overlay translations onto — this just filters/sorts.
+   */
+  private resolveZoomedImages(
+    productId: string, items: ResolvedProductZoomedImage[], lang?: string,
+  ): Promise<ResolvedProductZoomedImage[]> {
+    return this.resolveTranslatableList(
+      productId, items, lang, 'zoomedImage', [],
+      z => z.isActive && !!z.url,
+    );
+  }
+
+  /**
    * Sorts Story Gallery items by sortOrder, overlays FR/EN translations for
    * the requested lang (stored as `storyItem:{id}:title|description` rows
    * against the product's translation entity), and drops inactive items or
@@ -860,6 +902,7 @@ export class ProductService {
         infoSections:      dto.infoSections ? normalizeInfoSections(dto.infoSections) : [],
         trustBadges:       dto.trustBadges  ? normalizeTrustBadges(dto.trustBadges)  : [],
         faqs:              dto.faqs         ? normalizeFaqs(dto.faqs)                : [],
+        zoomedImages:      dto.zoomedImages ? normalizeZoomedImages(dto.zoomedImages) : [],
         storyGallery:      dto.storyGallery ? normalizeStoryGallery(dto.storyGallery) : [],
         socialVideos:      dto.socialVideos ? normalizeSocialVideos(dto.socialVideos) : [],
         socialVideosTitle: dto.socialVideosTitle?.trim() ? dto.socialVideosTitle : null,
@@ -936,6 +979,7 @@ export class ProductService {
       infoSections:      dto.infoSections       !== undefined ? normalizeInfoSections(dto.infoSections) : product.infoSections,
       trustBadges:       dto.trustBadges        !== undefined ? normalizeTrustBadges(dto.trustBadges)  : product.trustBadges,
       faqs:              dto.faqs               !== undefined ? normalizeFaqs(dto.faqs)               : product.faqs,
+      zoomedImages:      dto.zoomedImages       !== undefined ? normalizeZoomedImages(dto.zoomedImages) : product.zoomedImages,
       storyGallery:      dto.storyGallery       !== undefined ? normalizeStoryGallery(dto.storyGallery) : product.storyGallery,
       socialVideos:      dto.socialVideos       !== undefined ? normalizeSocialVideos(dto.socialVideos) : product.socialVideos,
       socialVideosTitle: dto.socialVideosTitle  !== undefined ? (dto.socialVideosTitle?.trim() ? dto.socialVideosTitle : null) : product.socialVideosTitle,

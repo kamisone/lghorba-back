@@ -24,6 +24,7 @@ import { ProductFaq } from './product-faq';
 import { ProductDocument } from './product-document';
 import { ProductStoryItem } from './product-story-item';
 import { ProductSocialVideo } from './product-social-video';
+import { ProductZoomedImage } from './product-zoomed-image';
 import { ProductUpsellTier } from './product-upsell-tier';
 
 export type ProductStatus =
@@ -78,6 +79,10 @@ export class Product {
 
   /** Ordered FAQ entries shown near the bottom of the PDP and used for FAQPage JSON-LD. */
   @Column({ type: 'jsonb', default: () => "'[]'" }) faqs: ProductFaq[];
+
+  /** Ordered "Zoomed Images" shown between Specifications and FAQ on the PDP. */
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  zoomedImages: ProductZoomedImage[];
 
   /** Ordered Story Gallery images (side + narrative locations) shown on the PDP. */
   @Column({ type: 'jsonb', default: () => "'[]'" })
