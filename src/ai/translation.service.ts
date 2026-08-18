@@ -196,6 +196,17 @@ export class TranslationService {
     );
   }
 
+  /** Translates a country's display name (e.g. "France", "Morocco"). */
+  async translateCountryName(
+    text: string,
+  ): Promise<SectionTranslationOutcome<string>> {
+    return this.translateSection(
+      'country_name',
+      (lang) => this.freeTranslate.translateText(text, lang),
+      '',
+    );
+  }
+
   /**
    * Shared per-language loop: one call per target language, run
    * sequentially (not in parallel) so this doesn't burst 6 simultaneous
