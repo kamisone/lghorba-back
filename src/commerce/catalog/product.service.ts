@@ -76,6 +76,8 @@ export const ProductStoryItemSchema = z.object({
   key:         z.string().min(1).max(1000),
   location:    z.enum(['side', 'narrative']),
   altText:     z.string().max(500).nullish(),
+  /** Narrative items only — ignored for side items. */
+  aspectRatio: z.enum(['1:1', '16:9', '9:16']).optional(),
   title:       z.string().max(300).optional(),
   description: z.string().max(5000).optional(),
   sortOrder:   z.number().int().optional(),
@@ -306,6 +308,8 @@ function normalizeStoryGallery(items: z.infer<typeof ProductStoryItemSchema>[]):
     key:         s.key,
     location:    s.location,
     altText:     s.altText?.trim() ? s.altText : null,
+    // Existing rows saved before this field existed fall back to '1:1'.
+    aspectRatio: s.aspectRatio ?? '1:1',
     title:       s.title ?? '',
     description: s.description ?? '',
     sortOrder:   counters[s.location]++,

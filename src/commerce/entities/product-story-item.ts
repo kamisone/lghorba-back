@@ -2,6 +2,14 @@
 export type StoryGalleryLocation = 'side' | 'narrative';
 
 /**
+ * Aspect ratio the storefront renders a narrative-gallery image at
+ * (`.narrativeMedia`'s CSS `aspect-ratio`, e.g. '16:9' -> '16/9'). Chosen by
+ * the admin per image, since a single fixed ratio doesn't suit every photo a
+ * narrative block might use. Not applicable to `side` items.
+ */
+export type StoryImageAspectRatio = '1:1' | '16:9' | '9:16';
+
+/**
  * A Story Gallery image attached to a product. Order = display order within
  * its location.
  *
@@ -22,6 +30,8 @@ export interface ProductStoryItem {
   key: string;
   location: StoryGalleryLocation;
   altText?: string | null;
+  /** Narrative items only — meaningless for side items. */
+  aspectRatio: StoryImageAspectRatio;
   /** Narrative items only — empty string for side items. */
   title: string;
   /** Narrative items only — empty string for side items. */
