@@ -47,8 +47,16 @@ export const InitiateCheckoutSchema = z.object({
   zip:          z.string().min(1).max(20),
   country:      z.string().length(2),
   couponCode:   z.string().max(100).nullish(),
-  /** Customer's UI locale — determines email language (fr | en, default fr) */
-  locale:       z.enum(['fr', 'en']).optional().default('fr'),
+  /**
+   * Customer's UI locale. The storefront supports more locales than
+   * transactional email templates do (`front/src/lib/i18n/index.ts` LOCALES
+   * vs `Lang = 'fr' | 'en'` in email/templates/copy.ts) — accept whatever
+   * the frontend sends rather than hard-rejecting it, since `resolveLang`
+   * already falls back to 'fr' for anything it doesn't recognize. A strict
+   * fr/en-only enum here previously turned checkout submission into an
+   * uncaught 500 for any customer on es/it/de/nl/pl.
+   */
+  locale:       z.string().max(10).optional().default('fr'),
   /** Meta Click ID / Browser ID cookies (_fbc / _fbp), read client-side — for Conversions API match quality only. */
   fbc:          z.string().max(500).nullish(),
   fbp:          z.string().max(500).nullish(),

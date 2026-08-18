@@ -17,7 +17,10 @@ const cacheKey = (cartToken: string) => `checkout:session:${cartToken}`;
 
 export const UpsertCheckoutSessionSchema = z.object({
   cartToken:    z.string().uuid(),
-  locale:       z.enum(['fr', 'en']).optional().default('fr'),
+  // See the matching comment on InitiateCheckoutSchema.locale — the
+  // storefront supports more locales than this fr/en-only enum allowed,
+  // which turned session upserts into an uncaught 500 for other locales.
+  locale:       z.string().max(10).optional().default('fr'),
   step:         z.enum(['address', 'shipping', 'payment', 'complete']).optional(),
   orderId:      z.string().uuid().nullish(),
   formSnapshot: z.record(z.string(), z.string()).nullish(),

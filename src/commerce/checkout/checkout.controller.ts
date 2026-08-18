@@ -3,8 +3,10 @@ import {
   Param, ParseUUIDPipe, Patch, Post, Put, Query, Req,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { z } from 'zod';
 import { resolveClientIp } from '../../common/utils/client-ip.util';
 import { Public } from '../../auth/public.decorator';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import {
   CheckoutService,
   InitiateCheckoutSchema,
@@ -40,8 +42,9 @@ export class CheckoutController {
   // PUT /public/shop/checkout/session
   @Put('session')
   @HttpCode(200)
-  upsertSession(@Body() body: unknown) {
-    const dto = UpsertCheckoutSessionSchema.parse(body);
+  upsertSession(
+    @Body(new ZodValidationPipe(UpsertCheckoutSessionSchema)) dto: z.infer<typeof UpsertCheckoutSessionSchema>,
+  ) {
     return this.sessionService.upsert(dto);
   }
 
@@ -57,8 +60,10 @@ export class CheckoutController {
   // Validates cart, computes server-side totals, creates draft order, reserves inventory.
   @Post()
   @HttpCode(201)
-  initiate(@Body() body: unknown, @Req() req: Request) {
-    const dto = InitiateCheckoutSchema.parse(body);
+  initiate(
+    @Body(new ZodValidationPipe(InitiateCheckoutSchema)) dto: z.infer<typeof InitiateCheckoutSchema>,
+    @Req() req: Request,
+  ) {
     // Stored on the order as `clientIpAddress`, which is what geolocates the
     // checkout_started and test_checkout_blocked demand events later.
     const ip = resolveClientIp(req);
@@ -78,9 +83,8 @@ export class CheckoutController {
   @Patch(':orderId/shipping')
   updateShipping(
     @Param('orderId', ParseUUIDPipe) orderId: string,
-    @Body() body: unknown,
+    @Body(new ZodValidationPipe(UpdateShippingSchema)) dto: z.infer<typeof UpdateShippingSchema>,
   ) {
-    const dto = UpdateShippingSchema.parse(body);
     return this.checkoutService.updateShipping(orderId, dto);
   }
 
