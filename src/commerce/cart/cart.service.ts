@@ -420,7 +420,15 @@ export class CartService {
     valid: boolean;
     discountCents: number;
     type: string;
-    message?: string;
+    /**
+     * Stable, machine-readable reason — never free text. The storefront is
+     * multi-locale (see front/src/lib/i18n/translations.ts, keys
+     * promoInvalidCode/promoNotYetActive/promoExpired/
+     * promoUsageLimitReached/promoMinOrderNotMet) and renders this code
+     * through its own translations, so nothing here should be an
+     * English sentence a customer might actually see.
+     */
+    code?: 'invalid' | 'not_yet_active' | 'expired' | 'usage_limit_reached' | 'min_order_not_met';
   }> {
     const promo = await this.promoRepo.findOneBy({ code, isActive: true });
     if (!promo)
@@ -428,7 +436,7 @@ export class CartService {
         valid: false,
         discountCents: 0,
         type: '',
-        message: 'Invalid coupon code',
+        code: 'invalid',
       };
 
     const now = new Date();
@@ -437,21 +445,21 @@ export class CartService {
         valid: false,
         discountCents: 0,
         type: '',
-        message: 'Coupon not yet active',
+        code: 'not_yet_active',
       };
     if (promo.expiresAt && promo.expiresAt < now)
       return {
         valid: false,
         discountCents: 0,
         type: '',
-        message: 'Coupon has expired',
+        code: 'expired',
       };
     if (promo.maxUsesTotal !== null && promo.usesCount >= promo.maxUsesTotal) {
       return {
         valid: false,
         discountCents: 0,
         type: '',
-        message: 'Coupon usage limit reached',
+        code: 'usage_limit_reached',
       };
     }
     if (promo.minOrderCents !== null && subtotalCents < promo.minOrderCents) {
@@ -459,7 +467,7 @@ export class CartService {
         valid: false,
         discountCents: 0,
         type: promo.discountType,
-        message: `Minimum order amount not met`,
+        code: 'min_order_not_met',
       };
     }
 
