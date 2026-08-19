@@ -102,6 +102,13 @@ export const ProductUpsellTierSchema = z.object({
   sortOrder:      z.number().int().optional(),
 });
 
+export const ProductPrivateLinkSchema = z.object({
+  /** Omit when adding a new link — the server assigns a stable id. */
+  id:    z.string().min(1).max(100).optional(),
+  label: z.string().max(200).nullish(),
+  url:   z.string().min(1).max(2000),
+});
+
 export const ProductSocialVideoSchema = z.object({
   /** Omit when adding a new video — the server assigns a stable id. */
   id:        z.string().min(1).max(100).optional(),
@@ -135,6 +142,8 @@ export const CreateProductSchema = z.object({
     sizeBytes:        z.number().int().min(0),
     sortOrder:        z.number().int().optional(),
   })).optional(),
+  /** Admin-only reference links (supplier pages, sourcing, etc.) — never sent to public consumers. */
+  privateLinks:       z.array(ProductPrivateLinkSchema).optional(),
   featuredImageKey:   z.string().max(1000).nullish(),
   galleryImageKeys:   z.array(z.string().max(1000)).optional(),
   media:              z.array(ProductMediaItemSchema).optional(),
@@ -352,6 +361,15 @@ function normalizeDocuments(docs: Array<{ id: string; title: string; storageKey:
     originalFilename: d.originalFilename,
     sizeBytes:        d.sizeBytes,
     sortOrder:        d.sortOrder ?? i,
+  }));
+}
+
+/** Assigns stable ids to new private links; order is display order. */
+function normalizeLinks(links: z.infer<typeof ProductPrivateLinkSchema>[]): import('../entities/product-private-link').ProductPrivateLink[] {
+  return links.map(l => ({
+    id:    l.id ?? randomUUID(),
+    label: l.label?.trim() ?? '',
+    url:   l.url,
   }));
 }
 
@@ -672,6 +690,9 @@ export class ProductService {
     }
 
     const items = await this.translationsService.maybeApply(withUrls, ET_SHOP_PRODUCT, lang);
+    // Admin-only reference links (supplier pages, sourcing, etc.) must never reach
+    // a public response — the entity is spread wholesale above, so strip explicitly.
+    for (const p of items) delete p.privateLinks;
     return { items, total };
   }
 
@@ -740,6 +761,10 @@ export class ProductService {
       [product.id],
     );
     withTranslations.outOfStock = !!stockRows[0]?.allOutOfStock;
+
+    // Admin-only reference links (supplier pages, sourcing, etc.) must never reach
+    // a public response — the entity is spread wholesale above, so strip explicitly.
+    delete withTranslations.privateLinks;
 
     return withTranslations;
   }
@@ -912,6 +937,7 @@ export class ProductService {
         socialVideosTitle: dto.socialVideosTitle?.trim() ? dto.socialVideosTitle : null,
         storyNarrativeTitle: dto.storyNarrativeTitle?.trim() ? dto.storyNarrativeTitle : null,
         documents:         dto.documents    ? normalizeDocuments(dto.documents)      : [],
+        privateLinks:      dto.privateLinks ? normalizeLinks(dto.privateLinks)       : [],
         featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey ?? null),
         galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? []),
         media,
@@ -989,6 +1015,7 @@ export class ProductService {
       socialVideosTitle: dto.socialVideosTitle  !== undefined ? (dto.socialVideosTitle?.trim() ? dto.socialVideosTitle : null) : product.socialVideosTitle,
       storyNarrativeTitle: dto.storyNarrativeTitle !== undefined ? (dto.storyNarrativeTitle?.trim() ? dto.storyNarrativeTitle : null) : product.storyNarrativeTitle,
       documents:         dto.documents          !== undefined ? normalizeDocuments(dto.documents)     : product.documents,
+      privateLinks:      dto.privateLinks       !== undefined ? normalizeLinks(dto.privateLinks)      : product.privateLinks,
       featuredImageKey:  legacy ? legacy.featuredImageKey : (dto.featuredImageKey !== undefined ? dto.featuredImageKey ?? null : product.featuredImageKey),
       galleryImageKeys:  legacy ? legacy.galleryImageKeys : (dto.galleryImageKeys ?? product.galleryImageKeys),
       media,

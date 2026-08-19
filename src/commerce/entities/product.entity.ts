@@ -26,6 +26,7 @@ import { ProductStoryItem } from './product-story-item';
 import { ProductSocialVideo } from './product-social-video';
 import { ProductZoomedImage } from './product-zoomed-image';
 import { ProductUpsellTier } from './product-upsell-tier';
+import { ProductPrivateLink } from './product-private-link';
 
 export type ProductStatus =
   | 'draft'
@@ -112,6 +113,14 @@ export class Product {
   /** Downloadable PDF documents (notice, fiche technique, etc.) */
   @Column({ type: 'jsonb', default: () => "'[]'" })
   documents: ProductDocument[];
+
+  /**
+   * Internal reference links (Alibaba/supplier listings, sourcing pages,
+   * factory contacts, etc.) — admin-only, never returned by any public
+   * endpoint. See ProductPrivateLink and the strip in ProductService.
+   */
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  privateLinks: ProductPrivateLink[];
 
   @Column({ type: 'varchar', length: 500, nullable: true }) seoTitle:
     | string
