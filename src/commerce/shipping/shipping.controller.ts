@@ -59,4 +59,11 @@ export class ShippingPublicController {
     const result = await this.shipping.getMethodsForCountry(country, subtotal ? parseInt(subtotal, 10) : 0, lang);
     return result;
   }
+
+  // Full coverage map (all zones + their methods) for the storefront's
+  // "delivery details" panel — not scoped to one customer's country.
+  @Get('overview')
+  getOverview(@Query('lang') lang?: string) {
+    return this.shipping.getPublicOverview(lang);
+  }
 }

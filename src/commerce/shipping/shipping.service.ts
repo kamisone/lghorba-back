@@ -253,6 +253,70 @@ export class ShippingService {
     return options;
   }
 
+  /**
+   * Storefront "delivery details" panel: every active zone paired with its
+   * active, ordinary (non-upgrade-only) methods. Not scoped to a country —
+   * the panel shows the whole coverage map, not a single customer's quote —
+   * so it excludes `availableForFreeShipping` methods the same way
+   * `applyZonePricing` does for ordinary quoting, since those only ever
+   * appear alongside a free-shipping product and would otherwise read as a
+   * normal paid option in every zone. Same fail-open as that method too: a
+   * zone where every method is flagged that way falls back to showing all of
+   * them rather than rendering an empty, misconfigured-looking zone.
+   */
+  async getPublicOverview(lang?: string): Promise<Array<{
+    id: string;
+    name: string;
+    countryCodes: string[];
+    estimatedDeliveryDays: string | null;
+    methods: Array<{
+      id: string;
+      name: string;
+      carrier: string | null;
+      priceCents: number;
+      estimatedDaysMin: number;
+      estimatedDaysMax: number;
+    }>;
+  }>> {
+    const [zones, methods] = await Promise.all([
+      this.zoneRepo.find({ where: { isActive: true } }),
+      this.methodRepo.find({
+        where: { isActive: true },
+        order: { sortOrder: 'ASC' },
+      }),
+    ]);
+    const translated: any[] = await this.translationsService.maybeApply(methods as any[], ET_SHOP_SHIPPING_METHOD, lang);
+
+    const methodsByZone = new Map<string, any[]>();
+    for (const m of translated) {
+      const bucket = methodsByZone.get(m.zoneId);
+      if (bucket) bucket.push(m); else methodsByZone.set(m.zoneId, [m]);
+    }
+
+    return zones
+      .map(z => {
+        const zoneMethods = methodsByZone.get(z.id) ?? [];
+        const ordinary = zoneMethods.filter(m => !m.availableForFreeShipping);
+        const quotable = ordinary.length ? ordinary : zoneMethods;
+        return { zone: z, quotable };
+      })
+      .filter(({ quotable }) => quotable.length)
+      .map(({ zone: z, quotable }) => ({
+        id: z.id,
+        name: z.name,
+        countryCodes: z.countryCodes,
+        estimatedDeliveryDays: z.estimatedDeliveryDays,
+        methods: quotable.map(m => ({
+          id: m.id,
+          name: m.name,
+          carrier: m.carrier,
+          priceCents: m.priceCents,
+          estimatedDaysMin: m.estimatedDaysMin,
+          estimatedDaysMax: m.estimatedDaysMax,
+        })),
+      }));
+  }
+
   async listZones(): Promise<ShippingZone[]> {
     return this.zoneRepo.find();
   }
