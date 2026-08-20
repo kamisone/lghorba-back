@@ -25,6 +25,7 @@ import { ProductDocument } from './product-document';
 import { ProductStoryItem } from './product-story-item';
 import { ProductSocialVideo } from './product-social-video';
 import { ProductZoomedImage } from './product-zoomed-image';
+import { ProductPackageContentItem } from './product-package-content-item';
 import { ProductUpsellTier } from './product-upsell-tier';
 import { ProductPrivateLink } from './product-private-link';
 
@@ -84,6 +85,10 @@ export class Product {
   /** Ordered "Zoomed Images" shown between Specifications and FAQ on the PDP. */
   @Column({ type: 'jsonb', default: () => "'[]'" })
   zoomedImages: ProductZoomedImage[];
+
+  /** Ordered "what's in the box" images shown in a collapsible section after Delivery details on the PDP. */
+  @Column({ type: 'jsonb', default: () => "'[]'" })
+  packageContents: ProductPackageContentItem[];
 
   /** Ordered Story Gallery images (side + narrative locations) shown on the PDP. */
   @Column({ type: 'jsonb', default: () => "'[]'" })
