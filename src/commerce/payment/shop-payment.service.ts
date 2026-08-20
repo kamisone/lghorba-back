@@ -3,14 +3,18 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
 import Stripe = require('stripe');
 import { STRIPE_CLIENT } from '../../payments/stripe.provider';
 import { Order } from '../entities/order.entity';
+import { OrderItem } from '../entities/order-item.entity';
 import { PaymentTransaction } from '../entities/payment-transaction.entity';
 import { OrdersService } from '../orders/orders.service';
 import { TestCheckoutGuard } from '../shared/test-checkout-guard.service';
 import { CommerceEventBus } from '../events/commerce-event-bus.service';
 import { COMMERCE_EVENTS } from '../events/commerce-events';
+import { MetaCapiService } from '../../marketing/meta-capi/meta-capi.service';
+import { TikTokEventsService } from '../../marketing/tiktok-events/tiktok-events.service';
 
 /**
  * PaymentIntent states whose amount Stripe still allows changing. Anything else
@@ -31,15 +35,91 @@ export class ShopPaymentService {
     @Inject(STRIPE_CLIENT)
     private readonly stripe: Stripe.Stripe,
     @InjectRepository(Order)               private readonly orderRepo: Repository<Order>,
+    @InjectRepository(OrderItem)           private readonly orderItemRepo: Repository<OrderItem>,
     private readonly ordersService:     OrdersService,
     private readonly testCheckoutGuard: TestCheckoutGuard,
     private readonly eventBus:          CommerceEventBus,
     private readonly dataSource:        DataSource,
+    private readonly metaCapi:          MetaCapiService,
+    private readonly tiktokEvents:      TikTokEventsService,
   ) {}
+
+  // ── AddPaymentInfo tracking — fired once the customer reaches the payment
+  // step (a PaymentIntent now exists for their order). Mirrors the
+  // InitiateCheckout/Purchase pattern used by the order listeners, but this
+  // moment has no natural domain event to hook into, so it's called directly
+  // from createPaymentIntent below. Best-effort: tracking failures must never
+  // block payment.
+  private async trackAddPaymentInfo(
+    order: Order,
+  ): Promise<{ metaEventId?: string; tiktokEventId?: string }> {
+    try {
+      const items = await this.orderItemRepo.findBy({ orderId: order.id });
+      const metaEventId = randomUUID();
+      const tiktokEventId = randomUUID();
+      const eventSourceUrl = `${process.env.APP_URL ?? ''}/${order.customerLocale ?? 'fr'}/shop/checkout`;
+
+      await this.metaCapi.sendEvent({
+        eventName: 'AddPaymentInfo',
+        eventId: metaEventId,
+        eventSourceUrl,
+        customData: {
+          value: order.totalCents / 100,
+          currency: 'EUR',
+          content_type: 'product',
+          content_ids: items.map((i) => i.variantId ?? i.productId ?? i.id),
+          contents: items.map((i) => ({
+            id: i.variantId ?? i.productId ?? i.id,
+            quantity: i.quantity,
+            item_price: i.unitPriceCents / 100,
+          })),
+        },
+        email: order.customerEmail,
+        clientIpAddress: order.clientIpAddress,
+        clientUserAgent: order.clientUserAgent,
+        fbc: order.metaClickId,
+        fbp: order.metaBrowserId,
+      });
+
+      await this.tiktokEvents.sendEvent({
+        eventName: 'AddPaymentInfo',
+        eventId: tiktokEventId,
+        eventSourceUrl,
+        properties: {
+          contents: items.map((i) => ({
+            content_id: i.variantId ?? i.productId ?? i.id,
+            content_type: 'product',
+            content_name: i.titleSnapshot,
+            quantity: i.quantity,
+            price: i.unitPriceCents / 100,
+          })),
+          value: order.totalCents / 100,
+          currency: 'EUR',
+        },
+        email: order.customerEmail,
+        clientIpAddress: order.clientIpAddress,
+        clientUserAgent: order.clientUserAgent,
+        ttclid: order.tiktokClickId,
+        ttp: order.tiktokBrowserId,
+      });
+
+      return { metaEventId, tiktokEventId };
+    } catch (err) {
+      this.logger.error(
+        `Failed to send AddPaymentInfo events for order ${order.orderNumber}: ${(err as Error).message}`,
+      );
+      return {};
+    }
+  }
 
   // ── Create payment intent for a shop order ──────────────────────────────────
 
-  async createPaymentIntent(orderId: string): Promise<{ clientSecret: string; paymentIntentId: string }> {
+  async createPaymentIntent(orderId: string): Promise<{
+    clientSecret: string;
+    paymentIntentId: string;
+    metaAddPaymentInfoEventId?: string;
+    tiktokAddPaymentInfoEventId?: string;
+  }> {
     const order = await this.orderRepo.findOneBy({ id: orderId });
     if (!order) throw new NotFoundException('Order not found');
 
@@ -76,9 +156,21 @@ export class ShopPaymentService {
             `Re-synced PaymentIntent ${existing.id} for order ${order.orderNumber}: ` +
               `${existing.amount} -> ${order.totalCents} cents`,
           );
-          return { clientSecret: updated.client_secret!, paymentIntentId: updated.id };
+          const tracked1 = await this.trackAddPaymentInfo(order);
+          return {
+            clientSecret: updated.client_secret!,
+            paymentIntentId: updated.id,
+            metaAddPaymentInfoEventId: tracked1.metaEventId,
+            tiktokAddPaymentInfoEventId: tracked1.tiktokEventId,
+          };
         }
-        return { clientSecret: existing.client_secret!, paymentIntentId: existing.id };
+        const tracked2 = await this.trackAddPaymentInfo(order);
+        return {
+          clientSecret: existing.client_secret!,
+          paymentIntentId: existing.id,
+          metaAddPaymentInfoEventId: tracked2.metaEventId,
+          tiktokAddPaymentInfoEventId: tracked2.tiktokEventId,
+        };
       }
     }
 
@@ -98,7 +190,13 @@ export class ShopPaymentService {
     order.paymentIntentId = intent.id;
     await this.orderRepo.save(order);
 
-    return { clientSecret: intent.client_secret!, paymentIntentId: intent.id };
+    const tracked3 = await this.trackAddPaymentInfo(order);
+    return {
+      clientSecret: intent.client_secret!,
+      paymentIntentId: intent.id,
+      metaAddPaymentInfoEventId: tracked3.metaEventId,
+      tiktokAddPaymentInfoEventId: tracked3.tiktokEventId,
+    };
   }
 
   // ── Process Stripe webhook ──────────────────────────────────────────────────

@@ -7,6 +7,7 @@ export type TikTokEventName =
   | 'Search'
   | 'AddToCart'
   | 'InitiateCheckout'
+  | 'AddPaymentInfo'
   | 'Purchase';
 
 export interface TikTokEventJobData {

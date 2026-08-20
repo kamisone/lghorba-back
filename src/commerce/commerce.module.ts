@@ -10,6 +10,7 @@ import { TranslationsModule } from '../translations/translations.module';
 import { AntiSpamModule } from '../common/anti-spam/anti-spam.module';
 import { MetaCapiModule } from '../marketing/meta-capi/meta-capi.module';
 import { TikTokEventsModule } from '../marketing/tiktok-events/tiktok-events.module';
+import { TikTokCatalogModule } from '../marketing/tiktok-catalog/tiktok-catalog.module';
 import { BehaviorTrackingModule } from './behavior/behavior-tracking.module';
 import { PlatformSettingsModule } from '../platform-settings/platform-settings.module';
 import { AiModule } from '../ai/ai.module';
@@ -247,6 +248,7 @@ const ENTITIES = [
     AntiSpamModule,
     MetaCapiModule,
     TikTokEventsModule,
+    TikTokCatalogModule,
     BehaviorTrackingModule,
     PlatformSettingsModule,
     AiModule,

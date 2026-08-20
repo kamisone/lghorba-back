@@ -5,6 +5,7 @@ export type MetaCapiEventName =
   | 'Search'
   | 'AddToCart'
   | 'InitiateCheckout'
+  | 'AddPaymentInfo'
   | 'Purchase';
 
 export interface MetaCapiEventJobData {
