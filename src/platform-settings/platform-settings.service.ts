@@ -13,6 +13,8 @@ const TIMEZONE_KEY = 'business_timezone';
 const DEFAULT_TZ = 'Europe/Paris';
 const META_PIXEL_ID_KEY = 'meta_pixel_id';
 const META_PIXEL_ENABLED_KEY = 'meta_pixel_enabled';
+const TIKTOK_PIXEL_ID_KEY = 'tiktok_pixel_id';
+const TIKTOK_PIXEL_ENABLED_KEY = 'tiktok_pixel_enabled';
 const ANALYTICS_EXCLUDED_IPS_KEY = 'analytics_excluded_ips';
 const ANALYTICS_BOT_USER_AGENTS_KEY = 'analytics_bot_user_agents';
 const CACHE_TTL_MS = 60_000; // refresh ceiling: 60 s
@@ -37,12 +39,18 @@ export interface MetaPixelConfig {
   enabled: boolean;
 }
 
+export interface TikTokPixelConfig {
+  pixelId: string | null;
+  enabled: boolean;
+}
+
 @Injectable()
 export class PlatformSettingsService implements OnModuleInit {
   private readonly logger = new Logger(PlatformSettingsService.name);
 
   private cachedTimezone: string = DEFAULT_TZ;
   private cachedMetaPixel: MetaPixelConfig = { pixelId: null, enabled: false };
+  private cachedTikTokPixel: TikTokPixelConfig = { pixelId: null, enabled: false };
   private cachedExcludedIps: string[] = [];
   private cachedBotUserAgentPatterns: string[] = DEFAULT_BOT_USER_AGENT_PATTERNS;
   private cacheExpiresAt: number = 0;
@@ -66,6 +74,11 @@ export class PlatformSettingsService implements OnModuleInit {
   getMetaPixelConfig(): MetaPixelConfig {
     this.refreshIfStale();
     return this.cachedMetaPixel;
+  }
+
+  getTikTokPixelConfig(): TikTokPixelConfig {
+    this.refreshIfStale();
+    return this.cachedTikTokPixel;
   }
 
   /** Admin-configured addresses whose traffic is kept out of shop analytics. */
@@ -104,10 +117,11 @@ export class PlatformSettingsService implements OnModuleInit {
     return this.getAnalyticsBotUserAgentPatterns().some((p) => ua.includes(p));
   }
 
-  getPlatformConfig(): { timezone: string; metaPixel: MetaPixelConfig } {
+  getPlatformConfig(): { timezone: string; metaPixel: MetaPixelConfig; tiktokPixel: TikTokPixelConfig } {
     return {
       timezone: this.getTimezone(),
       metaPixel: this.getMetaPixelConfig(),
+      tiktokPixel: this.getTikTokPixelConfig(),
     };
   }
 
@@ -145,6 +159,28 @@ export class PlatformSettingsService implements OnModuleInit {
     this.cachedMetaPixel = { pixelId, enabled: input.enabled };
     this.cacheExpiresAt = Date.now() + CACHE_TTL_MS;
     this.logger.log(`Meta Pixel config updated (enabled=${input.enabled})`);
+  }
+
+  async setTikTokPixelConfig(input: {
+    pixelId: string | null;
+    enabled: boolean;
+  }): Promise<void> {
+    const pixelId = input.pixelId?.trim() || null;
+    if (input.enabled && !isValidTikTokPixelId(pixelId)) {
+      throw new BadRequestException(
+        'A valid TikTok Pixel Code is required to enable it',
+      );
+    }
+    await this.repo.save([
+      this.repo.create({ key: TIKTOK_PIXEL_ID_KEY, value: pixelId ?? '' }),
+      this.repo.create({
+        key: TIKTOK_PIXEL_ENABLED_KEY,
+        value: String(input.enabled),
+      }),
+    ]);
+    this.cachedTikTokPixel = { pixelId, enabled: input.enabled };
+    this.cacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    this.logger.log(`TikTok Pixel config updated (enabled=${input.enabled})`);
   }
 
   /**
@@ -213,6 +249,8 @@ export class PlatformSettingsService implements OnModuleInit {
             TIMEZONE_KEY,
             META_PIXEL_ID_KEY,
             META_PIXEL_ENABLED_KEY,
+            TIKTOK_PIXEL_ID_KEY,
+            TIKTOK_PIXEL_ENABLED_KEY,
             ANALYTICS_EXCLUDED_IPS_KEY,
             ANALYTICS_BOT_USER_AGENTS_KEY,
           ]),
@@ -224,6 +262,10 @@ export class PlatformSettingsService implements OnModuleInit {
       this.cachedMetaPixel = {
         pixelId: byKey.get(META_PIXEL_ID_KEY) || null,
         enabled: byKey.get(META_PIXEL_ENABLED_KEY) === 'true',
+      };
+      this.cachedTikTokPixel = {
+        pixelId: byKey.get(TIKTOK_PIXEL_ID_KEY) || null,
+        enabled: byKey.get(TIKTOK_PIXEL_ENABLED_KEY) === 'true',
       };
       this.cachedExcludedIps = (byKey.get(ANALYTICS_EXCLUDED_IPS_KEY) ?? '')
         .split('\n')
@@ -255,4 +297,9 @@ function isValidIANA(tz: string): boolean {
 
 function isValidPixelId(pixelId: string | null): pixelId is string {
   return !!pixelId && /^\d{10,20}$/.test(pixelId);
+}
+
+/** TikTok Pixel Codes are alphanumeric (e.g. "DA3FPARC77U2K1LUCIV0"), unlike Meta's numeric-only IDs. */
+function isValidTikTokPixelId(pixelId: string | null): pixelId is string {
+  return !!pixelId && /^[A-Z0-9]{10,32}$/i.test(pixelId);
 }

@@ -81,6 +81,12 @@ export class Order {
   /** Meta Browser ID (_fbp cookie) — set by the pixel base code once loaded */
   @Column({ type: 'varchar', length: 500, nullable: true }) metaBrowserId: string | null;
 
+  /* ── TikTok Events API matching data — captured at checkout, never displayed ── */
+  /** TikTok Click ID (ttclid), present only if the visitor arrived via a TikTok ad */
+  @Column({ type: 'varchar', length: 500, nullable: true }) tiktokClickId: string | null;
+  /** TikTok Browser ID (_ttp cookie) — set by the pixel base code once loaded */
+  @Column({ type: 'varchar', length: 500, nullable: true }) tiktokBrowserId: string | null;
+
   @OneToMany('OrderItem', 'order', { cascade: ['insert'] })
   items: Relation<any>[];
 

@@ -244,4 +244,9 @@ spec:
                 secretKeyRef:
                   name: back-envs
                   key: META_CAPI_API_VERSION
+            - name: TIKTOK_EVENTS_API_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: back-envs
+                  key: TIKTOK_EVENTS_API_ACCESS_TOKEN
             

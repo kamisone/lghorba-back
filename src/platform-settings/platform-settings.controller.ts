@@ -12,6 +12,7 @@ import { Public } from '../auth/public.decorator';
 import {
   PlatformSettingsService,
   MetaPixelConfig,
+  TikTokPixelConfig,
 } from './platform-settings.service';
 
 interface UpdateTimezoneDto {
@@ -19,6 +20,11 @@ interface UpdateTimezoneDto {
 }
 
 interface UpdateMetaPixelDto {
+  pixelId: string | null;
+  enabled: boolean;
+}
+
+interface UpdateTikTokPixelDto {
   pixelId: string | null;
   enabled: boolean;
 }
@@ -51,6 +57,16 @@ export class PlatformSettingsController {
     @Body() body: UpdateMetaPixelDto,
   ): Promise<{ timezone: string; metaPixel: MetaPixelConfig }> {
     await this.service.setMetaPixelConfig(body);
+    return this.service.getPlatformConfig();
+  }
+
+  /** Admin-only — updates the TikTok Pixel Code / enabled flag. */
+  @Put('admin/platform-settings/tiktok-pixel')
+  @HttpCode(HttpStatus.OK)
+  async updateTikTokPixel(
+    @Body() body: UpdateTikTokPixelDto,
+  ): Promise<{ timezone: string; tiktokPixel: TikTokPixelConfig }> {
+    await this.service.setTikTokPixelConfig(body);
     return this.service.getPlatformConfig();
   }
 
@@ -106,5 +122,11 @@ export class PlatformSettingsController {
   @Get('admin/platform-settings/meta-capi-status')
   getCapiStatus(): { configured: boolean } {
     return { configured: !!process.env.META_CAPI_ACCESS_TOKEN };
+  }
+
+  /** Admin-only — whether the TikTok Events API access token is set server-side. Never returns the token itself. */
+  @Get('admin/platform-settings/tiktok-events-api-status')
+  getTikTokEventsApiStatus(): { configured: boolean } {
+    return { configured: !!process.env.TIKTOK_EVENTS_API_ACCESS_TOKEN };
   }
 }

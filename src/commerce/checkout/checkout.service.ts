@@ -60,6 +60,9 @@ export const InitiateCheckoutSchema = z.object({
   /** Meta Click ID / Browser ID cookies (_fbc / _fbp), read client-side — for Conversions API match quality only. */
   fbc:          z.string().max(500).nullish(),
   fbp:          z.string().max(500).nullish(),
+  /** TikTok Click ID / Browser ID (ttclid / _ttp), read client-side — for Events API match quality only. */
+  ttclid:       z.string().max(500).nullish(),
+  ttp:          z.string().max(500).nullish(),
 }).superRefine((d, ctx) => {
   const hasName    = d.firstName?.trim() && d.lastName?.trim();
   const hasCompany = d.companyName?.trim();
@@ -187,6 +190,8 @@ export class CheckoutService {
       existing.clientUserAgent    = requestMeta?.userAgent ?? existing.clientUserAgent;
       existing.metaClickId        = dto.fbc ?? existing.metaClickId;
       existing.metaBrowserId      = dto.fbp ?? existing.metaBrowserId;
+      existing.tiktokClickId      = dto.ttclid ?? existing.tiktokClickId;
+      existing.tiktokBrowserId    = dto.ttp ?? existing.tiktokBrowserId;
       existing.shippingAddressSnapshot = {
         name:    `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || '',
         line1:   dto.line1,
@@ -260,6 +265,8 @@ export class CheckoutService {
         clientUserAgent:      requestMeta?.userAgent ?? null,
         metaClickId:          dto.fbc ?? null,
         metaBrowserId:        dto.fbp ?? null,
+        tiktokClickId:        dto.ttclid ?? null,
+        tiktokBrowserId:      dto.ttp ?? null,
         shippingAddressSnapshot: {
           name:    `${dto.firstName ?? ''} ${dto.lastName ?? ''}`.trim() || dto.companyName?.trim() || '',
           line1:   dto.line1,

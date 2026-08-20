@@ -29,6 +29,7 @@ import {
   sumOptionAdjustments,
 } from '../pricing/variant-price';
 import { MetaCapiService } from '../../marketing/meta-capi/meta-capi.service';
+import { TikTokEventsService } from '../../marketing/tiktok-events/tiktok-events.service';
 import { BehaviorTrackingService } from '../behavior/behavior-tracking.service';
 import { GeoIpService } from '../behavior/geo-ip.service';
 import { deviceFromUserAgent } from '../../common/utils/device.util';
@@ -59,6 +60,7 @@ export class CartService {
     // event for "item added to cart" to react to, and adding one just for this
     // analytics side effect would be overkill.
     private readonly metaCapi: MetaCapiService,
+    private readonly tiktokEvents: TikTokEventsService,
     private readonly behaviorTracking: BehaviorTrackingService,
     private readonly geoIp: GeoIpService,
   ) {}
@@ -144,6 +146,7 @@ export class CartService {
 
     const cart = await this.getOrCreatePersistedCart(token);
     const metaEventId = randomUUID();
+    const tiktokEventId = randomUUID();
 
     const existing = cart.items.find(
       (i: CartItem) => i.variantId === variantId,
@@ -294,6 +297,29 @@ export class CartService {
       clientUserAgent: requestMeta?.userAgent ?? null,
     });
 
+    // TikTok Events API — same values as the Meta call above, sent
+    // independently (a customer may run either or both ad platforms).
+    // `contents` is a nested array per TikTok's own event spec, not a flat
+    // content_id.
+    await this.tiktokEvents.sendEvent({
+      eventName: 'AddToCart',
+      eventId: tiktokEventId,
+      eventSourceUrl: `${process.env.APP_URL ?? ''}/shop`,
+      properties: {
+        contents: [{
+          content_id: variantId,
+          content_type: 'product',
+          content_name: (variant as any).product?.title,
+          quantity,
+          price: trackUnitPriceCents / 100,
+        }],
+        value: (trackUnitPriceCents * quantity) / 100,
+        currency: 'EUR',
+      },
+      clientIpAddress: requestMeta?.ip ?? null,
+      clientUserAgent: requestMeta?.userAgent ?? null,
+    });
+
     await this.behaviorTracking.record('add_to_cart', {
       cartToken: token,
       productId: productId ?? null,
@@ -319,7 +345,7 @@ export class CartService {
     const cartData = await this.getOrCreate(token, undefined, lang);
     // Shared with the CAPI call above so the frontend's browser-side fbq()
     // AddToCart call can use the same eventID for Meta's dedup.
-    return { ...cartData, metaAddToCartEventId: metaEventId };
+    return { ...cartData, metaAddToCartEventId: metaEventId, tiktokAddToCartEventId: tiktokEventId };
   }
 
   // ── Update item quantity ───────────────────────────────────────────────────
