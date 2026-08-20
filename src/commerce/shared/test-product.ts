@@ -17,6 +17,11 @@ import { Product } from '../entities/product.entity';
 const GENERIC_FAILURE_MESSAGE: Record<string, string> = {
   fr: "Une erreur s'est produite de notre côté. Nous vous prions de nous excuser, veuillez réessayer plus tard.",
   en: 'Something went wrong on our side. We apologise — please try again later.',
+  es: 'Se ha producido un error por nuestra parte. Le pedimos disculpas — inténtelo de nuevo más tarde.',
+  it: 'Si è verificato un errore da parte nostra. Ci scusiamo — riprova più tardi.',
+  de: 'Bei uns ist ein Fehler aufgetreten. Wir bitten um Entschuldigung — bitte versuchen Sie es später erneut.',
+  nl: 'Er is aan onze kant iets misgegaan. Onze excuses — probeer het later opnieuw.',
+  pl: 'Wystąpił błąd po naszej stronie. Przepraszamy — spróbuj ponownie później.',
 };
 
 export function testCheckoutBlockedException(locale?: string | null): BadRequestException {
