@@ -1578,6 +1578,7 @@ export class ProductService {
   async resolveVariant(
     productId: string,
     optionValueIds: string[],
+    lang?: string,
   ): Promise<{
     status: 'available' | 'out_of_stock' | 'unavailable';
     variant: {
@@ -1601,6 +1602,28 @@ export class ProductService {
     ]);
     if (!variant) return { status: 'unavailable', variant: null };
 
+    // variant.title (e.g. "Noir / S") is baked once, in the base language,
+    // at variant-creation time (see buildVariantTitle) — reconstruct it from
+    // the (translation-overlaid) option values for any non-default lang,
+    // same as getVariantAvailabilityMatrix does, so this endpoint's title
+    // never overrides an already-translated matrix title with a stale
+    // French one (resolveVariant's result takes priority on the PDP).
+    let title = variant.title;
+    if (lang) {
+      const sortedOptions = [...(variant.options ?? [])].filter(o => o.optionValueId);
+      if (sortedOptions.length) {
+        const productAttrs = await this.productAttrRepo.find({ where: { productId } });
+        const attrSortOrder = new Map(productAttrs.map(pa => [pa.attributeId, pa.sortOrder]));
+        sortedOptions.sort((a, b) => (attrSortOrder.get(a.attributeId) ?? 0) - (attrSortOrder.get(b.attributeId) ?? 0));
+        const translatedOptions = await this.translationsService.applyToEntities(
+          sortedOptions.map(o => ({ id: o.optionValueId as string, value: o.value })),
+          ET_SHOP_VARIATION_OPTION,
+          lang,
+        );
+        title = translatedOptions.map((ov: any) => ov.displayValue ?? ov.value).join(' / ');
+      }
+    }
+
     const inventory   = await this.inventoryRepo.findOneBy({ variantId: variant.id });
     const hasInventory = !!inventory;
     const available   = hasInventory ? (inventory!.available ?? 0) : -1;
@@ -1620,7 +1643,7 @@ export class ProductService {
       variant: {
         id:                  variant.id,
         sku:                 variant.sku,
-        title:               variant.title,
+        title,
         priceCents:          effectivePriceCents,
         compareAtPriceCents: variant.compareAtPriceCents ?? null,
         variantSlug:         variant.variantSlug ?? null,
@@ -1729,24 +1752,47 @@ export class ProductService {
       }
     }
 
+    // v.title (e.g. "Noir / S") is baked once, in the base language, at
+    // variant-creation time (see buildVariantTitle) — it never picks up
+    // option-value translations on its own. Reconstruct it from the
+    // option values above (now translation-overlaid) for any non-default
+    // lang, same join/sort rule buildVariantTitle uses, so the storefront
+    // never shows a French title next to an already-translated attribute
+    // picker.
+    const attrSortOrder = new Map(productAttrs.map(pa => [pa.attribute.id, pa.sortOrder]));
+    const translatedDisplayValue = new Map<string, string>();
+    for (const attr of attributes) {
+      for (const ov of attr.optionValues ?? []) {
+        translatedDisplayValue.set(ov.id, ov.displayValue ?? ov.value);
+      }
+    }
+
     return {
       attributes,
-      variants: variants.map(v => ({
-        id:                  v.id,
-        sku:                 v.sku,
-        title:               v.title,
-        priceCents:          resolveVariantPrice({
-          variantPriceCents:     v.priceCents,
-          basePriceCents:        product.basePriceCents,
-          optionAdjustmentCents: sumOptionAdjustments(v.options ?? []),
-        }),
-        compareAtPriceCents: v.compareAtPriceCents,
-        variantSlug:         v.variantSlug,
-        featuredMediaUrl:    v.featuredMediaKey ? (urlMap.get(v.featuredMediaKey) ?? null) : null,
-        optionValueIds:      (v.options ?? []).map(o => o.optionValueId).filter(Boolean) as string[],
-        available:           hasInventory ? (stockMap.get(v.id) ?? 0) : 1,
-        inStock:             !hasInventory || (stockMap.get(v.id) ?? 0) > 0,
-      })),
+      variants: variants.map(v => {
+        const sortedOptions = [...(v.options ?? [])]
+          .filter(o => o.optionValueId)
+          .sort((a, b) => (attrSortOrder.get(a.attributeId) ?? 0) - (attrSortOrder.get(b.attributeId) ?? 0));
+        const title = lang && sortedOptions.length
+          ? sortedOptions.map(o => translatedDisplayValue.get(o.optionValueId!) ?? o.value).join(' / ')
+          : v.title;
+        return {
+          id:                  v.id,
+          sku:                 v.sku,
+          title,
+          priceCents:          resolveVariantPrice({
+            variantPriceCents:     v.priceCents,
+            basePriceCents:        product.basePriceCents,
+            optionAdjustmentCents: sumOptionAdjustments(v.options ?? []),
+          }),
+          compareAtPriceCents: v.compareAtPriceCents,
+          variantSlug:         v.variantSlug,
+          featuredMediaUrl:    v.featuredMediaKey ? (urlMap.get(v.featuredMediaKey) ?? null) : null,
+          optionValueIds:      (v.options ?? []).map(o => o.optionValueId).filter(Boolean) as string[],
+          available:           hasInventory ? (stockMap.get(v.id) ?? 0) : 1,
+          inStock:             !hasInventory || (stockMap.get(v.id) ?? 0) > 0,
+        };
+      }),
     };
   }
 

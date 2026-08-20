@@ -25,8 +25,9 @@ export class OrdersPublicController {
     @Param('orderNumber') orderNumber: string,
     @Query('token') token?: string,
     @Query('email') email?: string,
+    @Query('lang') lang?: string,
   ) {
     if (!token && !email) throw new NotFoundException('Order not found');
-    return this.orders.trackOrder(orderNumber, { token, email });
+    return this.orders.trackOrder(orderNumber, { token, email }, lang);
   }
 }

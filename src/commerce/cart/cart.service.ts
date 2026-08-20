@@ -19,6 +19,7 @@ import { ProductOptionValueImage } from '../entities/product-option-value-image.
 import { AssetUrlService } from '../../asset-url/asset-url.service';
 import { TranslationsService } from '../../translations/translations.service';
 import {
+  ET_SHOP_PRODUCT,
   ET_SHOP_VARIANT_ATTR,
   ET_SHOP_VARIATION_OPTION,
 } from '../../common/entity-types';
@@ -114,6 +115,7 @@ export class CartService {
       referrer?: string;
       utmSource?: string;
     },
+    lang?: string,
   ): Promise<any> {
     if (quantity < 1)
       throw new BadRequestException('Quantity must be at least 1');
@@ -314,7 +316,7 @@ export class CartService {
       },
     );
 
-    const cartData = await this.getOrCreate(token);
+    const cartData = await this.getOrCreate(token, undefined, lang);
     // Shared with the CAPI call above so the frontend's browser-side fbq()
     // AddToCart call can use the same eventID for Meta's dedup.
     return { ...cartData, metaAddToCartEventId: metaEventId };
@@ -330,8 +332,9 @@ export class CartService {
     userAgent?: string | null,
     referrer?: string,
     utmSource?: string,
+    lang?: string,
   ): Promise<any> {
-    if (quantity < 1) return this.removeItem(token, itemId, clientIp, userAgent);
+    if (quantity < 1) return this.removeItem(token, itemId, clientIp, userAgent, lang);
 
     const cart = await this.ensureActiveCart(token);
     const item = cart.items.find((i: CartItem) => i.id === itemId);
@@ -384,7 +387,7 @@ export class CartService {
       device: deviceFromUserAgent(userAgent),
       source: platformFromSource(referrer, utmSource),
     });
-    return this.getOrCreate(token);
+    return this.getOrCreate(token, undefined, lang);
   }
 
   // ── Remove item ────────────────────────────────────────────────────────────
@@ -394,6 +397,7 @@ export class CartService {
     itemId: string,
     clientIp?: string | null,
     userAgent?: string | null,
+    lang?: string,
   ): Promise<any> {
     const cart = await this.ensureActiveCart(token);
     const item = cart.items.find((i: CartItem) => i.id === itemId);
@@ -408,7 +412,7 @@ export class CartService {
       clientIp,
       device: deviceFromUserAgent(userAgent),
     });
-    return this.getOrCreate(token);
+    return this.getOrCreate(token, undefined, lang);
   }
 
   // ── Validate coupon ────────────────────────────────────────────────────────
@@ -574,7 +578,7 @@ export class CartService {
         ),
       ] as string[];
 
-      const [attrTranslated, optionTranslated] = await Promise.all([
+      const [attrTranslated, optionTranslated, productTitleTranslated] = await Promise.all([
         uniqueAttrIds.length
           ? this.translationsService.applyToEntities(
               uniqueAttrIds.map((id) => ({ id })) as any[],
@@ -589,15 +593,30 @@ export class CartService {
               lang,
             )
           : Promise.resolve([]),
+        // titleSnapshot is frozen in the base (French) language at
+        // add-to-cart time — same as OrderItem's — so it needs the same
+        // per-request overlay every other product-facing surface gets
+        // rather than ever being translated in place.
+        productIds.length
+          ? this.translationsService.applyToEntities(
+              productIds.map((id) => ({ id })) as any[],
+              ET_SHOP_PRODUCT,
+              lang,
+            )
+          : Promise.resolve([]),
       ]);
 
       const attrMap = new Map((attrTranslated as any[]).map((r) => [r.id, r]));
       const optionMap = new Map(
         (optionTranslated as any[]).map((r) => [r.id, r]),
       );
+      const titleMap = new Map(
+        (productTitleTranslated as any[]).map((r) => [r.id, r.title]),
+      );
 
       enrichedItems = enrichedItems.map((item) => ({
         ...item,
+        titleSnapshot: titleMap.get(item.productId) ?? item.titleSnapshot,
         optionsSnapshot: (item.optionsSnapshot ?? []).map((o: any) => ({
           ...o,
           attributeName:

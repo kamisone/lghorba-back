@@ -68,10 +68,10 @@ export class ProductPublicController {
   @HttpCode(200)
   async resolveVariant(
     @Param('slug') slug: string,
-    @Body() dto: { optionValueIds: string[] },
+    @Body() dto: { optionValueIds: string[]; lang?: string },
   ) {
     const product = await this.products.findBySlug(slug);
-    return this.products.resolveVariant(product.id, dto.optionValueIds ?? []);
+    return this.products.resolveVariant(product.id, dto.optionValueIds ?? [], dto.lang);
   }
 
   /**

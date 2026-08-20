@@ -32,6 +32,12 @@ import {
   OrderStatusChangedEvent,
 } from '../events/commerce-events';
 import { CHECKOUT_RESERVATION_QUEUE } from '../checkout/checkout-reservation.constants';
+import { TranslationsService } from '../../translations/translations.service';
+import {
+  ET_SHOP_PRODUCT,
+  ET_SHOP_VARIANT_ATTR,
+  ET_SHOP_VARIATION_OPTION,
+} from '../../common/entity-types';
 
 // ── State machine ───────────────────────────────────────────────────────────
 
@@ -112,6 +118,7 @@ export class OrdersService {
     private readonly customerService: CustomerService,
     private readonly eventBus: CommerceEventBus,
     private readonly dataSource: DataSource,
+    private readonly translationsService: TranslationsService,
   ) {}
 
   // ── Create from cart ────────────────────────────────────────────────────────
@@ -503,6 +510,7 @@ export class OrdersService {
   async trackOrder(
     orderNumber: string,
     auth: { token?: string; email?: string },
+    lang?: string,
   ): Promise<Record<string, unknown>> {
     const order = await this.orderRepo.findOne({
       where: { orderNumber },
@@ -512,6 +520,29 @@ export class OrdersService {
 
     if (!this.isAuthorized(order, auth))
       throw new NotFoundException('Order not found');
+
+    // titleSnapshot/optionsSnapshot are frozen in the base (French) language
+    // at order-creation time — same gap CartService.enrichCart had for the
+    // cart's own snapshots — so they need the same per-request overlay
+    // every other product-facing surface gets.
+    let titleMap = new Map<string, string>();
+    let attrMap = new Map<string, any>();
+    let optionMap = new Map<string, any>();
+    if (lang) {
+      const items = order.items ?? [];
+      const productIds = [...new Set(items.map((i: any) => i.productId).filter(Boolean))] as string[];
+      const attrIds = [...new Set(items.flatMap((i: any) => (i.optionsSnapshot ?? []).map((o: any) => o.attributeId).filter(Boolean)))] as string[];
+      const optionIds = [...new Set(items.flatMap((i: any) => (i.optionsSnapshot ?? []).map((o: any) => o.optionValueId).filter(Boolean)))] as string[];
+
+      const [titles, attrs, options] = await Promise.all([
+        productIds.length ? this.translationsService.applyToEntities(productIds.map(id => ({ id })) as any[], ET_SHOP_PRODUCT, lang) : Promise.resolve([]),
+        attrIds.length ? this.translationsService.applyToEntities(attrIds.map(id => ({ id })) as any[], ET_SHOP_VARIANT_ATTR, lang) : Promise.resolve([]),
+        optionIds.length ? this.translationsService.applyToEntities(optionIds.map(id => ({ id })) as any[], ET_SHOP_VARIATION_OPTION, lang) : Promise.resolve([]),
+      ]);
+      titleMap = new Map((titles as any[]).map(r => [r.id, r.title]));
+      attrMap = new Map((attrs as any[]).map(r => [r.id, r]));
+      optionMap = new Map((options as any[]).map(r => [r.id, r]));
+    }
 
     const shipment = await this.shipmentRepo.findOne({
       where: { orderId: order.id },
@@ -540,13 +571,17 @@ export class OrdersService {
       couponCode: order.couponCode,
       createdAt: order.createdAt,
       items: (order.items ?? []).map((i: any) => ({
-        title: i.titleSnapshot,
+        title: titleMap.get(i.productId) ?? i.titleSnapshot,
         sku: i.skuSnapshot,
         imageKey: i.imageKeySnapshot,
         quantity: i.quantity,
         unitPriceCents: i.unitPriceCents,
         totalCents: i.totalCents,
-        options: i.optionsSnapshot,
+        options: (i.optionsSnapshot ?? []).map((o: any) => ({
+          ...o,
+          attributeName: attrMap.get(o.attributeId)?.name ?? o.attributeName,
+          displayValue: o.optionValueId ? (optionMap.get(o.optionValueId)?.displayValue ?? o.displayValue) : o.displayValue,
+        })),
         productId: i.productId,
         variantId: i.variantId,
       })),

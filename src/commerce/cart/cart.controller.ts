@@ -36,6 +36,7 @@ export class CartController {
     @Body('referrer') referrer: string | undefined,
     @Body('utmSource') utmSource: string | undefined,
     @Req() req: Request,
+    @Query('lang') lang?: string,
   ) {
     const userAgent = (req.headers['user-agent'] as string) ?? null;
     return this.carts.addItem(token, variantId, quantity, selectedOptionValueIds, {
@@ -43,7 +44,7 @@ export class CartController {
       userAgent,
       referrer,
       utmSource,
-    });
+    }, lang);
   }
 
   // The IP is passed for behaviour-event geolocation only; it is never stored.
@@ -55,6 +56,7 @@ export class CartController {
     @Body('referrer') referrer: string | undefined,
     @Body('utmSource') utmSource: string | undefined,
     @Req() req: Request,
+    @Query('lang') lang?: string,
   ) {
     return this.carts.updateItem(
       token,
@@ -64,6 +66,7 @@ export class CartController {
       (req.headers['user-agent'] as string) ?? null,
       referrer,
       utmSource,
+      lang,
     );
   }
 
@@ -72,12 +75,14 @@ export class CartController {
     @Param('token')  token: string,
     @Param('itemId') itemId: string,
     @Req() req: Request,
+    @Query('lang') lang?: string,
   ) {
     return this.carts.removeItem(
       token,
       itemId,
       resolveClientIp(req),
       (req.headers['user-agent'] as string) ?? null,
+      lang,
     );
   }
 
