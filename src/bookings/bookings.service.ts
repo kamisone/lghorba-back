@@ -866,9 +866,14 @@ export class BookingsService {
   // ── Status update — optimistic lock prevents concurrent overwrite ─────────
 
   async updateBookingStatus(id: string, status: BookingStatus): Promise<Booking> {
+    const isCancel = CANCELLED_STATUSES.includes(status as typeof CANCELLED_STATUSES[number]);
     const booking = await withRetry(async () => {
       const booking = await this.findBooking(id);
-      return this.bookingRepo.save({ ...booking, status });
+      return this.bookingRepo.save({
+        ...booking,
+        status,
+        cancelledAt: isCancel ? (booking.cancelledAt ?? new Date()) : booking.cancelledAt,
+      });
     }, {
       maxAttempts: 3,
       isRetryable: (err) =>
@@ -907,6 +912,55 @@ export class BookingsService {
     }
   }
 
+  /**
+   * Admin undo of a cancellation: cancelled → confirmed.
+   *
+   * Deliberately bypasses the state machine (where CANCELLED is terminal) —
+   * that rule must stay strict for the payment webhooks, so a late Stripe
+   * event can never resurrect a booking the admin cancelled. Only plain
+   * `cancelled` is restorable; `cancelled_payment_timeout` was never paid.
+   */
+  async restoreBooking(id: string): Promise<Booking> {
+    const booking = await this.findBooking(id);
+
+    if (booking.status !== BookingStatus.CANCELLED) {
+      throw new BadRequestException('Only cancelled bookings can be restored');
+    }
+
+    // The slot may have been re-booked since the cancellation.
+    const conflict = await this.bookingRepo
+      .createQueryBuilder('b')
+      .where('b.carId = :carId',                          { carId: booking.carId })
+      .andWhere('b.id != :id',                            { id })
+      .andWhere('b.status NOT IN (:...cancelledStatuses)', { cancelledStatuses: CANCELLED_STATUSES })
+      .andWhere('b.startDateTime < :end',                 { end: booking.endDateTime })
+      .andWhere('b.endDateTime   > :start',               { start: booking.startDateTime })
+      .getOne();
+    if (conflict) throw new ConflictException('Car is no longer available for this period');
+
+    booking.status      = BookingStatus.CONFIRMED;
+    booking.cancelledAt = null;
+    await this.bookingRepo.save(booking);
+
+    // Cancelling ended any active rent session; if the rental is still
+    // ongoing, bring that session back the same way reactivate does.
+    if (booking.endDateTime > new Date()) {
+      await this.resumeEndedSession(booking);
+    }
+
+    const updated = await this.findBooking(id);
+    this.eventEmitter.emit(
+      BookingEvents.UPDATED,
+      new BookingUpdatedEvent({
+        id: updated.id,
+        startDateTime: updated.startDateTime,
+        endDateTime: updated.endDateTime,
+        status: updated.status,
+      }),
+    );
+    return updated;
+  }
+
   async reactivateBooking(id: string, endDateTime: string): Promise<Booking> {
     const booking = await this.findBooking(id);
 
@@ -938,14 +992,18 @@ export class BookingsService {
     booking.endDateTime = newEnd;
     await this.bookingRepo.save(booking);
 
-    const existing = await this.sessionRepo.findOne({ where: { bookingId: id } });
+    await this.resumeEndedSession(booking);
+    return this.findBooking(id);
+  }
 
-    // Only resume the existing session — never create a new one.
-    // If no session exists the activateScheduledSessions cron will start one
-    // within a minute (it now runs for all bookings, not just autoStartTracking).
-    if (!existing || existing.status !== RentSessionStatus.ENDED) {
-      return this.findBooking(id);
-    }
+  /**
+   * Only resumes an existing ENDED session — never creates a new one.
+   * If no session exists the activateScheduledSessions cron will start one
+   * within a minute (it runs for all bookings, not just autoStartTracking).
+   */
+  private async resumeEndedSession(booking: Booking): Promise<void> {
+    const existing = await this.sessionRepo.findOne({ where: { bookingId: booking.id } });
+    if (!existing || existing.status !== RentSessionStatus.ENDED) return;
 
     const now            = new Date();
     const trackingPaused = !booking.autoStartTracking;
@@ -962,8 +1020,6 @@ export class BookingsService {
     if (!trackingPaused && car) {
       await this.smsService.addMessage(car.phoneNumber, 'location');
     }
-
-    return this.findBooking(id);
   }
 
   async deleteBooking(id: string): Promise<void> {

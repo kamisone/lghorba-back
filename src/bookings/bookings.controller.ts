@@ -119,6 +119,11 @@ export class BookingsAdminController {
     return this.svc.updateBookingStatus(id, parsed.data.status);
   }
 
+  @Post(':id/restore')
+  restore(@Param('id') id: string) {
+    return this.svc.restoreBooking(id);
+  }
+
   @Post(':id/reactivate')
   reactivate(
     @Param('id') id: string,
