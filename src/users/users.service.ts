@@ -173,7 +173,7 @@ export class UsersService {
         ? { id: (s as any).car.id, name: (s as any).car.name, immatriculation: (s as any).car.immatriculation }
         : null,
       booking: s.booking
-        ? { id: s.booking.id, startDateTime: s.booking.startDateTime, endDateTime: s.booking.endDateTime }
+        ? { id: s.booking.id, startDateTime: s.booking.startDateTime, endDateTime: s.booking.endDateTime, source: s.booking.source }
         : null,
     });
 

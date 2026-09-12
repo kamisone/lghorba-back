@@ -11,7 +11,7 @@ import { CreateRentPositionDto } from './dto/create-rent-position.dto';
 import { CreateRentSessionDto } from './dto/create-rent-session.dto';
 import { PatchRentSessionDto } from './dto/patch-rent-session.dto';
 import { extractLatLng, extractMapsUrl } from '../common/utils/map.util';
-import { Booking } from '../bookings/booking.entity';
+import { Booking, BookingSource } from '../bookings/booking.entity';
 import {
   filterPosition,
   FilterResult,
@@ -72,10 +72,18 @@ export class RentSessionsService {
       .getMany();
   }
 
-  async findUnlinked(): Promise<{ id: string; startedAt: Date; endedAt: Date | null; status: RentSessionStatus; car: { id: string; name: string; immatriculation: string } | null }[]> {
+  async findUnlinked(): Promise<{
+    id: string;
+    startedAt: Date;
+    endedAt: Date | null;
+    status: RentSessionStatus;
+    car: { id: string; name: string; immatriculation: string } | null;
+    booking: { id: string; source: BookingSource } | null;
+  }[]> {
     const sessions = await this.sessionRepo
       .createQueryBuilder('s')
       .leftJoinAndSelect('s.car', 'car')
+      .leftJoinAndSelect('s.booking', 'booking')
       .where('s.userId IS NULL')
       .orderBy('s.startedAt', 'DESC')
       .getMany();
@@ -85,6 +93,7 @@ export class RentSessionsService {
       endedAt: s.endedAt,
       status: s.status,
       car: s.car ? { id: s.car.id, name: s.car.name, immatriculation: s.car.immatriculation } : null,
+      booking: s.booking ? { id: s.booking.id, source: s.booking.source } : null,
     }));
   }
 
