@@ -9,7 +9,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
-import { IngestedEmail, IngestionStatus, SupportedProvider } from './entities/ingested-email.entity';
+import { IngestedEmail, IngestionStatus } from './entities/ingested-email.entity';
 import { Car } from '../cars/car.entity';
 import { BookingsService } from '../bookings/bookings.service';
 import { TuroEmailParser } from './parsers/turo-email-parser';
@@ -137,7 +137,7 @@ export class EmailIngestionService {
     }
 
     // 4. Match car
-    const car = await this.matchCar(extracted.vehicleName, extracted.provider);
+    const car = await this.matchCar(extracted.vehicleName);
     if (!car) {
       await this.updateStatus(
         email, 'failed',
@@ -265,12 +265,11 @@ export class EmailIngestionService {
    *   2. Match on "brand model" concatenation
    *   3. Any car whose name is contained in the extracted vehicle name (or vice-versa)
    *   4. Token match: every word of the car's brand+model appears in the vehicle name
-   *   5. (Getaround only) Loose word overlap: the car sharing the most words with
-   *      the vehicle name wins, provided ≥2 words are shared, in any order, and no
-   *      other car ties. Getaround titles are host-typed free text, so this is
-   *      deliberately not applied to Turo.
+   *   5. Loose word overlap: the car sharing the most words with the vehicle
+   *      name wins, provided ≥2 words are shared, in any order, and no other
+   *      car ties.
    */
-  private async matchCar(vehicleName: string, provider?: SupportedProvider): Promise<Car | null> {
+  private async matchCar(vehicleName: string): Promise<Car | null> {
     const norm = this.normalizeForMatch(vehicleName);
     const normTokens = new Set(norm.split(' ').filter(Boolean));
 
@@ -303,8 +302,7 @@ export class EmailIngestionService {
     });
     if (match) return match;
 
-    if (provider === 'getaround') return this.matchCarByWordOverlap(cars, vehicleName, normTokens);
-    return null;
+    return this.matchCarByWordOverlap(cars, vehicleName, normTokens);
   }
 
   /**
